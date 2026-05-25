@@ -1,0 +1,13 @@
+# Local environment
+.env
+.env.*
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Ansible runtime artifacts
+*.retry
+ansible.log
