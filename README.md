@@ -54,6 +54,7 @@ Initial planned configuration includes:
 
 ```text
 docs/        Project and operational documentation
+playbooks/   Grayhaven Systems LLC Ansible playbooks
 ```
 
 ## Status

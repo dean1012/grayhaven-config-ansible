@@ -17,3 +17,21 @@ jobs:
 
       - name: Run markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v23
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install Ansible validation tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ansible-core ansible-lint
+
+      - name: Run Ansible syntax check
+        run: |
+          find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
+          | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
+
+      - name: Run ansible-lint
+        run: ansible-lint .
