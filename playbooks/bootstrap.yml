@@ -54,3 +54,52 @@
         content: "{{ grayhaven_ansible_control_private_key }}\n"
       when: grayhaven_role == "bastion"
       no_log: true
+
+    - name: Create Grayhaven secrets directory
+      ansible.builtin.file:
+        path: /etc/grayhaven/ansible/secrets
+        state: directory
+        owner: root
+        group: ansible
+        mode: "0750"
+
+    - name: Store Discord webhook URL on bastion hosts
+      ansible.builtin.copy:
+        dest: /etc/grayhaven/ansible/secrets/discord-webhook-url
+        owner: root
+        group: ansible
+        mode: "0640"
+        content: "{{ grayhaven_discord_webhook_url }}\n"
+      when: grayhaven_role == "bastion"
+      no_log: true
+
+    - name: Store DigitalOcean inventory API token on bastion hosts
+      ansible.builtin.copy:
+        dest: /etc/grayhaven/ansible/secrets/do-api-token.env
+        owner: root
+        group: ansible
+        mode: "0640"
+        content: |
+          DO_API_TOKEN="{{ grayhaven_digitalocean_inventory_api_token }}"
+      when: grayhaven_role == "bastion"
+      no_log: true
+
+    - name: Store dev HTTP basic auth htpasswd entry on web hosts
+      ansible.builtin.copy:
+        dest: /etc/grayhaven/ansible/secrets/dev-basic-auth-htpasswd
+        owner: root
+        group: root
+        mode: "0600"
+        content: "{{ grayhaven_dev_basic_auth_htpasswd_line }}\n"
+      when: grayhaven_role == "web"
+      no_log: true
+
+    - name: Store DigitalOcean DNS API token on web hosts
+      ansible.builtin.copy:
+        dest: /etc/grayhaven/ansible/secrets/digitalocean-dns-api-token
+        owner: root
+        group: root
+        mode: "0600"
+        content: "{{ grayhaven_digitalocean_dns_api_token }}\n"
+      when: grayhaven_role == "web"
+      no_log: true
