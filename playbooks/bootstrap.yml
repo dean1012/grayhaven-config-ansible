@@ -1,0 +1,10 @@
+---
+- name: Bootstrap first-boot host access
+  hosts: localhost
+  connection: local
+  become: true
+
+  tasks:
+    - name: Set system hostname
+      ansible.builtin.hostname:
+        name: "{{ grayhaven_hostname }}"
