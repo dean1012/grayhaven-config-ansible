@@ -104,3 +104,8 @@
         content: "{{ grayhaven_digitalocean_dns_api_token }}\n"
       when: grayhaven_role == "web"
       no_log: true
+
+    - name: Remove bootstrap handoff directory
+      ansible.builtin.file:
+        path: /etc/grayhaven/bootstrap
+        state: absent
