@@ -105,6 +105,17 @@
       when: grayhaven_role == "web"
       no_log: true
 
+    - name: Set root password hash
+      ansible.builtin.user:
+        name: root
+        password: "{{ grayhaven_root_password_hash }}"
+      no_log: true
+
+    - name: Remove root authorized SSH keys
+      ansible.builtin.file:
+        path: /root/.ssh/authorized_keys
+        state: absent
+
     - name: Remove bootstrap handoff directory
       ansible.builtin.file:
         path: /etc/grayhaven/bootstrap
