@@ -63,13 +63,14 @@
         group: ansible
         mode: "0750"
 
-    - name: Store Discord webhook URL on bastion hosts
+    - name: Store Discord webhook environment file on bastion hosts
       ansible.builtin.copy:
-        dest: /etc/grayhaven/ansible/secrets/discord-webhook-url
+        dest: /etc/grayhaven/ansible/secrets/discord-webhook.env
         owner: root
         group: ansible
         mode: "0640"
-        content: "{{ grayhaven_discord_webhook_url }}\n"
+        content: |
+          DISCORD_WEBHOOK_URL="{{ grayhaven_discord_webhook_url }}"
       when: grayhaven_role == "bastion"
       no_log: true
 
