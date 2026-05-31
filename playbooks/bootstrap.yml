@@ -116,6 +116,28 @@
         path: /root/.ssh/authorized_keys
         state: absent
 
+    - name: Stop and disable DigitalOcean Droplet agent
+      ansible.builtin.service:
+        name: droplet-agent
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Remove DigitalOcean Droplet agent package
+      ansible.builtin.dnf:
+        name: droplet-agent
+        state: absent
+
+    - name: Remove DigitalOcean Droplet agent configuration directory
+      ansible.builtin.file:
+        path: /etc/droplet-agent
+        state: absent
+
+    - name: Remove DigitalOcean Droplet agent log directory
+      ansible.builtin.file:
+        path: /var/log/droplet-agent
+        state: absent
+
     - name: Remove bootstrap handoff directory
       ansible.builtin.file:
         path: /etc/grayhaven/bootstrap
