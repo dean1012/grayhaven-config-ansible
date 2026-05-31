@@ -1,6 +1,8 @@
 ---
 - name: Bootstrap first-boot host access
   hosts: localhost
+  vars:
+    ansible_python_interpreter: "/usr/bin/python3"
   connection: local
   become: true
 
