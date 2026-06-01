@@ -7,6 +7,56 @@
   become: true
 
   tasks:
+    - name: Validate common bootstrap variables
+      ansible.builtin.assert:
+        that:
+          - grayhaven_hostname is defined
+          - grayhaven_hostname is string
+          - grayhaven_hostname | trim | length > 0
+          - grayhaven_role is defined
+          - grayhaven_role is string
+          - grayhaven_role in ["bastion", "web"]
+          - grayhaven_root_password_hash is defined
+          - grayhaven_root_password_hash is string
+          - grayhaven_root_password_hash | trim | length > 0
+        fail_msg: "Required common bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
+        quiet: true
+      no_log: true
+
+    - name: Validate bastion bootstrap variables
+      ansible.builtin.assert:
+        that:
+          - grayhaven_ansible_control_private_key is defined
+          - grayhaven_ansible_control_private_key is string
+          - grayhaven_ansible_control_private_key | trim | length > 0
+          - grayhaven_discord_webhook_url is defined
+          - grayhaven_discord_webhook_url is string
+          - grayhaven_discord_webhook_url | trim | length > 0
+          - grayhaven_digitalocean_inventory_api_token is defined
+          - grayhaven_digitalocean_inventory_api_token is string
+          - grayhaven_digitalocean_inventory_api_token | trim | length > 0
+        fail_msg: "Required bastion bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
+        quiet: true
+      no_log: true
+      when: grayhaven_role == "bastion"
+
+    - name: Validate web bootstrap variables
+      ansible.builtin.assert:
+        that:
+          - grayhaven_ansible_control_public_key is defined
+          - grayhaven_ansible_control_public_key is string
+          - grayhaven_ansible_control_public_key | trim | length > 0
+          - grayhaven_dev_basic_auth_htpasswd_line is defined
+          - grayhaven_dev_basic_auth_htpasswd_line is string
+          - grayhaven_dev_basic_auth_htpasswd_line | trim | length > 0
+          - grayhaven_digitalocean_dns_api_token is defined
+          - grayhaven_digitalocean_dns_api_token is string
+          - grayhaven_digitalocean_dns_api_token | trim | length > 0
+        fail_msg: "Required web bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
+        quiet: true
+      no_log: true
+      when: grayhaven_role == "web"
+
     - name: Set system hostname
       ansible.builtin.hostname:
         name: "{{ grayhaven_hostname }}"
