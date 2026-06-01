@@ -55,6 +55,7 @@ Initial planned configuration includes:
 ```text
 docs/        Project and operational documentation
 playbooks/   Grayhaven Systems LLC Ansible playbooks
+roles/       Reusable Ansible roles used by the main site playbook
 ```
 
 ## Status

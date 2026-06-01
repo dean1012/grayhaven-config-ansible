@@ -1,0 +1,47 @@
+---
+- name: Validate admin access variables
+  ansible.builtin.assert:
+    that:
+      - admin_access_user is defined
+      - admin_access_user is string
+      - admin_access_user | trim | length > 0
+      - admin_access_comment is defined
+      - admin_access_comment is string
+      - admin_access_comment | trim | length > 0
+      - admin_access_password_hash is defined
+      - admin_access_password_hash is string
+      - admin_access_password_hash | trim | length > 0
+      - admin_access_public_key is defined
+      - admin_access_public_key is string
+      - admin_access_public_key | trim | length > 0
+    fail_msg: "Required admin access variables were not provided."
+    quiet: true
+  no_log: true
+
+- name: Create administrative user
+  ansible.builtin.user:
+    name: "{{ admin_access_user }}"
+    comment: "{{ admin_access_comment }}"
+    create_home: true
+    shell: /bin/bash
+    groups: wheel
+    append: true
+    password: "{{ admin_access_password_hash }}"
+    state: present
+  no_log: true
+
+- name: Create administrative user SSH directory
+  ansible.builtin.file:
+    path: "/home/{{ admin_access_user }}/.ssh"
+    state: directory
+    owner: "{{ admin_access_user }}"
+    group: "{{ admin_access_user }}"
+    mode: "0700"
+
+- name: Install administrative authorized SSH key
+  ansible.builtin.copy:
+    dest: "/home/{{ admin_access_user }}/.ssh/authorized_keys"
+    owner: "{{ admin_access_user }}"
+    group: "{{ admin_access_user }}"
+    mode: "0600"
+    content: "{{ admin_access_public_key | trim }}\n"
