@@ -1,0 +1,31 @@
+---
+plugin: digitalocean.cloud.droplets
+
+api_filters:
+  tag_name: configured-by-ansible
+
+attributes:
+  - networks
+  - region
+  - status
+  - tags
+  - vpc_uuid
+
+filters:
+  - status == "active"
+
+compose:
+  ansible_connection: '"local" if "role-bastion" in do_tags else "ssh"'
+  ansible_host: >-
+    "127.0.0.1"
+    if "role-bastion" in do_tags
+    else (networks.v4 | selectattr("type", "eq", "private") | map(attribute="ip_address") | first)
+  ansible_python_interpreter: '"/usr/bin/python3"'
+  ansible_ssh_common_args: '"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"'
+  ansible_ssh_private_key_file: '"/home/ansible/.ssh/id_ed25519"'
+  ansible_user: '"root" if "role-bastion" in do_tags else "ansible"'
+
+keyed_groups:
+  - key: do_tags
+    prefix: tag
+    separator: "_"

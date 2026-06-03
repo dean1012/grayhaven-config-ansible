@@ -1,0 +1,8 @@
+[Unit]
+Description=Grayhaven Ansible full playbook runner
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/grayhaven-ansible-runner
