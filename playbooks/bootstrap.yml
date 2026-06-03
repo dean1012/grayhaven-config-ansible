@@ -7,6 +7,65 @@
   become: true
 
   tasks:
+    - name: Validate common bootstrap variables
+      ansible.builtin.assert:
+        that:
+          - grayhaven_hostname is defined
+          - grayhaven_hostname is string
+          - grayhaven_hostname | trim | length > 0
+          - grayhaven_role is defined
+          - grayhaven_role is string
+          - grayhaven_role in ["bastion", "web"]
+          - grayhaven_config_repo_ref is defined
+          - grayhaven_config_repo_ref is string
+          - grayhaven_config_repo_ref | trim | length > 0
+          - grayhaven_root_password_hash is defined
+          - grayhaven_root_password_hash is string
+          - grayhaven_root_password_hash | trim | length > 0
+        fail_msg: "Required common bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
+        quiet: true
+      no_log: true
+
+    - name: Validate bastion bootstrap variables
+      ansible.builtin.assert:
+        that:
+          - grayhaven_ansible_control_private_key is defined
+          - grayhaven_ansible_control_private_key is string
+          - grayhaven_ansible_control_private_key | trim | length > 0
+          - grayhaven_discord_webhook_url is defined
+          - grayhaven_discord_webhook_url is string
+          - grayhaven_discord_webhook_url | trim | length > 0
+          - grayhaven_digitalocean_inventory_api_token is defined
+          - grayhaven_digitalocean_inventory_api_token is string
+          - grayhaven_digitalocean_inventory_api_token | trim | length > 0
+          - grayhaven_jsmith_password_hash is defined
+          - grayhaven_jsmith_password_hash is string
+          - grayhaven_jsmith_password_hash | trim | length > 0
+          - grayhaven_jsmith_public_key is defined
+          - grayhaven_jsmith_public_key is string
+          - grayhaven_jsmith_public_key | trim | length > 0
+        fail_msg: "Required bastion bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
+        quiet: true
+      no_log: true
+      when: grayhaven_role == "bastion"
+
+    - name: Validate web bootstrap variables
+      ansible.builtin.assert:
+        that:
+          - grayhaven_ansible_control_public_key is defined
+          - grayhaven_ansible_control_public_key is string
+          - grayhaven_ansible_control_public_key | trim | length > 0
+          - grayhaven_dev_basic_auth_htpasswd_line is defined
+          - grayhaven_dev_basic_auth_htpasswd_line is string
+          - grayhaven_dev_basic_auth_htpasswd_line | trim | length > 0
+          - grayhaven_digitalocean_dns_api_token is defined
+          - grayhaven_digitalocean_dns_api_token is string
+          - grayhaven_digitalocean_dns_api_token | trim | length > 0
+        fail_msg: "Required web bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
+        quiet: true
+      no_log: true
+      when: grayhaven_role == "web"
+
     - name: Set system hostname
       ansible.builtin.hostname:
         name: "{{ grayhaven_hostname }}"
@@ -87,6 +146,18 @@
       when: grayhaven_role == "bastion"
       no_log: true
 
+    - name: Store admin access vars on bastion hosts
+      ansible.builtin.copy:
+        dest: /etc/grayhaven/ansible/secrets/admin-access.yml
+        owner: root
+        group: ansible
+        mode: "0640"
+        content: |
+          admin_access_password_hash: {{ grayhaven_jsmith_password_hash | to_json }}
+          admin_access_public_key: {{ grayhaven_jsmith_public_key | to_json }}
+      when: grayhaven_role == "bastion"
+      no_log: true
+
     - name: Store dev HTTP basic auth htpasswd entry on web hosts
       ansible.builtin.copy:
         dest: /etc/grayhaven/ansible/secrets/dev-basic-auth-htpasswd
@@ -144,3 +215,64 @@
       ansible.builtin.file:
         path: /etc/grayhaven/bootstrap
         state: absent
+
+    - name: Install bastion runner OS dependencies
+      ansible.builtin.dnf:
+        name:
+          - git
+          - python3-pip
+        state: present
+      when: grayhaven_role == "bastion"
+
+    - name: Store bastion runner environment
+      ansible.builtin.copy:
+        dest: /etc/grayhaven/ansible/runner.env
+        owner: root
+        group: ansible
+        mode: "0640"
+        content: |
+          REPO_URL="https://github.com/dean1012/grayhaven-config-ansible.git"
+          REPO_REF={{ grayhaven_config_repo_ref | quote }}
+          CHECKOUT_DIR="/home/ansible/grayhaven-config-ansible"
+      when: grayhaven_role == "bastion"
+
+    - name: Install bastion runner executable
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/grayhaven-ansible-runner"
+        dest: /usr/local/sbin/grayhaven-ansible-runner
+        owner: root
+        group: root
+        mode: "0755"
+      when: grayhaven_role == "bastion"
+
+    - name: Install bastion runner service unit
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.service"
+        dest: /etc/systemd/system/grayhaven-ansible-runner.service
+        owner: root
+        group: root
+        mode: "0644"
+      when: grayhaven_role == "bastion"
+
+    - name: Install bastion runner timer unit
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.timer"
+        dest: /etc/systemd/system/grayhaven-ansible-runner.timer
+        owner: root
+        group: root
+        mode: "0644"
+      when: grayhaven_role == "bastion"
+
+    - name: Enable bastion runner timer
+      ansible.builtin.systemd_service:
+        name: grayhaven-ansible-runner.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: grayhaven_role == "bastion"
+
+    - name: Trigger initial bastion runner execution without blocking bootstrap
+      ansible.builtin.command:
+        cmd: systemctl start --no-block grayhaven-ansible-runner.service
+      changed_when: true
+      when: grayhaven_role == "bastion"

@@ -1,0 +1,7 @@
+---
+- name: Apply Grayhaven base configuration
+  hosts: all
+  become: true
+
+  roles:
+    - admin_access

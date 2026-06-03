@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Grayhaven Ansible full playbook daily
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=grayhaven-ansible-runner.service
+
+[Install]
+WantedBy=timers.target

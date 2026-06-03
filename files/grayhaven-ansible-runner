@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+LOCK_FILE="/run/grayhaven-ansible-runner.lock"
+RUNNER_ENV="/etc/grayhaven/ansible/runner.env"
+DO_TOKEN_ENV="/etc/grayhaven/ansible/secrets/do-api-token.env"
+ADMIN_ACCESS_VARS="/etc/grayhaven/ansible/secrets/admin-access.yml"
+ANSIBLE_HOME="/home/ansible"
+CHECKOUT_PARENT="${ANSIBLE_HOME}"
+DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
+DEFAULT_REPO_URL="https://github.com/dean1012/grayhaven-config-ansible.git"
+DEFAULT_REPO_REF="main"
+
+log() {
+  printf '[grayhaven-ansible-runner] %s\n' "$*"
+}
+
+run_as_ansible() {
+  runuser -u ansible -- "$@"
+}
+
+require_file() {
+  local path="$1"
+
+  if [[ ! -f "$path" ]]; then
+    log "Required file is missing: $path"
+    exit 1
+  fi
+}
+
+checkout_ref() {
+  local repo_ref="$1"
+
+  run_as_ansible git -C "$CHECKOUT_DIR" fetch --prune origin \
+    '+refs/heads/*:refs/remotes/origin/*' \
+    '+refs/tags/*:refs/tags/*'
+
+  if run_as_ansible git -C "$CHECKOUT_DIR" rev-parse --verify --quiet "origin/${repo_ref}" >/dev/null; then
+    run_as_ansible git -C "$CHECKOUT_DIR" checkout -B "$repo_ref" "origin/${repo_ref}"
+  else
+    run_as_ansible git -C "$CHECKOUT_DIR" checkout --detach "$repo_ref"
+  fi
+
+  run_as_ansible git -C "$CHECKOUT_DIR" reset --hard HEAD
+}
+
+main() {
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    log "Another runner invocation is already active."
+    exit 1
+  fi
+
+  require_file "$RUNNER_ENV"
+  require_file "$DO_TOKEN_ENV"
+  require_file "$ADMIN_ACCESS_VARS"
+
+  # shellcheck disable=SC1090
+  source "$RUNNER_ENV"
+  # shellcheck disable=SC1090
+  source "$DO_TOKEN_ENV"
+
+  export DO_API_TOKEN
+  export HOME="/root"
+
+  REPO_URL="${REPO_URL:-$DEFAULT_REPO_URL}"
+  REPO_REF="${REPO_REF:-$DEFAULT_REPO_REF}"
+  CHECKOUT_DIR="${CHECKOUT_DIR:-$DEFAULT_CHECKOUT_DIR}"
+  export ANSIBLE_CONFIG="${CHECKOUT_DIR}/ansible.cfg"
+
+  log "Preparing checkout ${CHECKOUT_DIR} at ref ${REPO_REF}."
+  install -d -o ansible -g ansible -m 0755 "$CHECKOUT_PARENT"
+
+  if [[ ! -d "${CHECKOUT_DIR}/.git" ]]; then
+    run_as_ansible git clone "$REPO_URL" "$CHECKOUT_DIR"
+  fi
+
+  chown -R ansible:ansible "$CHECKOUT_DIR"
+  checkout_ref "$REPO_REF"
+
+  log "Installing pip-managed Ansible runtime."
+  /usr/bin/python3 -m pip install --upgrade ansible-core
+  /usr/local/bin/ansible --version
+
+  log "Installing pinned Python dependencies."
+  /usr/bin/python3 -m pip install --requirement "${CHECKOUT_DIR}/pip3_requirements.txt"
+
+  log "Installing pinned Ansible Galaxy collections."
+  /usr/local/bin/ansible-galaxy collection install \
+    --requirements-file "${CHECKOUT_DIR}/galaxy_requirements.yml" \
+    --force
+
+  log "Running full site playbook."
+  /usr/local/bin/ansible-playbook \
+    --inventory "${CHECKOUT_DIR}/inventory" \
+    "${CHECKOUT_DIR}/playbooks/site.yml" \
+    --extra-vars "@${ADMIN_ACCESS_VARS}"
+}
+
+main "$@"
