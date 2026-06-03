@@ -1,63 +1,52 @@
-# Grayhaven Configuration (Ansible)
+# Grayhaven Configuration
 
-Configuration management repository for Grayhaven Systems LLC using Ansible.
+[![CI](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/ci.yml/badge.svg)](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/ci.yml)
 
-## Overview
+Ansible configuration management for Grayhaven Systems LLC infrastructure.
 
-This repository contains Ansible playbooks, roles, inventory configuration, and
-supporting automation used to configure and manage Grayhaven Systems LLC Linux
-servers after infrastructure provisioning.
+This repository is the configuration layer for the Grayhaven infrastructure
+portfolio project. OpenTofu provisions the servers, cloud-init runs the
+bootstrap playbook on first boot, and the bastion host then runs the full
+Ansible playbook on a recurring schedule.
 
-Current configuration goals include:
+## Current Scope
 
-- First-boot server bootstrap automation
-- Bastion-based administrative access model
-- Role-based Linux server configuration
-- Secure SSH user and key management
-- Idempotent system configuration workflows
-- GitHub Actions validation workflows
-- Enterprise-oriented configuration management practices
+- Bootstrap first-boot host preparation for AlmaLinux servers.
+- Create and secure the `ansible` automation account.
+- Persist only role-specific runtime secrets needed after bootstrap.
+- Run full Ansible convergence from the bastion host.
+- Manage the initial `jsmith` administrative account on all managed hosts.
+- Validate Ansible, YAML, and Markdown through GitHub Actions.
 
-## Repository Scope
+The web server configuration is intentionally minimal while the bootstrap and
+handoff workflow is being stabilized.
 
-This repository is intended for:
+## Documentation
 
-- Grayhaven Systems LLC infrastructure
-- Personal infrastructure projects
-- Public portfolio and educational reference
+- [Architecture](docs/architecture.md)
+- [Operations](docs/operations.md)
 
-Client infrastructure, credentials, deployment data, private SSH keys, secrets,
-and operational state are not stored in this repository.
-
-## Planned Configuration
-
-Initial planned configuration includes:
-
-- Production server bootstrap automation
-- Bastion and web server role configuration
-- Administrative user and automation user management
-- SSH access preparation for bastion-based management
-- Local storage of runtime secrets provided during bootstrap where required
-- Future scheduled Ansible convergence from the bastion host
-- Future static web hosting with automated TLS certificate management
-- CI validation workflows
-
-## Requirements
-
-- Ansible
-- AlmaLinux 10 target servers
-- DigitalOcean infrastructure provisioned separately
-- SSH public key for administrative access
-- Bootstrap variables supplied during first-boot provisioning
-
-## Repository Structure
+## Repository Layout
 
 ```text
-docs/        Project and operational documentation
-playbooks/   Grayhaven Systems LLC Ansible playbooks
-roles/       Reusable Ansible roles used by the main site playbook
+files/       Runner scripts and systemd units installed by bootstrap
+inventory/   Dynamic inventory configuration for managed DigitalOcean droplets
+playbooks/   Bootstrap and full-site Ansible playbooks
+roles/       Reusable roles used by the full-site playbook
+docs/        Architecture and operations documentation
 ```
 
-## Status
+## Validation
 
-Project initialization in progress.
+Run the same checks locally before opening a pull request:
+
+```bash
+yamllint .
+ansible-lint .
+ansible-playbook -i localhost, --connection=local --syntax-check playbooks/bootstrap.yml
+ansible-playbook -i localhost, --connection=local --syntax-check playbooks/site.yml
+markdownlint-cli2 '**/*.md'
+```
+
+Deployment validation is performed from the OpenTofu repository with the normal
+`tofu apply` workflow.
