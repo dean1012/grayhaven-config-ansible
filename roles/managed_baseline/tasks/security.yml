@@ -1,0 +1,58 @@
+---
+- name: Check current SELinux enforcement mode
+  ansible.builtin.command:
+    cmd: getenforce
+  register: managed_baseline_getenforce
+  changed_when: false
+  failed_when: managed_baseline_getenforce.rc not in [0, 1]
+
+- name: Set SELinux enforcing mode immediately when available
+  ansible.builtin.command:
+    cmd: setenforce 1
+  register: managed_baseline_setenforce
+  changed_when: true
+  failed_when: managed_baseline_setenforce.rc not in [0, 1]
+  when:
+    - ansible_facts.selinux.status | default("disabled") != "disabled"
+    - managed_baseline_getenforce.stdout != "Enforcing"
+
+- name: Persist SELinux enforcing mode
+  ansible.builtin.lineinfile:
+    path: /etc/selinux/config
+    regexp: "^SELINUX="
+    line: SELINUX=enforcing
+    create: false
+    mode: "0644"
+
+- name: Install SSH hardening drop-in
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-grayhaven-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PubkeyAuthentication yes
+  notify: Restart sshd
+
+- name: Enable and start SSH daemon
+  ansible.builtin.service:
+    name: sshd
+    state: started
+    enabled: true
+
+- name: Enable and start fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true
+
+- name: Enforce Quad9 DNS resolvers
+  ansible.builtin.template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
+    owner: root
+    group: root
+    mode: "0644"

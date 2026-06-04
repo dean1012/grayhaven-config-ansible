@@ -1,0 +1,12 @@
+pool {{ managed_baseline_ntp_pool }} iburst
+
+sourcedir /run/chrony-dhcp
+
+driftfile /var/lib/chrony/drift
+makestep 1.0 3
+rtcsync
+
+keyfile /etc/chrony.keys
+ntsdumpdir /var/lib/chrony
+leapsectz right/UTC
+logdir /var/log/chrony

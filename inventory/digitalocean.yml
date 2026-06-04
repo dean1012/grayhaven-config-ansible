@@ -20,6 +20,16 @@ compose:
     "127.0.0.1"
     if "role-bastion" in do_tags
     else (networks.v4 | selectattr("type", "eq", "private") | map(attribute="ip_address") | first)
+  grayhaven_private_ipv4: >-
+    networks.v4 | selectattr("type", "eq", "private") | map(attribute="ip_address") | first
+  grayhaven_public_ipv4: >-
+    networks.v4 | selectattr("type", "eq", "public") | map(attribute="ip_address") | first
+  grayhaven_role: >-
+    "bastion"
+    if "role-bastion" in do_tags
+    else "web"
+    if "role-web" in do_tags
+    else "unknown"
   ansible_python_interpreter: '"/usr/bin/python3"'
   ansible_ssh_common_args: '"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"'
   ansible_ssh_private_key_file: '"/home/ansible/.ssh/id_ed25519"'

@@ -1,0 +1,38 @@
+---
+- name: Check current system timezone
+  ansible.builtin.command:
+    cmd: timedatectl show --property=Timezone --value
+  register: managed_baseline_current_timezone
+  changed_when: false
+
+- name: Set system timezone
+  ansible.builtin.command:
+    cmd: "timedatectl set-timezone {{ managed_baseline_timezone }}"
+  changed_when: true
+  when: managed_baseline_current_timezone.stdout != managed_baseline_timezone
+
+- name: Configure chrony
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart chronyd
+
+- name: Enable and start chronyd
+  ansible.builtin.service:
+    name: chronyd
+    state: started
+    enabled: true
+
+- name: Check whether a reboot is required
+  ansible.builtin.command:
+    cmd: needs-restarting -r
+  register: managed_baseline_reboot_check
+  changed_when: false
+  failed_when: managed_baseline_reboot_check.rc not in [0, 1]
+
+- name: Record reboot requirement fact
+  ansible.builtin.set_fact:
+    managed_baseline_reboot_required: "{{ managed_baseline_reboot_check.rc == 1 }}"

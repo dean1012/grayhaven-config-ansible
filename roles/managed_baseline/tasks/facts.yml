@@ -1,0 +1,56 @@
+---
+- name: Build managed host metadata from inventory
+  ansible.builtin.set_fact:
+    managed_baseline_hosts: "{{ managed_baseline_hosts | default([]) + [managed_baseline_host_entry] }}"
+  vars:
+    managed_baseline_host_role: >-
+      {{
+        'bastion'
+        if 'role-bastion' in (hostvars[item].do_tags | default([]))
+        else 'web'
+        if 'role-web' in (hostvars[item].do_tags | default([]))
+        else 'unknown'
+      }}
+    managed_baseline_host_private_ip: >-
+      {{
+        hostvars[item].grayhaven_private_ipv4
+        | default(
+            hostvars[item].networks.v4
+            | default([])
+            | selectattr('type', 'eq', 'private')
+            | map(attribute='ip_address')
+            | first
+          )
+      }}
+    managed_baseline_host_entry:
+      inventory_name: "{{ item }}"
+      fqdn: "{{ hostvars[item].inventory_hostname | default(item) }}"
+      private_ip: "{{ managed_baseline_host_private_ip }}"
+      role: "{{ managed_baseline_host_role }}"
+      short_alias: "{{ managed_baseline_host_role }}-01"
+      host_alias: "{{ (hostvars[item].inventory_hostname | default(item)).split('.')[0] }}"
+      internal_alias: "{{ managed_baseline_host_role }}-01.internal"
+  loop: "{{ ansible_play_hosts_all }}"
+  when: managed_baseline_host_role != "unknown"
+
+- name: Derive bastion private source addresses
+  ansible.builtin.set_fact:
+    managed_baseline_bastion_private_sources: >-
+      {{
+        managed_baseline_hosts
+        | default([])
+        | selectattr('role', 'equalto', 'bastion')
+        | map(attribute='private_ip')
+        | select('defined')
+        | select('string')
+        | list
+      }}
+
+- name: Fall back to VPC CIDR when bastion private address is unavailable
+  ansible.builtin.set_fact:
+    managed_baseline_web_ssh_sources: >-
+      {{
+        managed_baseline_bastion_private_sources
+        if (managed_baseline_bastion_private_sources | length > 0)
+        else [managed_baseline_fallback_vpc_cidr]
+      }}

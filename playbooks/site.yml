@@ -2,6 +2,18 @@
 - name: Apply Grayhaven base configuration
   hosts: all
   become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Wait for managed hosts to accept Ansible connections
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        sleep: 10
+        timeout: 300
+
+    - name: Gather facts after managed hosts are reachable
+      ansible.builtin.setup:
 
   roles:
+    - managed_baseline
     - admin_access
