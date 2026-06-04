@@ -1,0 +1,208 @@
+:root {
+  --color-deep-graphite: #1c1f24;
+  --color-gunmetal: #2a2f36;
+  --color-slate-grey: #353b44;
+  --color-soft-white: #e6eaf0;
+  --color-cool-grey: #aab2bf;
+  --color-primary-accent: #58ace0;
+  --color-standard-hover: #65b7e6;
+  --color-elevated-hover: #74c3ec;
+  --color-heading-1: #74c3ec;
+  --color-pale-steel: #bbc7d3;
+  --color-heading-2: #bbc7d3;
+  --color-heading-3: #aab2bf;
+  --color-muted-deep-accent: #2e8bc0;
+  --color-charcoal-border: #444c56;
+  --color-dark-logo-charcoal: #2b333b;
+  --color-muted-emerald: #3fb68b;
+  --alert-info: #58ace0;
+  --alert-success: #3fb68b;
+  --alert-attention: #c9973a;
+  --alert-failure: #d64545;
+  --shadow-soft: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  color-scheme: dark;
+  background: var(--color-deep-graphite);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: var(--color-soft-white);
+  background:
+    radial-gradient(circle at 50% 12%, rgba(88, 172, 224, 0.14), transparent 34rem),
+    linear-gradient(145deg, #1c1f24 0%, #22262c 48%, #191c21 100%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+a {
+  color: var(--color-primary-accent);
+  padding: 0.08rem 0.16rem;
+  text-decoration: none;
+  border-radius: 4px;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+a:hover,
+a:focus-visible {
+  color: var(--color-standard-hover);
+  background: rgba(101, 183, 230, 0.1);
+}
+
+.site-shell {
+  position: relative;
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 2rem;
+  overflow: hidden;
+}
+
+.content-panel {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 44rem);
+  padding: clamp(2rem, 6vw, 4rem);
+  text-align: center;
+  background:
+    linear-gradient(180deg, rgba(42, 47, 54, 0.94), rgba(34, 38, 44, 0.9)),
+    var(--color-gunmetal);
+  border: 1px solid rgba(68, 76, 86, 0.72);
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+}
+
+.logo-heading {
+  margin: 0;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+h1 {
+  margin: 0 0 2.4rem;
+  color: var(--color-heading-1);
+  font-size: clamp(2.5rem, 7vw, 4.5rem);
+  line-height: 1;
+}
+
+h2 {
+  margin-top: 1.8rem;
+  color: var(--color-heading-2);
+  font-size: clamp(1.7rem, 4vw, 2.4rem);
+  line-height: 1.1;
+}
+
+h3 {
+  margin-top: 1.3rem;
+  color: var(--color-heading-3);
+  font-size: clamp(1.15rem, 3vw, 1.45rem);
+  line-height: 1.2;
+}
+
+p {
+  margin: 1.1rem 0 0;
+  color: var(--color-cool-grey);
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.brand-logo {
+  display: block;
+  width: min(100%, 30rem);
+  height: auto;
+  margin: 0 auto;
+}
+
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.68rem 0.9rem;
+  color: var(--color-soft-white);
+  background: rgba(28, 31, 36, 0.34);
+  border: 1px solid rgba(68, 76, 86, 0.9);
+  border-radius: 8px;
+}
+
+.link-button:hover,
+.link-button:focus-visible {
+  color: var(--color-soft-white);
+  background: rgba(101, 183, 230, 0.12);
+  border-color: rgba(101, 183, 230, 0.62);
+}
+
+.link-button-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 0.52rem;
+  fill: currentColor;
+  flex: 0 0 auto;
+}
+
+.dev-footer {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 2;
+  color: var(--color-cool-grey);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 40rem) {
+  .site-shell {
+    padding: 1rem;
+  }
+
+  .content-panel {
+    padding: 1.6rem;
+  }
+
+  .brand-logo {
+    margin-bottom: 1.4rem;
+  }
+
+  .link-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .link-button {
+    justify-content: center;
+  }
+
+  .dev-footer {
+    right: 0;
+    bottom: 0.7rem;
+    left: 0;
+    text-align: center;
+  }
+}
