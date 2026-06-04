@@ -70,6 +70,41 @@
       ansible.builtin.hostname:
         name: "{{ grayhaven_hostname }}"
 
+    - name: Check active swap devices
+      ansible.builtin.command:
+        cmd: swapon --show=NAME --noheadings
+      register: grayhaven_bootstrap_active_swap
+      changed_when: false
+
+    - name: Create bootstrap swapfile
+      ansible.builtin.command:
+        cmd: fallocate -l 1G /swapfile
+        creates: /swapfile
+
+    - name: Secure bootstrap swapfile permissions
+      ansible.builtin.file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Format bootstrap swapfile
+      ansible.builtin.command:
+        cmd: mkswap /swapfile
+      when: "'/swapfile' not in grayhaven_bootstrap_active_swap.stdout_lines"
+
+    - name: Enable bootstrap swapfile
+      ansible.builtin.command:
+        cmd: swapon /swapfile
+      when: "'/swapfile' not in grayhaven_bootstrap_active_swap.stdout_lines"
+
+    - name: Persist bootstrap swapfile
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '^/swapfile\s+'
+        line: /swapfile none swap sw 0 0
+        state: present
+
     - name: Create ansible automation user
       ansible.builtin.user:
         name: ansible
@@ -158,6 +193,18 @@
       when: grayhaven_role == "bastion"
       no_log: true
 
+    - name: Store managed baseline vars on bastion hosts
+      ansible.builtin.copy:
+        dest: /etc/grayhaven/ansible/secrets/managed-baseline.yml
+        owner: root
+        group: ansible
+        mode: "0640"
+        content: |
+          managed_baseline_root_password_hash: {{ grayhaven_root_password_hash | to_json }}
+          managed_baseline_config_repo_ref: {{ grayhaven_config_repo_ref | to_json }}
+      when: grayhaven_role == "bastion"
+      no_log: true
+
     - name: Store dev HTTP basic auth htpasswd entry on web hosts
       ansible.builtin.copy:
         dest: /etc/grayhaven/ansible/secrets/dev-basic-auth-htpasswd
@@ -209,11 +256,6 @@
     - name: Remove DigitalOcean Droplet agent log directory
       ansible.builtin.file:
         path: /var/log/droplet-agent
-        state: absent
-
-    - name: Remove bootstrap handoff directory
-      ansible.builtin.file:
-        path: /etc/grayhaven/bootstrap
         state: absent
 
     - name: Install bastion runner OS dependencies

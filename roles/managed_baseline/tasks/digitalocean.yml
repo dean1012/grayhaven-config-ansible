@@ -1,0 +1,36 @@
+---
+- name: Stop and disable DigitalOcean Droplet agent
+  ansible.builtin.service:
+    name: droplet-agent
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Remove DigitalOcean Droplet agent package
+  ansible.builtin.dnf:
+    name: droplet-agent
+    state: absent
+
+- name: Remove DigitalOcean Droplet agent state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/droplet-agent
+    - /var/log/droplet-agent
+
+- name: Gather service facts for DigitalOcean metrics agent
+  ansible.builtin.service_facts:
+
+- name: Install DigitalOcean metrics agent when missing
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && curl -sSL https://repos.insights.digitalocean.com/install.sh | bash"
+    executable: /bin/bash
+  changed_when: true
+  when: "'do-agent.service' not in ansible_facts.services"
+
+- name: Enable and start DigitalOcean metrics agent
+  ansible.builtin.service:
+    name: do-agent
+    state: started
+    enabled: true

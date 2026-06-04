@@ -5,7 +5,10 @@ LOCK_FILE="/run/grayhaven-ansible-runner.lock"
 RUNNER_ENV="/etc/grayhaven/ansible/runner.env"
 DO_TOKEN_ENV="/etc/grayhaven/ansible/secrets/do-api-token.env"
 ADMIN_ACCESS_VARS="/etc/grayhaven/ansible/secrets/admin-access.yml"
+MANAGED_BASELINE_VARS="/etc/grayhaven/ansible/secrets/managed-baseline.yml"
+RUNNER_VARS="/run/grayhaven-ansible-runner-vars.yml"
 ANSIBLE_HOME="/home/ansible"
+ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 CHECKOUT_PARENT="${ANSIBLE_HOME}"
 DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
 DEFAULT_REPO_URL="https://github.com/dean1012/grayhaven-config-ansible.git"
@@ -54,6 +57,8 @@ main() {
   require_file "$RUNNER_ENV"
   require_file "$DO_TOKEN_ENV"
   require_file "$ADMIN_ACCESS_VARS"
+  require_file "$MANAGED_BASELINE_VARS"
+  require_file "$ANSIBLE_CONTROL_PRIVATE_KEY"
 
   # shellcheck disable=SC1090
   source "$RUNNER_ENV"
@@ -78,12 +83,34 @@ main() {
   chown -R ansible:ansible "$CHECKOUT_DIR"
   checkout_ref "$REPO_REF"
 
-  log "Installing pip-managed Ansible runtime."
-  /usr/bin/python3 -m pip install --upgrade ansible-core
+  log "Preparing runtime variables derived from local control state."
+  ANSIBLE_CONTROL_PUBLIC_KEY="$(ssh-keygen -y -f "$ANSIBLE_CONTROL_PRIVATE_KEY")"
+  export ANSIBLE_CONTROL_PUBLIC_KEY
+  /usr/bin/python3 - <<'PY' > "$RUNNER_VARS"
+import json
+import os
+
+print(
+    "managed_baseline_ansible_control_public_key: "
+    + json.dumps(os.environ["ANSIBLE_CONTROL_PUBLIC_KEY"])
+)
+PY
+
+  log "Ensuring pip-managed Ansible runtime is available."
+  /usr/bin/python3 -m pip install --upgrade --root-user-action=ignore pip
+  if ! /usr/local/bin/ansible --version 2>/dev/null | head -n 1 | grep -q "core 2.21.0"; then
+    /usr/bin/python3 -m pip install \
+      --upgrade \
+      --ignore-installed \
+      --root-user-action=ignore \
+      ansible-core==2.21.0
+  fi
   /usr/local/bin/ansible --version
 
   log "Installing pinned Python dependencies."
-  /usr/bin/python3 -m pip install --requirement "${CHECKOUT_DIR}/pip3_requirements.txt"
+  /usr/bin/python3 -m pip install \
+    --root-user-action=ignore \
+    --requirement "${CHECKOUT_DIR}/pip3_requirements.txt"
 
   log "Installing pinned Ansible Galaxy collections."
   /usr/local/bin/ansible-galaxy collection install \
@@ -94,6 +121,8 @@ main() {
   /usr/local/bin/ansible-playbook \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/site.yml" \
+    --extra-vars "@${MANAGED_BASELINE_VARS}" \
+    --extra-vars "@${RUNNER_VARS}" \
     --extra-vars "@${ADMIN_ACCESS_VARS}"
 }
 

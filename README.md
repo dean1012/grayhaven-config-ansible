@@ -16,10 +16,12 @@ Ansible playbook on a recurring schedule.
 - Persist only role-specific runtime secrets needed after bootstrap.
 - Run full Ansible convergence from the bastion host.
 - Manage the initial `jsmith` administrative account on all managed hosts.
+- Enforce a shared managed-host baseline for access, SSH, SELinux, time sync,
+  package state, DigitalOcean agents, firewalld, and local host aliases.
 - Validate Ansible, YAML, and Markdown through GitHub Actions.
 
-The web server configuration is intentionally minimal while the bootstrap and
-handoff workflow is being stabilized.
+The web server currently serves temporary static placeholder assets while the
+configuration workflow is being expanded.
 
 ## Documentation
 
@@ -30,6 +32,8 @@ handoff workflow is being stabilized.
 
 ```text
 files/       Runner scripts and systemd units installed by bootstrap
+files/static-sites/
+             Temporary placeholder website assets deployed by web roles
 inventory/   Dynamic inventory configuration for managed DigitalOcean droplets
 playbooks/   Bootstrap and full-site Ansible playbooks
 roles/       Reusable roles used by the full-site playbook

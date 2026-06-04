@@ -1,0 +1,65 @@
+---
+- name: Set root password hash
+  ansible.builtin.user:
+    name: root
+    password: "{{ managed_baseline_root_password_hash }}"
+  no_log: true
+
+- name: Remove root authorized SSH keys
+  ansible.builtin.file:
+    path: /root/.ssh/authorized_keys
+    state: absent
+
+- name: Create ansible automation user
+  ansible.builtin.user:
+    name: ansible
+    comment: Grayhaven Systems LLC automation user
+    create_home: true
+    shell: /bin/bash
+    password_lock: true
+    state: present
+
+- name: Grant ansible passwordless sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/ansible
+    owner: root
+    group: root
+    mode: "0440"
+    content: |
+      ansible ALL=(ALL) NOPASSWD: ALL
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Create ansible SSH directory
+  ansible.builtin.file:
+    path: /home/ansible/.ssh
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0700"
+
+- name: Enforce ansible private key permissions on bastion hosts
+  ansible.builtin.file:
+    path: /home/ansible/.ssh/id_ed25519
+    state: file
+    owner: ansible
+    group: ansible
+    mode: "0600"
+  when: grayhaven_role == "bastion"
+
+- name: Install derived ansible public key on bastion hosts
+  ansible.builtin.copy:
+    dest: /home/ansible/.ssh/id_ed25519.pub
+    owner: ansible
+    group: ansible
+    mode: "0644"
+    content: "{{ managed_baseline_ansible_control_public_key | trim }}\n"
+  when: grayhaven_role == "bastion"
+
+- name: Install ansible authorized key on non-bastion hosts
+  ansible.builtin.copy:
+    dest: /home/ansible/.ssh/authorized_keys
+    owner: ansible
+    group: ansible
+    mode: "0600"
+    content: "{{ managed_baseline_ansible_control_public_key | trim }}\n"
+  when: grayhaven_role != "bastion"

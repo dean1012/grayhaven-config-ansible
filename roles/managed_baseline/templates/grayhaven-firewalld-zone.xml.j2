@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="DROP">
+  <short>Grayhaven managed inbound policy</short>
+  <description>Inbound rules managed by Ansible to mirror the OpenTofu firewall policy.</description>
+
+{% if grayhaven_role == "bastion" %}
+  <port protocol="tcp" port="22"/>
+{% elif grayhaven_role == "web" %}
+{% for source in managed_baseline_web_ssh_sources %}
+  <rule family="ipv4">
+    <source address="{{ source }}"/>
+    <port protocol="tcp" port="22"/>
+    <accept/>
+  </rule>
+{% endfor %}
+  <port protocol="tcp" port="80"/>
+  <port protocol="tcp" port="443"/>
+{% endif %}
+</zone>

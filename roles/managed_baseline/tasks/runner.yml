@@ -1,0 +1,57 @@
+---
+- name: Store bastion runner environment
+  ansible.builtin.copy:
+    dest: /etc/grayhaven/ansible/runner.env
+    owner: root
+    group: ansible
+    mode: "0640"
+    content: |
+      REPO_URL="{{ managed_baseline_runner_repo_url }}"
+      REPO_REF="{{ managed_baseline_config_repo_ref | default('main') }}"
+      CHECKOUT_DIR="{{ managed_baseline_runner_checkout_dir }}"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion runner executable
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/grayhaven-ansible-runner"
+    dest: /usr/local/sbin/grayhaven-ansible-runner
+    owner: root
+    group: root
+    mode: "0755"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion runner service unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.service"
+    dest: /etc/systemd/system/grayhaven-ansible-runner.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion runner timer unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.timer"
+    dest: /etc/systemd/system/grayhaven-ansible-runner.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: grayhaven_role == "bastion"
+
+- name: Enable bastion runner timer
+  ansible.builtin.systemd_service:
+    name: grayhaven-ansible-runner.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: grayhaven_role == "bastion"
+
+- name: Remove bastion runner from non-bastion hosts
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/sbin/grayhaven-ansible-runner
+    - /etc/systemd/system/grayhaven-ansible-runner.service
+    - /etc/systemd/system/grayhaven-ansible-runner.timer
+  when: grayhaven_role != "bastion"

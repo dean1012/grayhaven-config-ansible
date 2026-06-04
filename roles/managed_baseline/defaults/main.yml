@@ -1,0 +1,50 @@
+---
+managed_baseline_environment: prod
+managed_baseline_timezone: America/Chicago
+managed_baseline_ntp_pool: 2.almalinux.pool.ntp.org
+managed_baseline_ansible_core_version: 2.21.0
+managed_baseline_swapfile_path: /swapfile
+managed_baseline_swapfile_size: 1G
+
+managed_baseline_admin_packages:
+  - bind-utils
+  - epel-release
+  - python3
+  - python3-pip
+  - setroubleshoot-server
+  - tmux
+  - vim
+
+managed_baseline_required_packages:
+  - chrony
+  - curl
+  - fail2ban
+  - firewalld
+  - git
+  - openssh-server
+  - yum-utils
+
+managed_baseline_unneeded_packages:
+  - avahi
+  - bluez
+  - cups
+  - nfs-utils
+  - rpcbind
+  - samba
+
+managed_baseline_unneeded_services:
+  - avahi-daemon
+  - bluetooth
+  - cups
+  - nfs-server
+  - rpcbind
+  - smb
+
+managed_baseline_quad9_resolvers:
+  - 9.9.9.9
+  - 149.112.112.112
+
+managed_baseline_fallback_vpc_cidr: 10.10.0.0/16
+
+managed_baseline_runner_checkout_dir: /home/ansible/grayhaven-config-ansible
+managed_baseline_runner_repo_url: https://github.com/dean1012/grayhaven-config-ansible.git

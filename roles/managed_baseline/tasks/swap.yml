@@ -1,0 +1,35 @@
+---
+- name: Check active swap devices
+  ansible.builtin.command:
+    cmd: swapon --show=NAME --noheadings
+  register: managed_baseline_active_swap
+  changed_when: false
+
+- name: Create managed swapfile
+  ansible.builtin.command:
+    cmd: "fallocate -l {{ managed_baseline_swapfile_size }} {{ managed_baseline_swapfile_path }}"
+    creates: "{{ managed_baseline_swapfile_path }}"
+
+- name: Secure managed swapfile permissions
+  ansible.builtin.file:
+    path: "{{ managed_baseline_swapfile_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Format managed swapfile
+  ansible.builtin.command:
+    cmd: "mkswap {{ managed_baseline_swapfile_path }}"
+  when: managed_baseline_swapfile_path not in managed_baseline_active_swap.stdout_lines
+
+- name: Enable managed swapfile
+  ansible.builtin.command:
+    cmd: "swapon {{ managed_baseline_swapfile_path }}"
+  when: managed_baseline_swapfile_path not in managed_baseline_active_swap.stdout_lines
+
+- name: Persist managed swapfile
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "^{{ managed_baseline_swapfile_path | regex_escape }}\\s+"
+    line: "{{ managed_baseline_swapfile_path }} none swap sw 0 0"
+    state: present

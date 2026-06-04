@@ -1,0 +1,72 @@
+---
+- name: Update installed operating system packages
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    update_only: true
+
+- name: Install EPEL release package
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+
+- name: Install baseline administration packages
+  ansible.builtin.dnf:
+    name: "{{ managed_baseline_admin_packages + managed_baseline_required_packages }}"
+    state: present
+
+- name: Upgrade pip
+  ansible.builtin.command:
+    cmd: /usr/bin/python3 -m pip install --upgrade --root-user-action=ignore pip
+  register: managed_baseline_pip_upgrade
+  changed_when: "'Successfully installed' in managed_baseline_pip_upgrade.stdout"
+
+- name: Check installed Ansible runtime on bastion hosts
+  ansible.builtin.command:
+    cmd: /usr/local/bin/ansible --version
+  register: managed_baseline_ansible_version
+  changed_when: false
+  failed_when: false
+  when: grayhaven_role == "bastion"
+
+- name: Install pinned Ansible runtime on bastion hosts
+  ansible.builtin.command:
+    cmd: >-
+      /usr/bin/python3 -m pip install --upgrade --ignore-installed
+      --root-user-action=ignore
+      ansible-core=={{ managed_baseline_ansible_core_version }}
+  register: managed_baseline_ansible_install
+  changed_when: "'Successfully installed' in managed_baseline_ansible_install.stdout"
+  when:
+    - grayhaven_role == "bastion"
+    - >-
+      managed_baseline_ansible_version.rc != 0 or
+      ("core " ~ managed_baseline_ansible_core_version) not in
+      managed_baseline_ansible_version.stdout | default("")
+
+- name: Remove RPM-managed Ansible runtime from non-bastion hosts
+  ansible.builtin.dnf:
+    name:
+      - ansible-core
+    state: absent
+  when: grayhaven_role != "bastion"
+
+- name: Remove pip-managed Ansible runtime from non-bastion hosts
+  ansible.builtin.command:
+    cmd: /usr/bin/python3 -m pip uninstall --yes ansible ansible-core
+  register: managed_baseline_ansible_uninstall
+  changed_when: "'Successfully uninstalled' in managed_baseline_ansible_uninstall.stdout"
+  when: grayhaven_role != "bastion"
+
+- name: Stop and disable unnecessary services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  failed_when: false
+  loop: "{{ managed_baseline_unneeded_services }}"
+
+- name: Remove unnecessary packages
+  ansible.builtin.dnf:
+    name: "{{ managed_baseline_unneeded_packages }}"
+    state: absent

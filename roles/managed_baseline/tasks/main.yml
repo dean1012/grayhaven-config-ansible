@@ -1,0 +1,43 @@
+---
+- name: Validate managed baseline variables
+  ansible.builtin.assert:
+    that:
+      - grayhaven_role is defined
+      - grayhaven_role is string
+      - grayhaven_role in ["bastion", "web"]
+      - managed_baseline_root_password_hash is defined
+      - managed_baseline_root_password_hash is string
+      - managed_baseline_root_password_hash | trim | length > 0
+    fail_msg: "Required managed baseline variables were not provided."
+    quiet: true
+  no_log: true
+
+- name: Derive managed baseline inventory facts
+  ansible.builtin.import_tasks: facts.yml
+
+- name: Enforce memory safety net
+  ansible.builtin.import_tasks: swap.yml
+
+- name: Enforce baseline operating system packages
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Enforce local users and privileged access
+  ansible.builtin.import_tasks: users.yml
+
+- name: Enforce host identity and local name resolution
+  ansible.builtin.import_tasks: identity.yml
+
+- name: Enforce host security controls
+  ansible.builtin.import_tasks: security.yml
+
+- name: Enforce system time configuration
+  ansible.builtin.import_tasks: time.yml
+
+- name: Enforce software firewall
+  ansible.builtin.import_tasks: firewall.yml
+
+- name: Enforce DigitalOcean agents
+  ansible.builtin.import_tasks: digitalocean.yml
+
+- name: Enforce bastion runner installation
+  ansible.builtin.import_tasks: runner.yml

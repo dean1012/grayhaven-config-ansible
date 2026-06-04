@@ -42,6 +42,31 @@ After deployment, confirm:
 - `jsmith` exists on all managed hosts;
 - SSH reaches bastion as `jsmith`;
 - SSH reaches other managed hosts through bastion over private IPv4.
+- SELinux is enforcing on all managed hosts;
+- firewalld is enabled and enforcing the expected inbound policy;
+- the DigitalOcean metrics agent is enabled and the Droplet console agent is
+  absent.
+
+## Managed Baseline
+
+The full playbook enforces the shared managed baseline on every host targeted
+by the dynamic inventory. This includes:
+
+- root account password hash and removal of root SSH authorized keys;
+- `ansible` automation user, sudo policy, and SSH key material;
+- administrative `jsmith` access;
+- SSH daemon hardening for public-key-only access;
+- SELinux enforcing mode;
+- common administration packages and removal of unnecessary network services;
+- a small managed swapfile for first-run and ongoing package-management
+  stability on constrained hosts;
+- Quad9 DNS resolvers;
+- AlmaLinux time synchronization;
+- firewalld inbound rules aligned with OpenTofu firewall intent;
+- local host aliases such as `web-01` and `web-01.internal`.
+
+The playbook records whether a reboot is required, but it does not reboot
+servers automatically.
 
 ## Local Repository Checks
 

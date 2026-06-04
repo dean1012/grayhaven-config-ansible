@@ -1,0 +1,36 @@
+---
+- name: Install Grayhaven firewalld zone
+  ansible.builtin.template:
+    src: grayhaven-firewalld-zone.xml.j2
+    dest: /etc/firewalld/zones/grayhaven.xml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload firewalld
+
+- name: Set Grayhaven as the configured default firewalld zone
+  ansible.builtin.lineinfile:
+    path: /etc/firewalld/firewalld.conf
+    regexp: '^DefaultZone='
+    line: DefaultZone=grayhaven
+    state: present
+  notify: Reload firewalld
+
+- name: Enable and start firewalld without blocking SSH convergence
+  ansible.builtin.systemd_service:
+    name: firewalld
+    state: started
+    enabled: true
+    no_block: true
+
+- name: Wait for firewalld to become active
+  ansible.builtin.command:
+    cmd: systemctl is-active firewalld
+  register: managed_baseline_firewalld_active
+  changed_when: false
+  retries: 10
+  delay: 3
+  until: managed_baseline_firewalld_active.stdout == "active"
+
+- name: Reload firewalld after zone changes
+  ansible.builtin.meta: flush_handlers

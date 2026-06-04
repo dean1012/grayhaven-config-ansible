@@ -14,11 +14,14 @@ The bootstrap playbook prepares the host for management:
 
 - validates required handoff variables early;
 - sets the system hostname;
+- creates a small swapfile so first-run package and runner operations remain
+  stable on the intentionally small bastion host;
 - creates the password-locked `ansible` automation user;
 - grants the `ansible` user passwordless sudo;
 - installs only the SSH material needed by the host role;
 - persists only the runtime secrets needed after bootstrap;
-- removes the temporary bootstrap handoff directory.
+- keeps the bootstrap handoff directory available for auditability and
+  troubleshooting during the current bootstrap model.
 
 On bastion hosts, bootstrap also installs the full-playbook runner and enables
 its systemd timer.
@@ -34,6 +37,12 @@ Dynamic inventory targets DigitalOcean droplets tagged
 `configured-by-ansible`. Bastion hosts use a local Ansible connection. Other
 managed hosts are reached over the DigitalOcean private network as the
 `ansible` user.
+
+The full playbook enforces a common managed-host baseline before applying
+role-specific configuration. The baseline covers host identity, local
+administrative access, SSH hardening, SELinux enforcing mode, operating system
+package state, managed swap, time synchronization, DigitalOcean agent policy,
+software firewall rules, and local `/etc/hosts` aliases.
 
 ## Access Model
 
@@ -51,10 +60,12 @@ scheduled convergence from the bastion without depending on a human SSH agent.
 
 Bootstrap secrets are supplied at deployment time by OpenTofu variables and are
 rendered into cloud-init user-data. The bootstrap playbook then persists only
-the secrets required for ongoing operation and deletes the temporary handoff
-file.
+the secrets required for ongoing operation. The bootstrap handoff directory is
+kept available for auditability and troubleshooting during the current
+bootstrap model.
 
 This is an intentional tradeoff for the current single-command bootstrap model.
 The rendered user-data and encrypted local OpenTofu state may contain bootstrap
 secrets during provisioning. The repository never stores plaintext secrets,
-private keys, password hashes, API tokens, or generated deployment state.
+private keys, password hashes, API tokens, generated deployment state, client
+infrastructure data, or private operational state.
