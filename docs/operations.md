@@ -32,6 +32,14 @@ systemctl status grayhaven-ansible-runner.timer
 journalctl -u grayhaven-ansible-runner.service
 ```
 
+The runner sends a Discord failure notification when the full playbook exits
+unsuccessfully. The playbook sends Discord notifications when configuration
+starts and when configuration completes. Successful completion notifications use
+an attention state when the host requires a reboot.
+
+Discord webhook values are persisted as host-local secrets during bootstrap and
+are passed to the playbook at runtime. They are not stored in this repository.
+
 ## Validation Targets
 
 After deployment, confirm:

@@ -1,0 +1,40 @@
+---
+- name: Validate Discord notification variables
+  ansible.builtin.assert:
+    that:
+      - automation_notifications_discord_webhook_id is defined
+      - automation_notifications_discord_webhook_id is string
+      - automation_notifications_discord_webhook_id | trim | length > 0
+      - automation_notifications_discord_webhook_token is defined
+      - automation_notifications_discord_webhook_token is string
+      - automation_notifications_discord_webhook_token | trim | length > 0
+      - automation_notifications_title is defined
+      - automation_notifications_title is string
+      - automation_notifications_title | trim | length > 0
+      - automation_notifications_color is defined
+    fail_msg: "Required Discord notification variables were not provided."
+    quiet: true
+  no_log: true
+
+- name: Build local notification timestamp
+  ansible.builtin.command:
+    cmd: date '+%Y-%m-%d %I:%M %p'
+  environment:
+    TZ: "{{ automation_notifications_timezone }}"
+  register: automation_notifications_timestamp
+  changed_when: false
+
+- name: Send Discord automation notification
+  community.general.discord:
+    webhook_id: "{{ automation_notifications_discord_webhook_id }}"
+    webhook_token: "{{ automation_notifications_discord_webhook_token }}"
+    embeds:
+      - title: "{{ automation_notifications_title }}"
+        description: |-
+          {{ automation_notifications_target }}
+
+          Environment: {{ automation_notifications_environment }}
+          {{ automation_notifications_timestamp.stdout }}
+        color: "{{ automation_notifications_color }}"
+  changed_when: false
+  no_log: true

@@ -14,7 +14,70 @@
     - name: Gather facts after managed hosts are reachable
       ansible.builtin.setup:
 
+    - name: Build Discord notification target order
+      ansible.builtin.set_fact:
+        automation_notifications_targets: >-
+          {{
+            (
+              groups.get('tag_role_bastion', [])
+              | intersect(ansible_play_hosts_all)
+              | sort
+            )
+            + (
+              groups.get('tag_role_web', [])
+              | intersect(ansible_play_hosts_all)
+              | sort
+            )
+            + (
+              ansible_play_hosts_all
+              | difference(
+                  groups.get('tag_role_bastion', [])
+                  + groups.get('tag_role_web', [])
+                )
+              | sort
+            )
+          }}
+      run_once: true
+
+    - name: Notify Discord that configuration started
+      ansible.builtin.include_role:
+        name: automation_notifications
+      vars:
+        automation_notifications_target: "{{ automation_notifications_targets | join('\n') }}"
+        automation_notifications_title: Ansible Configuration Started
+        automation_notifications_color: "{{ automation_notifications_colors.info }}"
+      run_once: true
+
   roles:
     - managed_baseline
     - admin_access
     - web_static
+
+  post_tasks:
+    - name: Notify Discord that configuration completed
+      ansible.builtin.include_role:
+        name: automation_notifications
+      vars:
+        automation_notifications_reboot_required: >-
+          {{
+            ansible_play_hosts_all
+            | map('extract', hostvars, 'managed_baseline_reboot_required')
+            | select('defined')
+            | select('equalto', true)
+            | list
+            | length > 0
+          }}
+        automation_notifications_target: "{{ automation_notifications_targets | join('\n') }}"
+        automation_notifications_title: >-
+          {{
+            'Ansible Configuration Completed - Reboot Required'
+            if automation_notifications_reboot_required
+            else 'Ansible Configuration Completed'
+          }}
+        automation_notifications_color: >-
+          {{
+            automation_notifications_colors.warning
+            if automation_notifications_reboot_required
+            else automation_notifications_colors.success
+          }}
+      run_once: true
