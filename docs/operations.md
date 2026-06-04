@@ -45,7 +45,10 @@ After deployment, confirm:
 - SELinux is enforcing on all managed hosts;
 - firewalld is enabled and enforcing the expected inbound policy;
 - the DigitalOcean metrics agent is enabled and the Droplet console agent is
-  absent.
+  absent;
+- web hosts serve the apex, `www`, and `dev` hostnames over HTTPS;
+- `www` hostnames redirect to their apex domains;
+- `dev` hostnames require HTTP basic authentication.
 
 ## Managed Baseline
 
@@ -63,10 +66,39 @@ by the dynamic inventory. This includes:
 - Quad9 DNS resolvers;
 - AlmaLinux time synchronization;
 - firewalld inbound rules aligned with OpenTofu firewall intent;
-- local host aliases such as `web-01` and `web-01.internal`.
+- local host aliases such as `grayhaven-core-prod-web-01` and
+  `grayhaven-core-prod-web-01.internal`;
+- local Ansible facts at `/etc/ansible/facts.d/grayhaven.fact`.
 
 The playbook records whether a reboot is required, but it does not reboot
 servers automatically.
+
+## Static Website Hosting
+
+The web role installs Nginx, Certbot, and the DigitalOcean DNS validation
+plugin. It currently deploys temporary placeholder sites from
+`files/static-sites/` into `/var/www`.
+
+Managed hostnames:
+
+- `grayhavensystems.com`
+- `www.grayhavensystems.com`
+- `dev.grayhavensystems.com`
+- `jerry-smith.net`
+- `www.jerry-smith.net`
+- `dev.jerry-smith.net`
+
+Production hostnames redirect HTTP to HTTPS. `www` hostnames also redirect to
+the apex domain. Development hostnames redirect HTTP to HTTPS, keep the `dev`
+hostname, and require HTTP basic authentication.
+
+Certbot renewals are handled by the system timer installed by the Certbot
+package. A deploy hook reloads Nginx after certificate renewal.
+
+During rebuild-heavy testing, set `web_static_certbot_environment` to
+`staging` to exercise DNS-01 certificate issuance against the Let's Encrypt
+staging environment. Production deployments should leave this value at its
+default of `production`.
 
 ## Local Repository Checks
 

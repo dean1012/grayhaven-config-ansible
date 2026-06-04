@@ -44,6 +44,25 @@ administrative access, SSH hardening, SELinux enforcing mode, operating system
 package state, managed swap, time synchronization, DigitalOcean agent policy,
 software firewall rules, and local `/etc/hosts` aliases.
 
+Managed hosts also publish a local Ansible fact at
+`/etc/ansible/facts.d/grayhaven.fact`. This exposes the host role,
+environment, managed hostname, DigitalOcean tags, and known IPv4 addresses to
+local scripts and administrators without requiring direct DigitalOcean API
+access.
+
+## Web Hosting Phase
+
+Web hosts install Nginx and Certbot after the managed baseline converges. The
+current web role serves temporary static placeholder assets for
+`grayhavensystems.com` and `jerry-smith.net` while dedicated website
+repositories are still outside the scope of this configuration repository.
+
+Each public website is available at the apex domain and redirects its `www`
+alias back to the apex domain. Each `dev` hostname serves a separate
+development placeholder and is protected with HTTP basic authentication.
+Certificates are issued with Let's Encrypt through DNS-01 validation using the
+role-specific DigitalOcean DNS token persisted during bootstrap.
+
 ## Access Model
 
 Human administrative access and automation access are intentionally separate.

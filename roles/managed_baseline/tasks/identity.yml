@@ -11,6 +11,30 @@
     group: root
     mode: "0644"
 
+- name: Create local Ansible facts directory
+  ansible.builtin.file:
+    path: /etc/ansible/facts.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Publish Grayhaven local host facts
+  ansible.builtin.copy:
+    dest: /etc/ansible/facts.d/grayhaven.fact
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ managed_baseline_local_fact | to_nice_json }}\n"
+  vars:
+    managed_baseline_local_fact:
+      environment: "{{ managed_baseline_environment }}"
+      hostname: "{{ inventory_hostname }}"
+      role: "{{ grayhaven_role }}"
+      tags: "{{ do_tags | default([]) | sort }}"
+      private_ipv4: "{{ grayhaven_private_ipv4 | default('') }}"
+      public_ipv4: "{{ grayhaven_public_ipv4 | default('') }}"
+
 - name: Install login issue banner
   ansible.builtin.template:
     src: issue.j2

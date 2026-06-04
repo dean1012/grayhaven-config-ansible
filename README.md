@@ -18,10 +18,14 @@ Ansible playbook on a recurring schedule.
 - Manage the initial `jsmith` administrative account on all managed hosts.
 - Enforce a shared managed-host baseline for access, SSH, SELinux, time sync,
   package state, DigitalOcean agents, firewalld, and local host aliases.
+- Serve temporary static placeholders for the Grayhaven Systems LLC and
+  personal domains while dedicated website repositories are being prepared.
+- Manage Nginx, Let's Encrypt DNS-01 certificates, dev basic authentication,
+  and certificate renewal on web hosts.
 - Validate Ansible, YAML, and Markdown through GitHub Actions.
 
-The web server currently serves temporary static placeholder assets while the
-configuration workflow is being expanded.
+Client infrastructure, credentials, deployment data, private SSH keys, secrets,
+and operational state are not stored in this repository.
 
 ## Documentation
 

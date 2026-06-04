@@ -27,9 +27,7 @@
       fqdn: "{{ hostvars[item].inventory_hostname | default(item) }}"
       private_ip: "{{ managed_baseline_host_private_ip }}"
       role: "{{ managed_baseline_host_role }}"
-      short_alias: "{{ managed_baseline_host_role }}-01"
       host_alias: "{{ (hostvars[item].inventory_hostname | default(item)).split('.')[0] }}"
-      internal_alias: "{{ managed_baseline_host_role }}-01.internal"
   loop: "{{ ansible_play_hosts_all }}"
   when: managed_baseline_host_role != "unknown"
 

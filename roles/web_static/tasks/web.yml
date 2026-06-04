@@ -1,0 +1,195 @@
+---
+- name: Validate web static hosting variables
+  ansible.builtin.assert:
+    that:
+      - web_static_sites is iterable
+      - web_static_sites | length > 0
+      - web_static_certbot_email is string
+      - web_static_certbot_email | trim | length > 0
+      - web_static_certbot_environment in ["production", "staging"]
+    fail_msg: "Required web static hosting variables were not provided."
+    quiet: true
+
+- name: Install web hosting packages
+  ansible.builtin.dnf:
+    name: "{{ web_static_packages }}"
+    state: present
+
+- name: Create Certbot configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/letsencrypt
+    - /etc/letsencrypt/renewal-hooks
+    - /etc/letsencrypt/renewal-hooks/deploy
+
+- name: Verify persisted web secrets exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ web_static_certbot_dns_token_file }}"
+    - "{{ web_static_dev_htpasswd_source }}"
+  register: web_static_secret_stats
+  no_log: true
+
+- name: Fail if persisted web secrets are missing
+  ansible.builtin.assert:
+    that:
+      - web_static_secret_stats.results | map(attribute='stat.exists') | min
+    fail_msg: "Required persisted web secrets are missing."
+    quiet: true
+  no_log: true
+
+- name: Read DigitalOcean DNS token for Certbot
+  ansible.builtin.slurp:
+    src: "{{ web_static_certbot_dns_token_file }}"
+  register: web_static_dns_token
+  no_log: true
+
+- name: Install Certbot DigitalOcean credentials file
+  ansible.builtin.copy:
+    dest: "{{ web_static_certbot_credentials_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      dns_digitalocean_token = {{ web_static_dns_token.content | b64decode | trim }}
+  no_log: true
+
+- name: Install development basic-auth file for nginx
+  ansible.builtin.copy:
+    src: "{{ web_static_dev_htpasswd_source }}"
+    dest: "{{ web_static_dev_htpasswd_file }}"
+    owner: root
+    group: nginx
+    mode: "0640"
+    remote_src: true
+  no_log: true
+  notify: Reload nginx
+
+- name: Create static website directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ web_static_required_directories }}"
+  vars:
+    web_static_site_directories: >-
+      {{
+        web_static_sites
+        | map(attribute='domain')
+        | product(['prod', 'dev'])
+        | map('join', '/')
+        | map('regex_replace', '^', web_static_root ~ '/')
+        | list
+      }}
+    web_static_required_directories: "{{ [web_static_assets_root] + web_static_site_directories }}"
+
+- name: Deploy shared static website assets
+  ansible.builtin.copy:
+    src: "{{ web_static_source_root }}/assets/"
+    dest: "{{ web_static_assets_root }}/"
+    owner: root
+    group: root
+    directory_mode: "0755"
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Deploy temporary static website content
+  ansible.builtin.copy:
+    src: "{{ web_static_source_root }}/{{ item.0.domain }}/{{ item.1 }}/"
+    dest: "{{ web_static_root }}/{{ item.0.domain }}/{{ item.1 }}/"
+    owner: root
+    group: root
+    directory_mode: "0755"
+    mode: "0644"
+  loop: "{{ web_static_sites | product(['prod', 'dev']) | list }}"
+  loop_control:
+    label: "{{ item.0.domain }} {{ item.1 }}"
+  notify: Reload nginx
+
+- name: Restore SELinux contexts for static website content
+  ansible.builtin.command:
+    cmd: "restorecon -RFv {{ web_static_root }}"
+  register: web_static_restorecon
+  changed_when: web_static_restorecon.stdout | trim | length > 0
+
+- name: Issue or renew initial Let's Encrypt certificates
+  ansible.builtin.command:
+    argv: "{{ web_static_certbot_command }}"
+    creates: "/etc/letsencrypt/live/{{ item.cert_name }}/fullchain.pem"
+  vars:
+    web_static_certbot_domains: "{{ [item.domain] + item.aliases + [item.dev_domain] }}"
+    web_static_certbot_domain_args: >-
+      {{
+        web_static_certbot_domains
+        | map('regex_replace', '^', '-d ')
+        | join(' ')
+        | split(' ')
+      }}
+    web_static_certbot_command: >-
+      {{
+        [
+          'certbot',
+          'certonly',
+          '--non-interactive',
+          '--agree-tos',
+          '--email', web_static_certbot_email,
+          '--cert-name', item.cert_name,
+          '--dns-digitalocean',
+          '--dns-digitalocean-credentials', web_static_certbot_credentials_file,
+          '--dns-digitalocean-propagation-seconds', '30'
+        ]
+        + (['--test-cert'] if web_static_certbot_environment == 'staging' else [])
+        + web_static_certbot_domain_args
+      }}
+  loop: "{{ web_static_sites }}"
+  loop_control:
+    label: "{{ item.cert_name }}"
+  notify: Reload nginx
+
+- name: Install nginx static site configuration
+  ansible.builtin.template:
+    src: static-sites.conf.j2
+    dest: /etc/nginx/conf.d/grayhaven-static-sites.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Remove nginx default welcome configuration
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d/default.conf
+    state: absent
+  notify: Reload nginx
+
+- name: Install Certbot renewal deploy hook
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+
+      systemctl reload nginx
+
+- name: Enable Certbot renewal timer when present
+  ansible.builtin.systemd_service:
+    name: certbot-renew.timer
+    enabled: true
+    state: started
+  failed_when: false
+
+- name: Enable and start nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    enabled: true
+    state: started

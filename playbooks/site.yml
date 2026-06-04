@@ -17,3 +17,4 @@
   roles:
     - managed_baseline
     - admin_access
+    - web_static

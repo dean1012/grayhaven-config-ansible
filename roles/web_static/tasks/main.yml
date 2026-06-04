@@ -1,0 +1,4 @@
+---
+- name: Enforce static website hosting on web hosts
+  ansible.builtin.import_tasks: web.yml
+  when: grayhaven_role == "web"
