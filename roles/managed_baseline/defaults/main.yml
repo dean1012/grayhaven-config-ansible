@@ -7,6 +7,7 @@ managed_baseline_swapfile_path: /swapfile
 managed_baseline_swapfile_size: 1G
 
 managed_baseline_admin_packages:
+  - bash-completion
   - bind-utils
   - epel-release
   - python3

@@ -5,6 +5,6 @@
 {% set use_loopback = grayhaven_role == 'bastion' and managed_host.fqdn == inventory_hostname %}
 {% set host_ip = '127.0.0.1' if use_loopback else managed_host.private_ip %}
 {% if host_ip is defined and host_ip | string | length > 0 %}
-{{ host_ip }} {{ managed_host.short_alias }} {{ managed_host.short_alias }}.internal {{ managed_host.host_alias }} {{ managed_host.host_alias }}.internal
+{{ host_ip }} {{ managed_host.host_alias }} {{ managed_host.host_alias }}.internal
 {% endif %}
 {% endfor %}
