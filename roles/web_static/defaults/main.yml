@@ -5,7 +5,7 @@ web_static_assets_root: "{{ web_static_root }}/assets"
 web_static_source_root: "{{ playbook_dir }}/../files/static-sites"
 
 web_static_certbot_email: jsmith@grayhavensystems.com
-web_static_certbot_environment: production
+web_static_certbot_environment: staging
 web_static_certbot_credentials_file: /etc/letsencrypt/digitalocean.ini
 web_static_certbot_dns_token_file: /etc/grayhaven/ansible/secrets/digitalocean-dns-api-token
 web_static_dev_htpasswd_source: /etc/grayhaven/ansible/secrets/dev-basic-auth-htpasswd

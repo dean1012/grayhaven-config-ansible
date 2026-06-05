@@ -54,20 +54,45 @@
     - web_static
 
   post_tasks:
+    - name: Build Discord successful host target order
+      ansible.builtin.set_fact:
+        automation_notifications_success_targets: >-
+          {{
+            (
+              groups.get('tag_role_bastion', [])
+              | intersect(ansible_play_hosts)
+              | sort
+            )
+            + (
+              groups.get('tag_role_web', [])
+              | intersect(ansible_play_hosts)
+              | sort
+            )
+            + (
+              ansible_play_hosts
+              | difference(
+                  groups.get('tag_role_bastion', [])
+                  + groups.get('tag_role_web', [])
+                )
+              | sort
+            )
+          }}
+      run_once: true
+
     - name: Notify Discord that configuration completed
       ansible.builtin.include_role:
         name: automation_notifications
       vars:
         automation_notifications_reboot_required: >-
           {{
-            ansible_play_hosts_all
+            automation_notifications_success_targets
             | map('extract', hostvars, 'managed_baseline_reboot_required')
             | select('defined')
             | select('equalto', true)
             | list
             | length > 0
           }}
-        automation_notifications_target: "{{ automation_notifications_targets | join('\n') }}"
+        automation_notifications_target: "{{ automation_notifications_success_targets | join('\n') }}"
         automation_notifications_title: >-
           {{
             'Ansible Configuration Completed - Reboot Required'

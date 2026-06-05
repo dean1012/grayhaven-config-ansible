@@ -8,6 +8,7 @@ DISCORD_WEBHOOK_ENV="/etc/grayhaven/ansible/secrets/discord-webhook.env"
 ADMIN_ACCESS_VARS="/etc/grayhaven/ansible/secrets/admin-access.yml"
 MANAGED_BASELINE_VARS="/etc/grayhaven/ansible/secrets/managed-baseline.yml"
 RUNNER_VARS="/run/grayhaven-ansible-runner-vars.yml"
+RUNNER_PLAYBOOK_LOG="/run/grayhaven-ansible-runner-playbook.log"
 ANSIBLE_HOME="/home/ansible"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 CHECKOUT_PARENT="${ANSIBLE_HOME}"
@@ -21,6 +22,7 @@ log() {
 
 send_failure_notification() {
   local status="$1"
+  local failed_targets
 
   if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
     log "Discord webhook URL is unavailable; skipping failure notification."
@@ -28,7 +30,12 @@ send_failure_notification() {
   fi
 
   log "Sending Discord failure notification."
-  DISCORD_TARGET="$(hostname -f)"
+  failed_targets="$(failed_playbook_targets)"
+  if [[ -z "$failed_targets" ]]; then
+    failed_targets="Ansible playbook run"
+  fi
+
+  DISCORD_TARGET="$failed_targets"
   DISCORD_TIMESTAMP="$(TZ="${MANAGED_BASELINE_TIMEZONE:-America/Chicago}" date '+%Y-%m-%d %I:%M %p')"
   export DISCORD_TARGET DISCORD_TIMESTAMP
 
@@ -62,6 +69,44 @@ print(
 PY
 
   return "$status"
+}
+
+failed_playbook_targets() {
+  if [[ ! -f "$RUNNER_PLAYBOOK_LOG" ]]; then
+    return 0
+  fi
+
+  /usr/bin/python3 - "$RUNNER_PLAYBOOK_LOG" <<'PY'
+import re
+import sys
+
+failed_hosts = []
+recap_re = re.compile(r"^(?P<host>\S+)\s+:.*\bunreachable=(?P<unreachable>\d+).*failed=(?P<failed>\d+)")
+
+with open(sys.argv[1], encoding="utf-8", errors="replace") as log_file:
+    for line in log_file:
+        match = recap_re.search(line)
+        if not match:
+            continue
+
+        if int(match.group("unreachable")) > 0 or int(match.group("failed")) > 0:
+            failed_hosts.append(match.group("host"))
+
+failed_hosts = list(dict.fromkeys(failed_hosts))
+
+
+def host_order(host):
+    if "bastion" in host:
+        return (0, host)
+
+    if "web" in host:
+        return (1, host)
+
+    return (2, host)
+
+
+print("\n".join(sorted(failed_hosts, key=host_order)))
+PY
 }
 
 on_error() {
@@ -198,12 +243,13 @@ PY
     --force
 
   log "Running full site playbook."
+  rm -f "$RUNNER_PLAYBOOK_LOG"
   /usr/local/bin/ansible-playbook \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/site.yml" \
     --extra-vars "@${MANAGED_BASELINE_VARS}" \
     --extra-vars "@${RUNNER_VARS}" \
-    --extra-vars "@${ADMIN_ACCESS_VARS}"
+    --extra-vars "@${ADMIN_ACCESS_VARS}" 2>&1 | tee "$RUNNER_PLAYBOOK_LOG"
 }
 
 main "$@"
