@@ -19,6 +19,7 @@
           - grayhaven_environment is defined
           - grayhaven_environment is string
           - grayhaven_environment in ["staging", "prod"]
+          - grayhaven_certbot_environment is not defined or grayhaven_certbot_environment in ["staging", "production"]
           - grayhaven_config_repo_ref is defined
           - grayhaven_config_repo_ref is string
           - grayhaven_config_repo_ref | trim | length > 0
@@ -207,6 +208,7 @@
           managed_baseline_config_repo_ref: {{ grayhaven_config_repo_ref | to_json }}
           managed_baseline_environment: {{ grayhaven_environment | to_json }}
           web_static_environment: {{ grayhaven_environment | to_json }}
+          web_static_certbot_environment_override: {{ grayhaven_certbot_environment | default('') | to_json }}
       when: grayhaven_role == "bastion"
       no_log: true
 
