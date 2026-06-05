@@ -50,9 +50,9 @@ runtime dependencies, loads the DigitalOcean inventory token, prepares SSH
 known hosts for remote managed hosts, and runs `playbooks/site.yml`.
 
 Dynamic inventory targets active DigitalOcean droplets tagged
-`configured-by-ansible`. Bastion hosts use a local Ansible connection. Other
-managed hosts are reached over the DigitalOcean private network as the
-`ansible` user.
+`configured-by-ansible` and tagged for the active environment. Bastion hosts use
+a local Ansible connection. Other managed hosts are reached over the
+DigitalOcean private network as the `ansible` user.
 
 The runner logs to systemd journal output. Useful commands on the bastion host:
 
@@ -92,6 +92,10 @@ role-specific configuration. The baseline covers:
 The playbook records whether a reboot is required, but it does not reboot
 servers automatically.
 
+Be aware that changes to hardware firewall rules through
+[grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
+are not automatically reflected in firewalld on existing droplets at this time.
+
 Managed hosts publish a local Ansible fact at
 `/etc/ansible/facts.d/grayhaven.fact`. This exposes the host role,
 environment, managed hostname, DigitalOcean tags, and known IPv4 addresses to
@@ -118,7 +122,8 @@ Managed hostnames:
 
 Production hostnames redirect HTTP to HTTPS. `www` hostnames also redirect to
 the apex domain. Development hostnames redirect HTTP to HTTPS, keep the `dev`
-hostname, and require HTTP basic authentication.
+hostname, and require HTTP basic authentication. Staging hosts use the
+`staging.<domain>` DNS namespace and the same routing model.
 
 Certificates are issued with Let's Encrypt through DNS-01 validation using the
 role-specific DigitalOcean DNS token persisted during bootstrap. Certbot
@@ -168,18 +173,10 @@ client infrastructure data, or private operational state.
 
 ## Certificate Mode
 
-The repository currently defaults `web_static_certbot_environment` to `staging`
-so rebuild-heavy validation exercises DNS-01 issuance against the Let's Encrypt
-staging environment. Staging certificates validate Nginx, HTTP-to-HTTPS
-redirects, and renewal plumbing, but browsers do not trust them.
-
-Set `web_static_certbot_environment: production` only for production
-environment servers that are ready to request trusted public certificates.
+Certificate mode is derived from the managed host environment supplied by
+OpenTofu during bootstrap. Staging hosts request Let's Encrypt staging
+certificates. Production hosts request trusted Let's Encrypt certificates.
 Staging and production servers are separate environments and are not converted
 in place.
-
-This staging default is temporary. Proper environment modeling belongs in the
-OpenTofu repository so Ansible can derive certificate behavior from managed
-host environment metadata instead of a repository default.
 
 [Back to top](#architecture)

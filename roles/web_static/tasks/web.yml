@@ -83,7 +83,7 @@
     web_static_site_directories: >-
       {{
         web_static_sites
-        | map(attribute='domain')
+        | map(attribute='source_domain')
         | product(['prod', 'dev'])
         | map('join', '/')
         | map('regex_replace', '^', web_static_root ~ '/')
@@ -103,15 +103,15 @@
 
 - name: Deploy temporary static website content
   ansible.builtin.copy:
-    src: "{{ web_static_source_root }}/{{ item.0.domain }}/{{ item.1 }}/"
-    dest: "{{ web_static_root }}/{{ item.0.domain }}/{{ item.1 }}/"
+    src: "{{ web_static_source_root }}/{{ item.0.source_domain }}/{{ item.1 }}/"
+    dest: "{{ web_static_root }}/{{ item.0.source_domain }}/{{ item.1 }}/"
     owner: root
     group: root
     directory_mode: "0755"
     mode: "0644"
   loop: "{{ web_static_sites | product(['prod', 'dev']) | list }}"
   loop_control:
-    label: "{{ item.0.domain }} {{ item.1 }}"
+    label: "{{ item.0.source_domain }} {{ item.1 }}"
   notify: Reload nginx
 
 - name: Restore SELinux contexts for static website content

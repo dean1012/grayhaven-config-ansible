@@ -5,7 +5,7 @@ web_static_assets_root: "{{ web_static_root }}/assets"
 web_static_source_root: "{{ playbook_dir }}/../files/static-sites"
 
 web_static_certbot_email: jsmith@grayhavensystems.com
-web_static_certbot_environment: staging
+web_static_certbot_environment: "{{ 'production' if web_static_environment == 'prod' else 'staging' }}"
 web_static_certbot_credentials_file: /etc/letsencrypt/digitalocean.ini
 web_static_certbot_dns_token_file: /etc/grayhaven/ansible/secrets/digitalocean-dns-api-token
 web_static_dev_htpasswd_source: /etc/grayhaven/ansible/secrets/dev-basic-auth-htpasswd
@@ -18,16 +18,20 @@ web_static_packages:
   - python3-certbot-nginx
 
 web_static_sites:
-  - domain: grayhavensystems.com
+  - source_domain: grayhavensystems.com
+    domain: "{{ 'grayhavensystems.com' if web_static_environment == 'prod' else 'staging.grayhavensystems.com' }}"
     aliases:
-      - www.grayhavensystems.com
-    dev_domain: dev.grayhavensystems.com
-    cert_name: grayhavensystems.com
+      - "{{ 'www.grayhavensystems.com' if web_static_environment == 'prod' else 'www.staging.grayhavensystems.com' }}"
+    dev_domain: >-
+      {{ 'dev.grayhavensystems.com' if web_static_environment == 'prod' else 'dev.staging.grayhavensystems.com' }}
+    cert_name: "{{ 'grayhavensystems.com' if web_static_environment == 'prod' else 'staging.grayhavensystems.com' }}"
     auth_realm: grayhavensystems.com Development Environment
 
-  - domain: jerry-smith.net
+  - source_domain: jerry-smith.net
+    domain: "{{ 'jerry-smith.net' if web_static_environment == 'prod' else 'staging.jerry-smith.net' }}"
     aliases:
-      - www.jerry-smith.net
-    dev_domain: dev.jerry-smith.net
-    cert_name: jerry-smith.net
+      - "{{ 'www.jerry-smith.net' if web_static_environment == 'prod' else 'www.staging.jerry-smith.net' }}"
+    dev_domain: >-
+      {{ 'dev.jerry-smith.net' if web_static_environment == 'prod' else 'dev.staging.jerry-smith.net' }}
+    cert_name: "{{ 'jerry-smith.net' if web_static_environment == 'prod' else 'staging.jerry-smith.net' }}"
     auth_realm: jerry-smith.net Development Environment

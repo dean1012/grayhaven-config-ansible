@@ -16,6 +16,9 @@
           - grayhaven_role is defined
           - grayhaven_role is string
           - grayhaven_role in ["bastion", "web"]
+          - grayhaven_environment is defined
+          - grayhaven_environment is string
+          - grayhaven_environment in ["staging", "prod"]
           - grayhaven_config_repo_ref is defined
           - grayhaven_config_repo_ref is string
           - grayhaven_config_repo_ref | trim | length > 0
@@ -202,6 +205,8 @@
         content: |
           managed_baseline_root_password_hash: {{ grayhaven_root_password_hash | to_json }}
           managed_baseline_config_repo_ref: {{ grayhaven_config_repo_ref | to_json }}
+          managed_baseline_environment: {{ grayhaven_environment | to_json }}
+          web_static_environment: {{ grayhaven_environment | to_json }}
       when: grayhaven_role == "bastion"
       no_log: true
 
@@ -276,6 +281,7 @@
           REPO_URL={{ "https://github.com/dean1012/grayhaven-config-ansible.git" | quote }}
           REPO_REF={{ grayhaven_config_repo_ref | quote }}
           CHECKOUT_DIR={{ "/home/ansible/grayhaven-config-ansible" | quote }}
+          GRAYHAVEN_ENVIRONMENT={{ grayhaven_environment | quote }}
       when: grayhaven_role == "bastion"
 
     - name: Install bastion runner executable

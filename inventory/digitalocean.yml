@@ -13,6 +13,7 @@ attributes:
 
 filters:
   - status == "active"
+  - '"env-" ~ lookup("env", "GRAYHAVEN_ENVIRONMENT", default="prod") in do_tags'
 
 compose:
   ansible_connection: '"local" if "role-bastion" in do_tags else "ssh"'
