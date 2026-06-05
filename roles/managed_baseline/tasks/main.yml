@@ -30,6 +30,9 @@
 - name: Enforce host security controls
   ansible.builtin.import_tasks: security.yml
 
+- name: Enforce DNS resolver configuration
+  ansible.builtin.import_tasks: dns.yml
+
 - name: Enforce system time configuration
   ansible.builtin.import_tasks: time.yml
 

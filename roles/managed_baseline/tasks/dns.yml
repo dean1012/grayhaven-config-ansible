@@ -1,0 +1,46 @@
+---
+- name: Enable and start NetworkManager
+  ansible.builtin.service:
+    name: NetworkManager
+    state: started
+    enabled: true
+
+- name: Discover active NetworkManager connections
+  ansible.builtin.command:
+    cmd: nmcli -t -f NAME,DEVICE connection show --active
+  register: managed_baseline_active_nm_connections
+  changed_when: false
+
+- name: Select active NetworkManager connection for default IPv4 interface
+  ansible.builtin.set_fact:
+    managed_baseline_active_nm_connection: >-
+      {{
+        managed_baseline_active_nm_connections.stdout_lines
+        | select('search', ':' ~ ansible_default_ipv4.interface ~ '$')
+        | first
+        | split(':')
+        | first
+      }}
+
+- name: Validate active NetworkManager connection was discovered
+  ansible.builtin.assert:
+    that:
+      - managed_baseline_active_nm_connection is defined
+      - managed_baseline_active_nm_connection | trim | length > 0
+    fail_msg: "Unable to determine the active NetworkManager connection for DNS management."
+    quiet: true
+
+- name: Configure Quad9 DNS resolvers with NetworkManager
+  community.general.nmcli:
+    conn_name: "{{ managed_baseline_active_nm_connection }}"
+    type: ethernet
+    dns4: "{{ managed_baseline_quad9_resolvers }}"
+    dns4_ignore_auto: true
+    state: present
+  register: managed_baseline_nmcli_dns
+
+- name: Reapply active network device DNS settings
+  ansible.builtin.command:
+    cmd: "nmcli device reapply {{ ansible_default_ipv4.interface }}"
+  changed_when: true
+  when: managed_baseline_nmcli_dns.changed

@@ -1,42 +1,59 @@
 # Contributing
 
-This repository manages live Grayhaven Systems LLC infrastructure and is also
-part of a public infrastructure portfolio. Changes should be small, reviewed,
-and easy to validate.
+Thank you for your interest in improving `grayhaven-config-ansible`.
 
-## Workflow
+## Development Setup
 
-- Open or reference a GitHub issue before making code changes.
-- Create a feature branch for each issue or tightly related issue set.
-- Keep commits logically grouped and focused.
-- Sign every commit.
-- Open a pull request into `main`.
-- Resolve review conversations before merging.
-- Wait for CI to pass before merging.
-- Squash merge pull requests.
-
-## Commit Requirements
-
-All commits must be signed. Use:
+Install Ansible runtime and validation dependencies:
 
 ```bash
-git commit -S -m "Describe the change (Refs #123)"
+python3 -m pip install --upgrade pip
+python3 -m pip install -r pip3_requirements.txt
+python3 -m pip install ansible-core ansible-lint
+ansible-galaxy collection install -r galaxy_requirements.yml
 ```
 
-Use `Refs #<issue>` for commits. Use `Closes #<issue>` in the pull request body
-when the PR should close the issue after merge.
+The Python packages in `pip3_requirements.txt` follow the runtime prerequisites
+for the DigitalOcean Ansible collection used by the dynamic inventory.
 
 ## Validation
 
-Run the repository checks before opening a pull request:
+Run the same validation commands used by CI:
 
 ```bash
 yamllint .
 ansible-lint .
 ansible-playbook -i localhost, --connection=local --syntax-check playbooks/bootstrap.yml
 ansible-playbook -i localhost, --connection=local --syntax-check playbooks/site.yml
+shellcheck files/grayhaven-ansible-runner
 markdownlint-cli2 '**/*.md'
 ```
 
-Do not commit secrets, private keys, password hashes, generated runtime state,
-or host-specific deployment artifacts.
+Before committing changes, also check the current diff for whitespace errors:
+
+```bash
+git diff --check
+```
+
+## Pull Requests
+
+Create a focused feature branch for each change. Reference the related issue in
+each commit and include `Closes #<issue-number>` in the pull request
+description when the pull request should close an issue after merging.
+
+Sign each commit so GitHub can verify its authorship. The `main` branch ruleset
+requires signed commits before merging:
+
+```bash
+git commit -S -m "<message> (Refs #<issue-number>)"
+```
+
+CI runs on pushes and pull requests. Pull requests are squash merged after CI
+passes and review conversations are resolved.
+
+## Documentation Guidelines
+
+Keep user-facing behavior documented in `README.md` and architecture details in
+`docs/architecture.md`. Add inline comments for non-obvious implementation
+decisions, security boundaries, and assumptions. Avoid comments that merely
+restate straightforward Ansible tasks or shell commands.

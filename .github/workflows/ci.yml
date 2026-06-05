@@ -18,6 +18,12 @@ jobs:
       - name: Run markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v23
 
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca  # master
+        with:
+          version: v0.11.0
+          additional_files: files/grayhaven-ansible-runner
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -27,6 +33,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install ansible-core ansible-lint
+
+      - name: Install Ansible Galaxy collections
+        run: ansible-galaxy collection install -r galaxy_requirements.yml
 
       - name: Run Ansible syntax check
         run: |

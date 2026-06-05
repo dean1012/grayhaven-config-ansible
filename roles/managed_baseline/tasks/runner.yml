@@ -6,9 +6,9 @@
     group: ansible
     mode: "0640"
     content: |
-      REPO_URL="{{ managed_baseline_runner_repo_url }}"
-      REPO_REF="{{ managed_baseline_config_repo_ref | default('main') }}"
-      CHECKOUT_DIR="{{ managed_baseline_runner_checkout_dir }}"
+      REPO_URL={{ managed_baseline_runner_repo_url | quote }}
+      REPO_REF={{ managed_baseline_config_repo_ref | default('main') | quote }}
+      CHECKOUT_DIR={{ managed_baseline_runner_checkout_dir | quote }}
   when: grayhaven_role == "bastion"
 
 - name: Install bastion runner executable

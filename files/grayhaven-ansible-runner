@@ -130,6 +130,52 @@ require_file() {
   fi
 }
 
+prepare_inventory_known_hosts() {
+  local inventory_json
+  local scan_targets
+
+  inventory_json="$(mktemp)"
+  /usr/local/bin/ansible-inventory \
+    --inventory "${CHECKOUT_DIR}/inventory" \
+    --list > "$inventory_json"
+
+  scan_targets="$(
+    /usr/bin/python3 - "$inventory_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as inventory_file:
+    inventory = json.load(inventory_file)
+
+hostvars = inventory.get("_meta", {}).get("hostvars", {})
+targets = []
+
+for variables in hostvars.values():
+    if variables.get("ansible_connection") == "local":
+        continue
+
+    ansible_host = variables.get("ansible_host")
+    if ansible_host:
+        targets.append(str(ansible_host))
+
+print("\n".join(dict.fromkeys(targets)))
+PY
+  )"
+
+  rm -f "$inventory_json"
+
+  if [[ -z "$scan_targets" ]]; then
+    log "No remote inventory targets require SSH known-host preparation."
+    return 0
+  fi
+
+  log "Preparing SSH known hosts for remote inventory targets."
+  install -d -o root -g root -m 0755 /etc/ssh
+  # shellcheck disable=SC2086
+  ssh-keyscan -T 5 -t ed25519 $scan_targets > /etc/ssh/ssh_known_hosts
+  chmod 0644 /etc/ssh/ssh_known_hosts
+}
+
 checkout_ref() {
   local repo_ref="$1"
 
@@ -241,6 +287,8 @@ PY
   /usr/local/bin/ansible-galaxy collection install \
     --requirements-file "${CHECKOUT_DIR}/galaxy_requirements.yml" \
     --force
+
+  prepare_inventory_known_hosts
 
   log "Running full site playbook."
   rm -f "$RUNNER_PLAYBOOK_LOG"
