@@ -103,10 +103,16 @@ hostname, and require HTTP basic authentication.
 Certbot renewals are handled by the system timer installed by the Certbot
 package. A deploy hook reloads Nginx after certificate renewal.
 
-During rebuild-heavy testing, set `web_static_certbot_environment` to
-`staging` to exercise DNS-01 certificate issuance against the Let's Encrypt
-staging environment. Production deployments should leave this value at its
-default of `production`.
+The repository currently defaults `web_static_certbot_environment` to `staging`
+so rebuild-heavy validation exercises DNS-01 issuance against the Let's Encrypt
+staging environment. Staging certificates are usable for validating Nginx,
+HTTP-to-HTTPS redirects, and renewal plumbing, but browsers do not trust them.
+
+Set `web_static_certbot_environment: production` only when the deployment is
+ready to request trusted public certificates. This staging default is temporary
+and should be replaced by proper environment modeling in the OpenTofu
+repository so Ansible can derive certificate behavior from managed host
+environment metadata instead of a repository default.
 
 ## Local Repository Checks
 
