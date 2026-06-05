@@ -9,9 +9,8 @@ portfolio project. OpenTofu provisions the servers, cloud-init runs the
 bootstrap playbook on first boot, and the bastion host then runs the full
 Ansible playbook on a recurring schedule.
 
-## Current Scope
+## Scope
 
-- Bootstrap first-boot host preparation for AlmaLinux servers.
 - Create and secure the `ansible` automation account.
 - Persist only role-specific runtime secrets needed after bootstrap.
 - Run full Ansible convergence from the bastion host.
@@ -22,7 +21,7 @@ Ansible playbook on a recurring schedule.
   personal domains while dedicated website repositories are being prepared.
 - Manage Nginx, Let's Encrypt DNS-01 certificates, dev basic authentication,
   and certificate renewal on web hosts.
-- Validate Ansible, YAML, and Markdown through GitHub Actions.
+- Validate Ansible, YAML, Markdown, and shell scripts through GitHub Actions.
 
 Client infrastructure, credentials, deployment data, private SSH keys, secrets,
 and operational state are not stored in this repository.
@@ -30,31 +29,8 @@ and operational state are not stored in this repository.
 ## Documentation
 
 - [Architecture](docs/architecture.md)
-- [Operations](docs/operations.md)
 
-## Repository Layout
+## Contributing
 
-```text
-files/       Runner scripts and systemd units installed by bootstrap
-files/static-sites/
-             Temporary placeholder website assets deployed by web roles
-inventory/   Dynamic inventory configuration for managed DigitalOcean droplets
-playbooks/   Bootstrap and full-site Ansible playbooks
-roles/       Reusable roles used by the full-site playbook
-docs/        Architecture and operations documentation
-```
-
-## Validation
-
-Run the same checks locally before opening a pull request:
-
-```bash
-yamllint .
-ansible-lint .
-ansible-playbook -i localhost, --connection=local --syntax-check playbooks/bootstrap.yml
-ansible-playbook -i localhost, --connection=local --syntax-check playbooks/site.yml
-markdownlint-cli2 '**/*.md'
-```
-
-Deployment validation is performed from the OpenTofu repository with the normal
-`tofu apply` workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, validation
+commands, and contribution guidelines.

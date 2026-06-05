@@ -11,6 +11,43 @@
     group: root
     mode: "0644"
 
+- name: Build bastion SSH known-host scan targets
+  ansible.builtin.set_fact:
+    managed_baseline_known_host_scan_targets: >-
+      {%- set targets = [] -%}
+      {%- for managed_host in managed_baseline_hosts | default([]) -%}
+      {%- if managed_host.fqdn != inventory_hostname and managed_host.private_ip | default('') | string | length > 0 -%}
+      {%- set managed_host_aliases = [managed_host.host_alias, managed_host.host_alias ~ '.internal'] -%}
+      {%- set _ = targets.extend(managed_host_aliases + [managed_host.private_ip]) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ targets | unique | list }}
+  when: grayhaven_role == "bastion"
+
+- name: Scan managed host SSH keys from bastion
+  ansible.builtin.command:
+    cmd: >-
+      ssh-keyscan -T 5 -t ed25519
+      {{ managed_baseline_known_host_scan_targets | map('quote') | join(' ') }}
+  register: managed_baseline_known_host_scan
+  changed_when: false
+  when:
+    - grayhaven_role == "bastion"
+    - managed_baseline_known_host_scan_targets | default([]) | length > 0
+
+- name: Install managed global SSH known hosts on bastion
+  ansible.builtin.copy:
+    dest: /etc/ssh/ssh_known_hosts
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible. Do not edit manually.
+      {{ managed_baseline_known_host_scan.stdout }}
+  when:
+    - grayhaven_role == "bastion"
+    - managed_baseline_known_host_scan_targets | default([]) | length > 0
+
 - name: Create local Ansible facts directory
   ansible.builtin.file:
     path: /etc/ansible/facts.d

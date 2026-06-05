@@ -48,11 +48,3 @@
     name: fail2ban
     state: started
     enabled: true
-
-- name: Enforce Quad9 DNS resolvers
-  ansible.builtin.template:
-    src: resolv.conf.j2
-    dest: /etc/resolv.conf
-    owner: root
-    group: root
-    mode: "0644"
