@@ -23,6 +23,9 @@
     enabled: true
     no_block: true
 
+- name: Reset SSH connection after firewalld starts
+  ansible.builtin.meta: reset_connection
+
 - name: Wait for firewalld to become active
   ansible.builtin.command:
     cmd: systemctl is-active firewalld
@@ -34,3 +37,6 @@
 
 - name: Reload firewalld after zone changes
   ansible.builtin.meta: flush_handlers
+
+- name: Reset SSH connection after firewalld reloads
+  ansible.builtin.meta: reset_connection
