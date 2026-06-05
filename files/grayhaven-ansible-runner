@@ -150,11 +150,17 @@ with open(sys.argv[1], encoding="utf-8") as inventory_file:
 hostvars = inventory.get("_meta", {}).get("hostvars", {})
 targets = []
 
+def unwrap_ansible_value(value):
+    if isinstance(value, dict) and "__ansible_unsafe" in value:
+        return value["__ansible_unsafe"]
+
+    return value
+
 for variables in hostvars.values():
-    if variables.get("ansible_connection") == "local":
+    if unwrap_ansible_value(variables.get("ansible_connection")) == "local":
         continue
 
-    ansible_host = variables.get("ansible_host")
+    ansible_host = unwrap_ansible_value(variables.get("ansible_host"))
     if ansible_host:
         targets.append(str(ansible_host))
 
