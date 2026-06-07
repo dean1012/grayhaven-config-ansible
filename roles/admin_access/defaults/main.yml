@@ -1,3 +1,2 @@
 ---
-admin_access_user: jsmith
-admin_access_comment: Jerry Dean Smith, Jr.
+admin_access_default_homedir_archive_path: /var/backups/deleted-homedir-archives

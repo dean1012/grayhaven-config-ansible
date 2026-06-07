@@ -1,47 +1,135 @@
 ---
-- name: Validate admin access variables
+- name: Validate managed user list
   ansible.builtin.assert:
     that:
-      - admin_access_user is defined
-      - admin_access_user is string
-      - admin_access_user | trim | length > 0
-      - admin_access_comment is defined
-      - admin_access_comment is string
-      - admin_access_comment | trim | length > 0
-      - admin_access_password_hash is defined
-      - admin_access_password_hash is string
-      - admin_access_password_hash | trim | length > 0
-      - admin_access_public_key is defined
-      - admin_access_public_key is string
-      - admin_access_public_key | trim | length > 0
-    fail_msg: "Required admin access variables were not provided."
+      - users is defined
+      - users is sequence
+    fail_msg: "The users variable must be defined as a list."
     quiet: true
-  no_log: true
 
-- name: Create administrative user
-  ansible.builtin.user:
-    name: "{{ admin_access_user }}"
-    comment: "{{ admin_access_comment }}"
-    create_home: true
-    shell: /bin/bash
-    groups: wheel
-    append: true
-    password: "{{ admin_access_password_hash }}"
-    state: present
-  no_log: true
+- name: Set managed user archive path
+  ansible.builtin.set_fact:
+    admin_access_homedir_archive_path: >-
+      {{
+        backup.repositories.local.homedir_archive_path
+        | default(admin_access_default_homedir_archive_path)
+      }}
 
-- name: Create administrative user SSH directory
+- name: Ensure managed user archive path exists
   ansible.builtin.file:
-    path: "/home/{{ admin_access_user }}/.ssh"
+    path: "{{ admin_access_homedir_archive_path }}"
     state: directory
-    owner: "{{ admin_access_user }}"
-    group: "{{ admin_access_user }}"
+    owner: root
+    group: root
     mode: "0700"
 
-- name: Install administrative authorized SSH key
+- name: Validate managed user entries
+  ansible.builtin.assert:
+    that:
+      - item.username is defined
+      - item.username is string
+      - item.username | trim | length > 0
+      - item.state | default('present') in ['present', 'absent']
+      - item.home_mode | default('archive') in ['archive', 'delete']
+      - >
+        item.state | default('present') == 'absent'
+        or (
+          item.full_name is defined
+          and item.password_hash is defined
+          and item.ssh_keys is defined
+          and item.ssh_keys is sequence
+        )
+    fail_msg: "Present users require full_name, password_hash, and ssh_keys."
+    quiet: true
+  loop: "{{ users }}"
+  loop_control:
+    label: "{{ item.username | default('undefined') }}"
+  no_log: true
+
+- name: Derive managed user state lists
+  ansible.builtin.set_fact:
+    admin_access_present_users: >-
+      {{
+        users | selectattr('state', 'undefined') | list
+        + users | selectattr('state', 'equalto', 'present') | list
+      }}
+    admin_access_absent_users: >-
+      {{
+        users
+        | selectattr('state', 'defined')
+        | selectattr('state', 'equalto', 'absent')
+        | list
+      }}
+
+- name: Manage present users
+  ansible.builtin.user:
+    name: "{{ item.username }}"
+    comment: "{{ item.full_name }}"
+    create_home: true
+    shell: /bin/bash
+    groups: "{{ (item.sudo | default(false) | bool) | ternary('wheel', '') }}"
+    append: false
+    password: "{{ item.password_hash }}"
+    state: present
+  loop: "{{ admin_access_present_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  no_log: true
+
+- name: Create present user SSH directories
+  ansible.builtin.file:
+    path: "/home/{{ item.username }}/.ssh"
+    state: directory
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: "0700"
+  loop: "{{ admin_access_present_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+
+- name: Install present user authorized SSH keys
   ansible.builtin.copy:
-    dest: "/home/{{ admin_access_user }}/.ssh/authorized_keys"
-    owner: "{{ admin_access_user }}"
-    group: "{{ admin_access_user }}"
+    dest: "/home/{{ item.username }}/.ssh/authorized_keys"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
     mode: "0600"
-    content: "{{ admin_access_public_key | trim }}\n"
+    content: "{{ item.ssh_keys | join('\n') }}\n"
+  loop: "{{ admin_access_present_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  no_log: true
+
+- name: Check absent user home directories
+  ansible.builtin.stat:
+    path: "/home/{{ item.username }}"
+  register: admin_access_absent_homes
+  loop: "{{ admin_access_absent_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+
+- name: Archive absent user home directories before deletion
+  ansible.builtin.command:
+    cmd: >-
+      tar -C /home
+      -czf
+      {{ admin_access_homedir_archive_path }}/{{ admin_access_archive_filename }}
+      {{ item.item.username }}
+  when:
+    - item.stat.exists
+    - item.item.home_mode | default('archive') == 'archive'
+  loop: "{{ admin_access_absent_homes.results }}"
+  loop_control:
+    label: "{{ item.item.username }}"
+  changed_when: true
+  vars:
+    admin_access_archive_filename: >-
+      {{ item.item.username }}-{{ inventory_hostname }}-{{ ansible_date_time.iso8601_basic_short }}.tar.gz
+
+- name: Remove absent users
+  ansible.builtin.user:
+    name: "{{ item.username }}"
+    state: absent
+    remove: true
+  loop: "{{ admin_access_absent_users }}"
+  loop_control:
+    label: "{{ item.username }}"

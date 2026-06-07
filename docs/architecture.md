@@ -8,12 +8,14 @@ full-playbook convergence.
 ## Table of Contents
 
 - [Bootstrap Phase](#bootstrap-phase)
-- [Full-Playbook Phase](#full-playbook-phase)
+- [Runner And Poller](#runner-and-poller)
+- [Vault Loading](#vault-loading)
 - [Managed Baseline](#managed-baseline)
+- [Managed Users](#managed-users)
 - [Web Hosting](#web-hosting)
+- [Firewalld Policy](#firewalld-policy)
+- [Backups](#backups)
 - [Access Model](#access-model)
-- [Secret Handoff](#secret-handoff)
-- [Certificate Mode](#certificate-mode)
 
 ## Bootstrap Phase
 
@@ -32,40 +34,63 @@ The bootstrap playbook prepares the host for management:
   bursts;
 - creates the password-locked `ansible` automation user;
 - grants the `ansible` user passwordless sudo;
-- installs the `ansible` private key on bastion hosts and the matching
-  authorized public key on managed non-bastion hosts;
-- persists only the runtime secret files needed by each host role.
+- installs the shared Ansible/deploy public key for the `ansible` user;
+- installs the shared Ansible/deploy private key only on bastion hosts;
+- stores the Ansible Vault password only on bastion hosts;
+- installs runner and poller services on bastion hosts;
+- enables runner and poller timers only on the declared control bastion.
 
-On bastion hosts, bootstrap also installs the full-playbook runner, enables its
-systemd timer, and starts one immediate runner execution without blocking the
-bootstrap process.
+Bootstrap does not persist application secrets, human user secrets, Discord
+webhooks, or DigitalOcean service tokens outside the vault model.
 
 [Back to top](#architecture)
 
-## Full-Playbook Phase
+## Runner And Poller
 
-The bastion host is the Ansible control node. The runner keeps a persistent
-checkout at `/home/ansible/grayhaven-config-ansible`, installs the pinned
-runtime dependencies, loads the DigitalOcean inventory token, prepares SSH
-known hosts for remote managed hosts, and runs `playbooks/site.yml`.
+The active control bastion is the Ansible control node. The runner keeps
+persistent checkouts of:
 
-Dynamic inventory targets active DigitalOcean droplets tagged
-`configured-by-ansible`. Bastion hosts use a local Ansible connection. Other
-managed hosts are reached over the DigitalOcean private network as the
-`ansible` user.
+- `/home/ansible/grayhaven-config-ansible`
+- `/home/ansible/grayhaven-vault`
 
-The runner logs to systemd journal output. Useful commands on the bastion host:
+The runner installs pinned runtime dependencies, decrypts vault values through
+Ansible Vault, prepares SSH known hosts for remote managed hosts, and runs
+`playbooks/site.yml`.
 
-```bash
-systemctl status grayhaven-ansible-runner.service
-systemctl status grayhaven-ansible-runner.timer
-journalctl -u grayhaven-ansible-runner.service
-```
+Before each playbook run, the runner refreshes live DigitalOcean inventory data.
+The current control-node status and TLS mode are derived from environment
+droplet tags so OpenTofu policy changes can be applied without relying on stale
+first-boot bootstrap values.
 
-The runner sends a Discord failure notification when the full playbook exits
-unsuccessfully. The playbook sends Discord notifications when configuration
-starts and when configuration completes. Successful completion notifications use
-an attention state when a reboot is required.
+The poller checks the public config repository and private vault repository for
+changes every five minutes. If either tracked ref changes, it starts the normal
+runner service. The daily runner timer remains in place as a convergence safety
+net.
+
+Only the active control bastion runs the scheduled runner and poller. Other
+bastions are configured as SSH jump points and are managed over SSH by the
+active control bastion.
+
+[Back to top](#architecture)
+
+## Vault Loading
+
+The private `grayhaven-vault` repository supplies runtime selectors and
+encrypted operational values. The `config.yml` file remains plaintext and the
+`vault/*.yml` files are decrypted by Ansible at runtime.
+
+Production reads the vault `main` branch. Staging reads the vault `staging`
+branch.
+
+Vault values provide:
+
+- root password hash;
+- managed users;
+- restic password;
+- DigitalOcean inventory and DNS API tokens;
+- Discord notification webhooks;
+- Ansible control key values;
+- development basic-auth htpasswd entry.
 
 [Back to top](#architecture)
 
@@ -76,7 +101,6 @@ role-specific configuration. The baseline covers:
 
 - root password hash and root SSH authorized-key removal;
 - `ansible` automation user, sudo policy, and SSH key state;
-- administrative `jsmith` access;
 - SSH daemon hardening for public-key-only access;
 - managed SSH known-host entries on bastion;
 - SELinux enforcing mode;
@@ -84,46 +108,101 @@ role-specific configuration. The baseline covers:
 - managed swap;
 - Quad9 DNS resolvers through NetworkManager;
 - AlmaLinux time synchronization;
-- firewalld inbound rules aligned with OpenTofu firewall intent;
+- firewalld inbound rules from the infrastructure firewall policy;
 - local host aliases such as `grayhaven-core-prod-web-01` and
   `grayhaven-core-prod-web-01.internal`;
-- local Ansible facts at `/etc/ansible/facts.d/grayhaven.fact`.
+- local Ansible facts at `/etc/ansible/facts.d/grayhaven.fact`;
+- local encrypted restic backups.
 
 The playbook records whether a reboot is required, but it does not reboot
 servers automatically.
 
 Managed hosts publish a local Ansible fact at
 `/etc/ansible/facts.d/grayhaven.fact`. This exposes the host role,
-environment, managed hostname, DigitalOcean tags, and known IPv4 addresses to
-local scripts and administrators without requiring direct DigitalOcean API
-access.
+environment, control-node status, TLS mode, DigitalOcean tags, and known IPv4
+addresses to local scripts and administrators without requiring direct
+DigitalOcean API access.
+
+[Back to top](#architecture)
+
+## Managed Users
+
+Managed users are defined in `vault/common.yml`. Users may be marked
+`present` or `absent`.
+
+`present` users are created with configured password hashes, SSH keys, and
+optional password sudo access. `absent` users are removed. If `home_mode` is
+omitted for an absent user, the home directory is archived and compressed as a
+`.tar.gz` file before deletion. `home_mode: delete` deletes the home directory
+without archiving it.
+
+Homedir archives are not encrypted by the archive process. They are included in
+the encrypted local restic backup set by default.
 
 [Back to top](#architecture)
 
 ## Web Hosting
 
-Web hosts install Nginx and Certbot after the managed baseline converges. The
-current web role serves temporary static placeholder assets for
-`grayhavensystems.com` and `jerry-smith.net` while dedicated website
-repositories are still outside the scope of this configuration repository.
+Web hosts install Nginx and serve temporary static placeholder assets for
+`grayhavensystems.com` and `jerry-smith.net`.
 
-Managed hostnames:
+Host TLS mode issues certificates with Let's Encrypt through DNS-01 validation
+using the role-specific DigitalOcean DNS token from the vault. Certbot renewals
+are handled by the system timer installed by the Certbot package. A deploy hook
+reloads Nginx after certificate renewal.
 
-- `grayhavensystems.com`
-- `www.grayhavensystems.com`
-- `dev.grayhavensystems.com`
-- `jerry-smith.net`
-- `www.jerry-smith.net`
-- `dev.jerry-smith.net`
+Load balancer TLS mode configures web hosts as HTTP backends. Certbot renewal
+is disabled, local host certificate material is removed, and TLS is terminated
+by the DigitalOcean load balancer managed by OpenTofu.
 
-Production hostnames redirect HTTP to HTTPS. `www` hostnames also redirect to
-the apex domain. Development hostnames redirect HTTP to HTTPS, keep the `dev`
-hostname, and require HTTP basic authentication.
+Development hostnames require HTTP basic authentication. The current htpasswd
+entry is shared across all hosted domains.
 
-Certificates are issued with Let's Encrypt through DNS-01 validation using the
-role-specific DigitalOcean DNS token persisted during bootstrap. Certbot
-renewals are handled by the system timer installed by the Certbot package. A
-deploy hook reloads Nginx after certificate renewal.
+[Back to top](#architecture)
+
+## Firewalld Policy
+
+The managed baseline downloads the firewall policy from
+[grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
+and caches it locally under `/etc/grayhaven/firewall/policy.yml`.
+
+If the policy fetch fails and a cached policy exists, Ansible uses the cached
+policy and sends an informational Discord notification. If no valid policy is
+available, Ansible sends a warning notification and skips firewalld policy
+changes, preserving the current local firewall state while allowing the rest of
+the playbook to converge.
+
+At this time, Ansible enforces inbound firewalld policy from the shared policy
+file. DigitalOcean hardware firewalls continue to enforce both inbound and
+outbound cloud firewall policy.
+
+For SSH from bastion to managed hosts, local firewalld allows the environment
+VPC CIDR as well as known bastion private addresses. This prevents active
+control-node failover from locking the new control bastion out of existing
+managed hosts. DigitalOcean hardware firewalls still enforce the tighter
+bastion source-tag boundary before traffic reaches the host.
+
+[Back to top](#architecture)
+
+## Backups
+
+Each managed server creates encrypted local restic backups using settings from
+`grayhaven-vault/config.yml`. The local repository path defaults to
+`/var/backups/restic`, and the homedir archive path defaults to
+`/var/backups/deleted-homedir-archives`.
+
+By default, backups include:
+
+- configured homedir archive path;
+- `/home`;
+- `/var/log`.
+
+The local restic repository is encrypted. Local backups are not a substitute for
+disaster recovery.
+
+Grayhaven Systems LLC performs a manual offsite transfer of local backup data
+daily and regularly tests backup restoration. Remote backup automation is not
+implemented in this repository at this time.
 
 [Back to top](#architecture)
 
@@ -135,51 +214,10 @@ Human administrators use personal accounts and local SSH agent forwarding.
 Personal private keys are not stored on Grayhaven servers.
 
 The `ansible` account is automation-only. On bastion hosts it owns the private
-key used for Ansible connections to managed hosts. On managed hosts, the
-matching public key is authorized for the `ansible` account. This supports
-scheduled convergence from the bastion without depending on a human SSH agent.
-
-[Back to top](#architecture)
-
-## Secret Handoff
-
-Bootstrap secrets are supplied at deployment time by OpenTofu variables and are
-rendered into cloud-init user-data through the
-[grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
-repository.
-
-The bootstrap playbook persists role-specific secret files under
-`/etc/grayhaven/ansible/secrets`. Bastion hosts retain the Discord webhook,
-DigitalOcean inventory token, root password hash, admin account variables, and
-runner repository reference. Web hosts retain the DigitalOcean DNS token and
-development HTTP basic-auth file.
-
-The full playbook uses these persisted files as its runtime source of truth.
-If a required persisted secret file is missing or damaged, full-playbook
-convergence can fail and dependent services may fail to configure correctly.
-
-This is an intentional tradeoff for the current single-command bootstrap model.
-Rendered cloud-init user-data and encrypted local OpenTofu state may contain
-bootstrap secrets during provisioning. The repository never stores plaintext
-secrets, private keys, password hashes, API tokens, generated deployment state,
-client infrastructure data, or private operational state.
-
-[Back to top](#architecture)
-
-## Certificate Mode
-
-The repository currently defaults `web_static_certbot_environment` to `staging`
-so rebuild-heavy validation exercises DNS-01 issuance against the Let's Encrypt
-staging environment. Staging certificates validate Nginx, HTTP-to-HTTPS
-redirects, and renewal plumbing, but browsers do not trust them.
-
-Set `web_static_certbot_environment: production` only for production
-environment servers that are ready to request trusted public certificates.
-Staging and production servers are separate environments and are not converted
-in place.
-
-This staging default is temporary. Proper environment modeling belongs in the
-OpenTofu repository so Ansible can derive certificate behavior from managed
-host environment metadata instead of a repository default.
+key used for Ansible connections to managed hosts and the private deploy key
+used to read the private vault repository. On managed hosts, the matching
+public key is authorized for the `ansible` account. This supports scheduled
+convergence from the active control bastion without depending on a human SSH
+agent.
 
 [Back to top](#architecture)

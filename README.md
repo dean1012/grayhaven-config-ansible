@@ -4,27 +4,88 @@
 
 Ansible configuration management for Grayhaven Systems LLC infrastructure.
 
-This repository is the configuration layer for the Grayhaven infrastructure
-portfolio project. OpenTofu provisions the servers, cloud-init runs the
-bootstrap playbook on first boot, and the bastion host then runs the full
-Ansible playbook on a recurring schedule.
+This repository is public for transparency and operational demonstration. It
+shows how Grayhaven Systems LLC manages its own infrastructure, but it does not
+store client infrastructure, client credentials, private deployment data,
+private SSH keys, secrets, generated state, or other private operational data.
+
+OpenTofu provisions the servers, cloud-init runs the bootstrap playbook on first
+boot, and the active control bastion runs the full Ansible playbook on a timer,
+on repository-change poller events, or by manual invocation.
 
 ## Scope
 
 - Create and secure the `ansible` automation account.
-- Persist only role-specific runtime secrets needed after bootstrap.
-- Run full Ansible convergence from the bastion host.
-- Manage the initial `jsmith` administrative account on all managed hosts.
+- Bootstrap only the minimum access needed for ongoing convergence.
+- Pull encrypted operational values from the private `grayhaven-vault`
+  repository on the active control bastion.
+- Run full Ansible convergence from the active control bastion.
+- Manage configured users, SSH access, sudo access, and absent-user homedir
+  archival.
 - Enforce a shared managed-host baseline for access, SSH, SELinux, time sync,
-  package state, DigitalOcean agents, firewalld, and local host aliases.
+  package state, DigitalOcean agents, firewalld, local backups, and local host
+  aliases.
 - Serve temporary static placeholders for the Grayhaven Systems LLC and
   personal domains while dedicated website repositories are being prepared.
-- Manage Nginx, Let's Encrypt DNS-01 certificates, dev basic authentication,
-  and certificate renewal on web hosts.
+- Manage Nginx, host TLS certificates, load-balancer backend behavior, dev
+  basic authentication, and certificate renewal on web hosts.
 - Validate Ansible, YAML, Markdown, and shell scripts through GitHub Actions.
 
-Client infrastructure, credentials, deployment data, private SSH keys, secrets,
-and operational state are not stored in this repository.
+This repository is not a general-purpose deployment template. Deploying similar
+automation for another organization requires review and adaptation.
+
+## Manual Runner Invocation
+
+Connect to the active control bastion through the easy `bastion.*` DNS record,
+then run:
+
+```bash
+sudo systemctl start grayhaven-ansible-runner.service
+```
+
+Useful status commands:
+
+```bash
+sudo systemctl status grayhaven-ansible-runner.service
+sudo systemctl status grayhaven-ansible-runner.timer
+sudo systemctl status grayhaven-ansible-poller.timer
+sudo journalctl -u grayhaven-ansible-runner.service
+```
+
+## Maintenance Playbooks
+
+Maintenance playbooks are manual change-control tools intended to be run from
+the active control bastion by an authorized administrator.
+
+Rotate the persisted vault password by placing the new value in a temporary
+vars file and using `--extra-vars` with that file:
+
+```bash
+ansible-playbook \
+  --inventory inventory \
+  playbooks/rotate-vault-password.yml \
+  --extra-vars @/path/to/temp-vault-password.yml
+```
+
+The temporary vars file should contain:
+
+```yaml
+new_vault_password: "<new password>"
+```
+
+Avoid passing the new password directly on the shell command line.
+
+Rotate the deploy/control key with `playbooks/rotate-vault-deploy-key.yml`.
+Place the staged files on bastion hosts before running the playbook:
+
+- `/home/ansible/new_ansible_deploy_key`
+- `/home/ansible/new_ansible_deploy_key.pub`
+
+The files should be owned by `ansible:ansible`; the private key should be mode
+`0600`, and the public key should be mode `0644`.
+
+Rotate the Ansible control key from vault values with
+`playbooks/rotate-ansible-control-key.yml`.
 
 ## Documentation
 

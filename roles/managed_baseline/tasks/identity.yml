@@ -68,9 +68,13 @@
       environment: "{{ managed_baseline_environment }}"
       hostname: "{{ inventory_hostname }}"
       role: "{{ grayhaven_role }}"
+      control_node: "{{ managed_baseline_host_is_control_node }}"
+      tls_mode: "{{ managed_baseline_tls_mode | default('host') }}"
+      certificate_environment: "{{ managed_baseline_certificate_environment | default('staging') }}"
       tags: "{{ do_tags | default([]) | sort }}"
       private_ipv4: "{{ grayhaven_private_ipv4 | default('') }}"
       public_ipv4: "{{ grayhaven_public_ipv4 | default('') }}"
+    managed_baseline_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
 
 - name: Install login issue banner
   ansible.builtin.template:

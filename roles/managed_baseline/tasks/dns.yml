@@ -16,7 +16,7 @@
     managed_baseline_active_nm_connection: >-
       {{
         managed_baseline_active_nm_connections.stdout_lines
-        | select('search', ':' ~ ansible_default_ipv4.interface ~ '$')
+        | select('search', ':' ~ ansible_facts.default_ipv4.interface ~ '$')
         | first
         | split(':')
         | first
@@ -41,6 +41,6 @@
 
 - name: Reapply active network device DNS settings
   ansible.builtin.command:
-    cmd: "nmcli device reapply {{ ansible_default_ipv4.interface }}"
+    cmd: "nmcli device reapply {{ ansible_facts.default_ipv4.interface }}"
   changed_when: true
   when: managed_baseline_nmcli_dns.changed

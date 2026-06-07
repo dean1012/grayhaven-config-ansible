@@ -8,8 +8,29 @@
     content: |
       REPO_URL={{ managed_baseline_runner_repo_url | quote }}
       REPO_REF={{ managed_baseline_config_repo_ref | default('main') | quote }}
+      INFRA_POLICY_REPO_REF={{ managed_baseline_infra_policy_repo_ref | default('main') | quote }}
       CHECKOUT_DIR={{ managed_baseline_runner_checkout_dir | quote }}
+      VAULT_REPO_URL={{ managed_baseline_effective_vault_repo_url | quote }}
+      VAULT_REPO_REF={{ ('main' if managed_baseline_environment == 'prod' else 'staging') | quote }}
+      VAULT_CHECKOUT_DIR={{ managed_baseline_vault_checkout_dir | default('/home/ansible/grayhaven-vault') | quote }}
+      GRAYHAVEN_ENVIRONMENT={{ managed_baseline_environment | quote }}
+      GRAYHAVEN_HOSTNAME={{ inventory_hostname | quote }}
+      GRAYHAVEN_IS_CONTROL_NODE={{ managed_baseline_control_node_string | quote }}
+      GRAYHAVEN_CERTIFICATE_ENVIRONMENT={{ managed_baseline_certificate_environment | default('staging') | quote }}
+      GRAYHAVEN_TLS_MODE={{ managed_baseline_tls_mode | default('host') | quote }}
   when: grayhaven_role == "bastion"
+  vars:
+    managed_baseline_effective_vault_repo_url: >-
+      {{
+        managed_baseline_vault_repo_url
+        | default('git@github.com:dean1012/grayhaven-vault.git')
+      }}
+    managed_baseline_control_node_string: >-
+      {{
+        managed_baseline_host_is_control_node
+        | ternary('true', 'false')
+      }}
+    managed_baseline_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
 
 - name: Install bastion runner executable
   ansible.builtin.copy:
@@ -38,13 +59,52 @@
     mode: "0644"
   when: grayhaven_role == "bastion"
 
+- name: Install bastion poller executable
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/grayhaven-ansible-poller"
+    dest: /usr/local/sbin/grayhaven-ansible-poller
+    owner: root
+    group: root
+    mode: "0755"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion poller service unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.service"
+    dest: /etc/systemd/system/grayhaven-ansible-poller.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion poller timer unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.timer"
+    dest: /etc/systemd/system/grayhaven-ansible-poller.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: grayhaven_role == "bastion"
+
 - name: Enable bastion runner timer
   ansible.builtin.systemd_service:
     name: grayhaven-ansible-runner.timer
-    enabled: true
-    state: started
+    enabled: "{{ managed_baseline_host_is_control_node }}"
+    state: "{{ managed_baseline_host_is_control_node | ternary('started', 'stopped') }}"
     daemon_reload: true
   when: grayhaven_role == "bastion"
+  vars:
+    managed_baseline_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
+
+- name: Enable bastion poller timer
+  ansible.builtin.systemd_service:
+    name: grayhaven-ansible-poller.timer
+    enabled: "{{ managed_baseline_host_is_control_node }}"
+    state: "{{ managed_baseline_host_is_control_node | ternary('started', 'stopped') }}"
+    daemon_reload: true
+  when: grayhaven_role == "bastion"
+  vars:
+    managed_baseline_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
 
 - name: Remove bastion runner from non-bastion hosts
   ansible.builtin.file:
@@ -52,6 +112,9 @@
     state: absent
   loop:
     - /usr/local/sbin/grayhaven-ansible-runner
+    - /usr/local/sbin/grayhaven-ansible-poller
     - /etc/systemd/system/grayhaven-ansible-runner.service
     - /etc/systemd/system/grayhaven-ansible-runner.timer
+    - /etc/systemd/system/grayhaven-ansible-poller.service
+    - /etc/systemd/system/grayhaven-ansible-poller.timer
   when: grayhaven_role != "bastion"

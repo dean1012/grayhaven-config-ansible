@@ -16,12 +16,22 @@
           - grayhaven_role is defined
           - grayhaven_role is string
           - grayhaven_role in ["bastion", "web"]
+          - grayhaven_environment is defined
+          - grayhaven_environment is string
+          - grayhaven_environment in ["staging", "prod"]
           - grayhaven_config_repo_ref is defined
           - grayhaven_config_repo_ref is string
           - grayhaven_config_repo_ref | trim | length > 0
-          - grayhaven_root_password_hash is defined
-          - grayhaven_root_password_hash is string
-          - grayhaven_root_password_hash | trim | length > 0
+          - grayhaven_infra_policy_repo_ref is defined
+          - grayhaven_infra_policy_repo_ref is string
+          - grayhaven_infra_policy_repo_ref | trim | length > 0
+          - grayhaven_ansible_deploy_public_key is defined
+          - grayhaven_ansible_deploy_public_key is string
+          - grayhaven_ansible_deploy_public_key | trim | length > 0
+          - grayhaven_certificate_environment is defined
+          - grayhaven_certificate_environment in ["staging", "production"]
+          - grayhaven_tls_mode is defined
+          - grayhaven_tls_mode in ["host", "load_balancer"]
         fail_msg: "Required common bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
         quiet: true
       no_log: true
@@ -29,42 +39,27 @@
     - name: Validate bastion bootstrap variables
       ansible.builtin.assert:
         that:
-          - grayhaven_ansible_control_private_key is defined
-          - grayhaven_ansible_control_private_key is string
-          - grayhaven_ansible_control_private_key | trim | length > 0
-          - grayhaven_discord_webhook_url is defined
-          - grayhaven_discord_webhook_url is string
-          - grayhaven_discord_webhook_url | trim | length > 0
-          - grayhaven_digitalocean_inventory_api_token is defined
-          - grayhaven_digitalocean_inventory_api_token is string
-          - grayhaven_digitalocean_inventory_api_token | trim | length > 0
-          - grayhaven_jsmith_password_hash is defined
-          - grayhaven_jsmith_password_hash is string
-          - grayhaven_jsmith_password_hash | trim | length > 0
-          - grayhaven_jsmith_public_key is defined
-          - grayhaven_jsmith_public_key is string
-          - grayhaven_jsmith_public_key | trim | length > 0
+          - grayhaven_is_control_node is defined
+          - grayhaven_is_control_node is boolean
+          - grayhaven_control_bastion_key is defined
+          - grayhaven_control_bastion_key is string
+          - grayhaven_control_bastion_key | trim | length > 0
+          - grayhaven_vault_repo_url is defined
+          - grayhaven_vault_repo_url is string
+          - grayhaven_vault_repo_url | trim | length > 0
+          - grayhaven_vault_repo_ref is defined
+          - grayhaven_vault_repo_ref is string
+          - grayhaven_vault_repo_ref | trim | length > 0
+          - grayhaven_vault_password is defined
+          - grayhaven_vault_password is string
+          - grayhaven_vault_password | length > 0
+          - grayhaven_ansible_deploy_private_key is defined
+          - grayhaven_ansible_deploy_private_key is string
+          - grayhaven_ansible_deploy_private_key | trim | length > 0
         fail_msg: "Required bastion bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
         quiet: true
       no_log: true
       when: grayhaven_role == "bastion"
-
-    - name: Validate web bootstrap variables
-      ansible.builtin.assert:
-        that:
-          - grayhaven_ansible_control_public_key is defined
-          - grayhaven_ansible_control_public_key is string
-          - grayhaven_ansible_control_public_key | trim | length > 0
-          - grayhaven_dev_basic_auth_htpasswd_line is defined
-          - grayhaven_dev_basic_auth_htpasswd_line is string
-          - grayhaven_dev_basic_auth_htpasswd_line | trim | length > 0
-          - grayhaven_digitalocean_dns_api_token is defined
-          - grayhaven_digitalocean_dns_api_token is string
-          - grayhaven_digitalocean_dns_api_token | trim | length > 0
-        fail_msg: "Required web bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
-        quiet: true
-      no_log: true
-      when: grayhaven_role == "web"
 
     - name: Set system hostname
       ansible.builtin.hostname:
@@ -132,24 +127,32 @@
         group: ansible
         mode: "0700"
 
-    - name: Install Ansible control public key on web hosts
+    - name: Install Ansible authorized key
       ansible.builtin.copy:
         dest: /home/ansible/.ssh/authorized_keys
         owner: ansible
         group: ansible
         mode: "0600"
-        content: "{{ grayhaven_ansible_control_public_key }}\n"
-      when: grayhaven_role == "web"
+        content: "{{ grayhaven_ansible_deploy_public_key | trim }}\n"
 
-    - name: Install Ansible control private key on bastion hosts
+    - name: Install Ansible control and vault deploy private key on bastion hosts
       ansible.builtin.copy:
         dest: /home/ansible/.ssh/id_ed25519
         owner: ansible
         group: ansible
         mode: "0600"
-        content: "{{ grayhaven_ansible_control_private_key }}\n"
+        content: "{{ grayhaven_ansible_deploy_private_key | trim }}\n"
       when: grayhaven_role == "bastion"
       no_log: true
+
+    - name: Install Ansible control and vault deploy public key on bastion hosts
+      ansible.builtin.copy:
+        dest: /home/ansible/.ssh/id_ed25519.pub
+        owner: ansible
+        group: ansible
+        mode: "0644"
+        content: "{{ grayhaven_ansible_deploy_public_key | trim }}\n"
+      when: grayhaven_role == "bastion"
 
     - name: Create Grayhaven secrets directory
       ansible.builtin.file:
@@ -159,82 +162,15 @@
         group: ansible
         mode: "0750"
 
-    - name: Store Discord webhook environment file on bastion hosts
+    - name: Store Ansible Vault password on bastion hosts
       ansible.builtin.copy:
-        dest: /etc/grayhaven/ansible/secrets/discord-webhook.env
+        dest: /etc/grayhaven/ansible/secrets/vault-password
         owner: root
         group: ansible
         mode: "0640"
-        content: |
-          DISCORD_WEBHOOK_URL={{ grayhaven_discord_webhook_url | quote }}
+        content: "{{ grayhaven_vault_password }}"
       when: grayhaven_role == "bastion"
       no_log: true
-
-    - name: Store DigitalOcean inventory API token on bastion hosts
-      ansible.builtin.copy:
-        dest: /etc/grayhaven/ansible/secrets/do-api-token.env
-        owner: root
-        group: ansible
-        mode: "0640"
-        content: |
-          DO_API_TOKEN={{ grayhaven_digitalocean_inventory_api_token | quote }}
-      when: grayhaven_role == "bastion"
-      no_log: true
-
-    - name: Store admin access vars on bastion hosts
-      ansible.builtin.copy:
-        dest: /etc/grayhaven/ansible/secrets/admin-access.yml
-        owner: root
-        group: ansible
-        mode: "0640"
-        content: |
-          admin_access_password_hash: {{ grayhaven_jsmith_password_hash | to_json }}
-          admin_access_public_key: {{ grayhaven_jsmith_public_key | to_json }}
-      when: grayhaven_role == "bastion"
-      no_log: true
-
-    - name: Store managed baseline vars on bastion hosts
-      ansible.builtin.copy:
-        dest: /etc/grayhaven/ansible/secrets/managed-baseline.yml
-        owner: root
-        group: ansible
-        mode: "0640"
-        content: |
-          managed_baseline_root_password_hash: {{ grayhaven_root_password_hash | to_json }}
-          managed_baseline_config_repo_ref: {{ grayhaven_config_repo_ref | to_json }}
-      when: grayhaven_role == "bastion"
-      no_log: true
-
-    - name: Store dev HTTP basic auth htpasswd entry on web hosts
-      ansible.builtin.copy:
-        dest: /etc/grayhaven/ansible/secrets/dev-basic-auth-htpasswd
-        owner: root
-        group: root
-        mode: "0600"
-        content: "{{ grayhaven_dev_basic_auth_htpasswd_line }}\n"
-      when: grayhaven_role == "web"
-      no_log: true
-
-    - name: Store DigitalOcean DNS API token on web hosts
-      ansible.builtin.copy:
-        dest: /etc/grayhaven/ansible/secrets/digitalocean-dns-api-token
-        owner: root
-        group: root
-        mode: "0600"
-        content: "{{ grayhaven_digitalocean_dns_api_token }}\n"
-      when: grayhaven_role == "web"
-      no_log: true
-
-    - name: Set root password hash
-      ansible.builtin.user:
-        name: root
-        password: "{{ grayhaven_root_password_hash }}"
-      no_log: true
-
-    - name: Remove root authorized SSH keys
-      ansible.builtin.file:
-        path: /root/.ssh/authorized_keys
-        state: absent
 
     - name: Stop and disable DigitalOcean Droplet agent
       ansible.builtin.service:
@@ -275,7 +211,16 @@
         content: |
           REPO_URL={{ "https://github.com/dean1012/grayhaven-config-ansible.git" | quote }}
           REPO_REF={{ grayhaven_config_repo_ref | quote }}
+          INFRA_POLICY_REPO_REF={{ grayhaven_infra_policy_repo_ref | quote }}
           CHECKOUT_DIR={{ "/home/ansible/grayhaven-config-ansible" | quote }}
+          VAULT_REPO_URL={{ grayhaven_vault_repo_url | quote }}
+          VAULT_REPO_REF={{ grayhaven_vault_repo_ref | quote }}
+          VAULT_CHECKOUT_DIR={{ "/home/ansible/grayhaven-vault" | quote }}
+          GRAYHAVEN_ENVIRONMENT={{ grayhaven_environment | quote }}
+          GRAYHAVEN_HOSTNAME={{ grayhaven_hostname | quote }}
+          GRAYHAVEN_IS_CONTROL_NODE={{ (grayhaven_is_control_node | bool) | ternary("true", "false") | quote }}
+          GRAYHAVEN_CERTIFICATE_ENVIRONMENT={{ grayhaven_certificate_environment | quote }}
+          GRAYHAVEN_TLS_MODE={{ grayhaven_tls_mode | quote }}
       when: grayhaven_role == "bastion"
 
     - name: Install bastion runner executable
@@ -305,16 +250,53 @@
         mode: "0644"
       when: grayhaven_role == "bastion"
 
-    - name: Enable bastion runner timer
+    - name: Install bastion poller executable
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/grayhaven-ansible-poller"
+        dest: /usr/local/sbin/grayhaven-ansible-poller
+        owner: root
+        group: root
+        mode: "0755"
+      when: grayhaven_role == "bastion"
+
+    - name: Install bastion poller service unit
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.service"
+        dest: /etc/systemd/system/grayhaven-ansible-poller.service
+        owner: root
+        group: root
+        mode: "0644"
+      when: grayhaven_role == "bastion"
+
+    - name: Install bastion poller timer unit
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.timer"
+        dest: /etc/systemd/system/grayhaven-ansible-poller.timer
+        owner: root
+        group: root
+        mode: "0644"
+      when: grayhaven_role == "bastion"
+
+    - name: Manage bastion runner timer
       ansible.builtin.systemd_service:
         name: grayhaven-ansible-runner.timer
-        enabled: true
-        state: started
+        enabled: "{{ grayhaven_is_control_node | bool }}"
+        state: "{{ (grayhaven_is_control_node | bool) | ternary('started', 'stopped') }}"
         daemon_reload: true
       when: grayhaven_role == "bastion"
 
-    - name: Trigger initial bastion runner execution without blocking bootstrap
+    - name: Manage bastion poller timer
+      ansible.builtin.systemd_service:
+        name: grayhaven-ansible-poller.timer
+        enabled: "{{ grayhaven_is_control_node | bool }}"
+        state: "{{ (grayhaven_is_control_node | bool) | ternary('started', 'stopped') }}"
+        daemon_reload: true
+      when: grayhaven_role == "bastion"
+
+    - name: Trigger initial control bastion runner execution without blocking bootstrap
       ansible.builtin.command:
         cmd: systemctl start --no-block grayhaven-ansible-runner.service
       changed_when: true
-      when: grayhaven_role == "bastion"
+      when:
+        - grayhaven_role == "bastion"
+        - grayhaven_is_control_node | bool

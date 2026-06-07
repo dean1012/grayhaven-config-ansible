@@ -2,17 +2,17 @@
 set -Eeuo pipefail
 
 LOCK_FILE="/run/grayhaven-ansible-runner.lock"
+PENDING_FILE="/run/grayhaven-ansible-runner.pending"
 RUNNER_ENV="/etc/grayhaven/ansible/runner.env"
-DO_TOKEN_ENV="/etc/grayhaven/ansible/secrets/do-api-token.env"
-DISCORD_WEBHOOK_ENV="/etc/grayhaven/ansible/secrets/discord-webhook.env"
-ADMIN_ACCESS_VARS="/etc/grayhaven/ansible/secrets/admin-access.yml"
-MANAGED_BASELINE_VARS="/etc/grayhaven/ansible/secrets/managed-baseline.yml"
+VAULT_PASSWORD_FILE="/etc/grayhaven/ansible/secrets/vault-password"
 RUNNER_VARS="/run/grayhaven-ansible-runner-vars.yml"
+RUNNER_SECRET_ENV="/run/grayhaven-ansible-runner-secrets.env"
 RUNNER_PLAYBOOK_LOG="/run/grayhaven-ansible-runner-playbook.log"
 ANSIBLE_HOME="/home/ansible"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 CHECKOUT_PARENT="${ANSIBLE_HOME}"
 DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
+DEFAULT_VAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-vault"
 DEFAULT_REPO_URL="https://github.com/dean1012/grayhaven-config-ansible.git"
 DEFAULT_REPO_REF="main"
 
@@ -20,55 +20,17 @@ log() {
   printf '[grayhaven-ansible-runner] %s\n' "$*"
 }
 
-send_failure_notification() {
-  local status="$1"
-  local failed_targets
+run_as_ansible() {
+  runuser -u ansible -- "$@"
+}
 
-  if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
-    log "Discord webhook URL is unavailable; skipping failure notification."
-    return 0
+require_file() {
+  local path="$1"
+
+  if [[ ! -f "$path" ]]; then
+    log "Required file is missing: $path"
+    exit 1
   fi
-
-  log "Sending Discord failure notification."
-  failed_targets="$(failed_playbook_targets)"
-  if [[ -z "$failed_targets" ]]; then
-    failed_targets="Ansible playbook run"
-  fi
-
-  DISCORD_TARGET="$failed_targets"
-  DISCORD_TIMESTAMP="$(TZ="${MANAGED_BASELINE_TIMEZONE:-America/Chicago}" date '+%Y-%m-%d %I:%M %p')"
-  export DISCORD_TARGET DISCORD_TIMESTAMP
-
-  /usr/bin/python3 - <<'PY' | curl --fail --silent --show-error \
-    --header "Content-Type: application/json" \
-    --request POST \
-    --data @- \
-    "$DISCORD_WEBHOOK_URL" >/dev/null || log "Discord failure notification could not be delivered."
-import json
-import os
-
-description = (
-    f"{os.environ['DISCORD_TARGET']}\n\n"
-    f"Environment: {os.environ.get('GRAYHAVEN_ENVIRONMENT', 'prod')}\n"
-    f"{os.environ['DISCORD_TIMESTAMP']}"
-)
-
-print(
-    json.dumps(
-        {
-            "embeds": [
-                {
-                    "title": "Ansible Configuration Failed - Please Investigate",
-                    "description": description,
-                    "color": 14042437,
-                }
-            ]
-        }
-    )
-)
-PY
-
-  return "$status"
 }
 
 failed_playbook_targets() {
@@ -109,6 +71,57 @@ print("\n".join(sorted(failed_hosts, key=host_order)))
 PY
 }
 
+send_failure_notification() {
+  local status="$1"
+  local failed_targets
+
+  if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
+    log "Discord webhook URL is unavailable; skipping failure notification."
+    return 0
+  fi
+
+  log "Sending Discord failure notification."
+  failed_targets="$(failed_playbook_targets)"
+  if [[ -z "$failed_targets" ]]; then
+    failed_targets="Ansible runner command"
+  fi
+
+  DISCORD_TARGET="$failed_targets"
+  DISCORD_TIMESTAMP="$(TZ="${MANAGED_BASELINE_TIMEZONE:-America/Chicago}" date '+%Y-%m-%d %I:%M %p')"
+  export DISCORD_TARGET DISCORD_TIMESTAMP
+
+  /usr/bin/python3 - <<'PY' | curl --fail --silent --show-error \
+    --header "Content-Type: application/json" \
+    --request POST \
+    --data @- \
+    "$DISCORD_WEBHOOK_URL" >/dev/null || log "Discord failure notification could not be delivered."
+import json
+import os
+
+description = (
+    f"{os.environ['DISCORD_TARGET']}\n\n"
+    f"Environment: {os.environ.get('GRAYHAVEN_ENVIRONMENT', 'prod')}\n"
+    f"{os.environ['DISCORD_TIMESTAMP']}"
+)
+
+print(
+    json.dumps(
+        {
+            "embeds": [
+                {
+                    "title": "Ansible Configuration Failed - Please Investigate",
+                    "description": description,
+                    "color": 14042437,
+                }
+            ]
+        }
+    )
+)
+PY
+
+  return "$status"
+}
+
 on_error() {
   local status="$?"
 
@@ -117,17 +130,33 @@ on_error() {
   exit "$status"
 }
 
-run_as_ansible() {
-  runuser -u ansible -- "$@"
+checkout_ref() {
+  local checkout_dir="$1"
+  local repo_url="$2"
+  local repo_ref="$3"
+
+  if [[ ! -d "${checkout_dir}/.git" ]]; then
+    run_as_ansible git clone "$repo_url" "$checkout_dir"
+  fi
+
+  run_as_ansible git -C "$checkout_dir" fetch --prune origin \
+    '+refs/heads/*:refs/remotes/origin/*' \
+    '+refs/tags/*:refs/tags/*'
+
+  if run_as_ansible git -C "$checkout_dir" rev-parse --verify --quiet "origin/${repo_ref}" >/dev/null; then
+    run_as_ansible git -C "$checkout_dir" checkout -B "$repo_ref" "origin/${repo_ref}"
+  else
+    run_as_ansible git -C "$checkout_dir" checkout --detach "$repo_ref"
+  fi
+
+  run_as_ansible git -C "$checkout_dir" reset --hard HEAD
 }
 
-require_file() {
-  local path="$1"
-
-  if [[ ! -f "$path" ]]; then
-    log "Required file is missing: $path"
-    exit 1
-  fi
+prepare_github_known_hosts() {
+  install -d -o ansible -g ansible -m 0700 "${ANSIBLE_HOME}/.ssh"
+  run_as_ansible ssh-keyscan -T 5 -t ed25519 github.com > "${ANSIBLE_HOME}/.ssh/known_hosts"
+  chown ansible:ansible "${ANSIBLE_HOME}/.ssh/known_hosts"
+  chmod 0644 "${ANSIBLE_HOME}/.ssh/known_hosts"
 }
 
 prepare_inventory_known_hosts() {
@@ -150,11 +179,19 @@ with open(sys.argv[1], encoding="utf-8") as inventory_file:
 hostvars = inventory.get("_meta", {}).get("hostvars", {})
 targets = []
 
+
+def unwrap_ansible_value(value):
+    if isinstance(value, dict) and "__ansible_unsafe" in value:
+        return value["__ansible_unsafe"]
+
+    return value
+
+
 for variables in hostvars.values():
-    if variables.get("ansible_connection") == "local":
+    if unwrap_ansible_value(variables.get("ansible_connection")) == "local":
         continue
 
-    ansible_host = variables.get("ansible_host")
+    ansible_host = unwrap_ansible_value(variables.get("ansible_host"))
     if ansible_host:
         targets.append(str(ansible_host))
 
@@ -176,97 +213,7 @@ PY
   chmod 0644 /etc/ssh/ssh_known_hosts
 }
 
-checkout_ref() {
-  local repo_ref="$1"
-
-  run_as_ansible git -C "$CHECKOUT_DIR" fetch --prune origin \
-    '+refs/heads/*:refs/remotes/origin/*' \
-    '+refs/tags/*:refs/tags/*'
-
-  if run_as_ansible git -C "$CHECKOUT_DIR" rev-parse --verify --quiet "origin/${repo_ref}" >/dev/null; then
-    run_as_ansible git -C "$CHECKOUT_DIR" checkout -B "$repo_ref" "origin/${repo_ref}"
-  else
-    run_as_ansible git -C "$CHECKOUT_DIR" checkout --detach "$repo_ref"
-  fi
-
-  run_as_ansible git -C "$CHECKOUT_DIR" reset --hard HEAD
-}
-
-main() {
-  exec 9>"$LOCK_FILE"
-  if ! flock -n 9; then
-    log "Another runner invocation is already active."
-    exit 1
-  fi
-
-  require_file "$RUNNER_ENV"
-  require_file "$DO_TOKEN_ENV"
-  require_file "$DISCORD_WEBHOOK_ENV"
-  require_file "$ADMIN_ACCESS_VARS"
-  require_file "$MANAGED_BASELINE_VARS"
-  require_file "$ANSIBLE_CONTROL_PRIVATE_KEY"
-
-  # shellcheck disable=SC1090
-  source "$RUNNER_ENV"
-  # shellcheck disable=SC1090
-  source "$DO_TOKEN_ENV"
-  # shellcheck disable=SC1090
-  source "$DISCORD_WEBHOOK_ENV"
-
-  export DO_API_TOKEN
-  export HOME="/root"
-  trap on_error ERR
-
-  REPO_URL="${REPO_URL:-$DEFAULT_REPO_URL}"
-  REPO_REF="${REPO_REF:-$DEFAULT_REPO_REF}"
-  CHECKOUT_DIR="${CHECKOUT_DIR:-$DEFAULT_CHECKOUT_DIR}"
-  export ANSIBLE_CONFIG="${CHECKOUT_DIR}/ansible.cfg"
-
-  if [[ ! "${DISCORD_WEBHOOK_URL:-}" =~ ^https://discord.com/api/webhooks/([^/]+)/([^/]+)$ ]]; then
-    log "Discord webhook URL has an unexpected format."
-    exit 1
-  fi
-
-  DISCORD_WEBHOOK_ID="${BASH_REMATCH[1]}"
-  DISCORD_WEBHOOK_TOKEN="${BASH_REMATCH[2]}"
-  GRAYHAVEN_ENVIRONMENT="${GRAYHAVEN_ENVIRONMENT:-prod}"
-  export DISCORD_WEBHOOK_ID DISCORD_WEBHOOK_TOKEN GRAYHAVEN_ENVIRONMENT
-
-  log "Preparing checkout ${CHECKOUT_DIR} at ref ${REPO_REF}."
-  install -d -o ansible -g ansible -m 0755 "$CHECKOUT_PARENT"
-
-  if [[ ! -d "${CHECKOUT_DIR}/.git" ]]; then
-    run_as_ansible git clone "$REPO_URL" "$CHECKOUT_DIR"
-  fi
-
-  chown -R ansible:ansible "$CHECKOUT_DIR"
-  checkout_ref "$REPO_REF"
-
-  log "Preparing runtime variables derived from local control state."
-  ANSIBLE_CONTROL_PUBLIC_KEY="$(ssh-keygen -y -f "$ANSIBLE_CONTROL_PRIVATE_KEY")"
-  export ANSIBLE_CONTROL_PUBLIC_KEY
-  /usr/bin/python3 - <<'PY' > "$RUNNER_VARS"
-import json
-import os
-
-print(
-    "managed_baseline_ansible_control_public_key: "
-    + json.dumps(os.environ["ANSIBLE_CONTROL_PUBLIC_KEY"])
-)
-print(
-    "automation_notifications_discord_webhook_id: "
-    + json.dumps(os.environ["DISCORD_WEBHOOK_ID"])
-)
-print(
-    "automation_notifications_discord_webhook_token: "
-    + json.dumps(os.environ["DISCORD_WEBHOOK_TOKEN"])
-)
-print(
-    "automation_notifications_environment: "
-    + json.dumps(os.environ["GRAYHAVEN_ENVIRONMENT"])
-)
-PY
-
+install_ansible_runtime() {
   log "Ensuring pip-managed Ansible runtime is available."
   /usr/bin/python3 -m pip install --upgrade --root-user-action=ignore pip
   if ! /usr/local/bin/ansible --version 2>/dev/null | head -n 1 | grep -q "core 2.21.0"; then
@@ -287,7 +234,199 @@ PY
   /usr/local/bin/ansible-galaxy collection install \
     --requirements-file "${CHECKOUT_DIR}/galaxy_requirements.yml" \
     --force
+}
 
+render_secret_environment() {
+  /usr/bin/python3 - "$VAULT_CHECKOUT_DIR" "$VAULT_PASSWORD_FILE" <<'PY' > "$RUNNER_SECRET_ENV"
+import io
+import os
+import shlex
+import subprocess
+import sys
+
+import yaml
+
+vault_checkout_dir = sys.argv[1]
+vault_password_file = sys.argv[2]
+
+with open(os.path.join(vault_checkout_dir, "config.yml"), encoding="utf-8") as config_file:
+    config = yaml.safe_load(config_file) or {}
+
+result = subprocess.run(
+    [
+        "/usr/local/bin/ansible-vault",
+        "view",
+        "--vault-password-file",
+        vault_password_file,
+        os.path.join(vault_checkout_dir, "vault", "bastion.yml"),
+    ],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+bastion = yaml.safe_load(io.StringIO(result.stdout)) or {}
+
+selector = config.get("discord_webhook")
+webhooks = bastion.get("discord_webhooks", {})
+webhook_url = webhooks.get(selector)
+
+if not webhook_url:
+    raise SystemExit(f"discord_webhook selector {selector!r} does not match a configured webhook")
+
+certificate_environment = config.get("certificate_environment")
+if certificate_environment not in ["staging", "production"]:
+    raise SystemExit("certificate_environment must be staging or production")
+
+inventory_token = bastion.get("digitalocean_inventory_api_token")
+if not inventory_token:
+    raise SystemExit("digitalocean_inventory_api_token is missing from bastion vault data")
+
+print(f"DO_API_TOKEN={shlex.quote(str(inventory_token))}")
+print(f"DISCORD_WEBHOOK_URL={shlex.quote(str(webhook_url))}")
+print(f"GRAYHAVEN_CERTIFICATE_ENVIRONMENT={shlex.quote(str(certificate_environment))}")
+PY
+  chmod 0600 "$RUNNER_SECRET_ENV"
+  # shellcheck disable=SC1090
+  source "$RUNNER_SECRET_ENV"
+  export DO_API_TOKEN DISCORD_WEBHOOK_URL GRAYHAVEN_CERTIFICATE_ENVIRONMENT
+}
+
+refresh_runtime_state_from_inventory() {
+  local inventory_json
+  local runtime_env
+
+  log "Refreshing runtime state from DigitalOcean inventory."
+  inventory_json="$(mktemp)"
+  runtime_env="$(mktemp)"
+
+  /usr/local/bin/ansible-inventory \
+    --inventory "${CHECKOUT_DIR}/inventory" \
+    --list > "$inventory_json"
+
+  /usr/bin/python3 - "$inventory_json" > "$runtime_env" <<'PY'
+import json
+import os
+import shlex
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as inventory_file:
+    inventory = json.load(inventory_file)
+
+hostname = os.environ.get("GRAYHAVEN_HOSTNAME", "")
+hostvars = inventory.get("_meta", {}).get("hostvars", {})
+variables = hostvars.get(hostname)
+
+if variables is None:
+    raise SystemExit(f"Current host {hostname!r} was not found in DigitalOcean inventory")
+
+def unwrap_ansible_value(value):
+    if isinstance(value, dict) and "__ansible_unsafe" in value:
+        return value["__ansible_unsafe"]
+
+    if isinstance(value, list):
+        return [unwrap_ansible_value(item) for item in value]
+
+    return value
+
+
+tags = unwrap_ansible_value(variables.get("do_tags", []))
+environment_tags = [
+    tag
+    for host_variables in hostvars.values()
+    for tag in unwrap_ansible_value(host_variables.get("do_tags", []))
+]
+
+if "tls-mode-load-balancer" in environment_tags or "tls-mode-load_balancer" in environment_tags:
+    tls_mode = "load_balancer"
+elif "tls-mode-host" in environment_tags:
+    tls_mode = "host"
+else:
+    raise SystemExit("DigitalOcean inventory does not include a tls-mode tag")
+
+is_control_node = "true" if "control-node" in tags else "false"
+
+print(f"GRAYHAVEN_TLS_MODE={shlex.quote(tls_mode)}")
+print(f"GRAYHAVEN_IS_CONTROL_NODE={shlex.quote(is_control_node)}")
+PY
+
+  # shellcheck disable=SC1090
+  source "$runtime_env"
+  export GRAYHAVEN_TLS_MODE GRAYHAVEN_IS_CONTROL_NODE
+
+  rm -f "$inventory_json" "$runtime_env"
+}
+
+render_runner_vars() {
+  log "Preparing runtime variables derived from local control state."
+  ANSIBLE_CONTROL_PUBLIC_KEY="$(ssh-keygen -y -f "$ANSIBLE_CONTROL_PRIVATE_KEY")"
+  export ANSIBLE_CONTROL_PUBLIC_KEY
+  /usr/bin/python3 - <<'PY' > "$RUNNER_VARS"
+import json
+import os
+
+vars_to_render = {
+    "managed_baseline_ansible_control_public_key": os.environ["ANSIBLE_CONTROL_PUBLIC_KEY"],
+    "managed_baseline_config_repo_ref": os.environ["REPO_REF"],
+    "managed_baseline_infra_policy_repo_ref": os.environ["INFRA_POLICY_REPO_REF"],
+    "managed_baseline_vault_repo_url": os.environ["VAULT_REPO_URL"],
+    "managed_baseline_vault_checkout_dir": os.environ["VAULT_CHECKOUT_DIR"],
+    "managed_baseline_environment": os.environ["GRAYHAVEN_ENVIRONMENT"],
+    "managed_baseline_certificate_environment": os.environ["GRAYHAVEN_CERTIFICATE_ENVIRONMENT"],
+    "managed_baseline_tls_mode": os.environ["GRAYHAVEN_TLS_MODE"],
+    "automation_notifications_discord_webhook_id": os.environ["DISCORD_WEBHOOK_ID"],
+    "automation_notifications_discord_webhook_token": os.environ["DISCORD_WEBHOOK_TOKEN"],
+    "automation_notifications_environment": os.environ["GRAYHAVEN_ENVIRONMENT"],
+    "web_static_environment": os.environ["GRAYHAVEN_ENVIRONMENT"],
+    "web_static_certificate_environment": os.environ["GRAYHAVEN_CERTIFICATE_ENVIRONMENT"],
+    "web_static_tls_mode": os.environ["GRAYHAVEN_TLS_MODE"],
+}
+
+for key, value in vars_to_render.items():
+    print(f"{key}: {json.dumps(value)}")
+PY
+}
+
+run_once() {
+  require_file "$RUNNER_ENV"
+  require_file "$VAULT_PASSWORD_FILE"
+  require_file "$ANSIBLE_CONTROL_PRIVATE_KEY"
+
+  # shellcheck disable=SC1090
+  source "$RUNNER_ENV"
+
+  REPO_URL="${REPO_URL:-$DEFAULT_REPO_URL}"
+  REPO_REF="${REPO_REF:-$DEFAULT_REPO_REF}"
+  INFRA_POLICY_REPO_REF="${INFRA_POLICY_REPO_REF:-main}"
+  CHECKOUT_DIR="${CHECKOUT_DIR:-$DEFAULT_CHECKOUT_DIR}"
+  VAULT_CHECKOUT_DIR="${VAULT_CHECKOUT_DIR:-$DEFAULT_VAULT_CHECKOUT_DIR}"
+  GRAYHAVEN_ENVIRONMENT="${GRAYHAVEN_ENVIRONMENT:-prod}"
+  export REPO_REF INFRA_POLICY_REPO_REF VAULT_REPO_URL VAULT_REPO_REF VAULT_CHECKOUT_DIR
+  export GRAYHAVEN_ENVIRONMENT GRAYHAVEN_HOSTNAME GRAYHAVEN_IS_CONTROL_NODE
+  export GRAYHAVEN_CERTIFICATE_ENVIRONMENT GRAYHAVEN_TLS_MODE
+  export ANSIBLE_CONFIG="${CHECKOUT_DIR}/ansible.cfg"
+  export HOME="/root"
+
+  log "Preparing checkouts."
+  install -d -o ansible -g ansible -m 0755 "$CHECKOUT_PARENT"
+  prepare_github_known_hosts
+  checkout_ref "$CHECKOUT_DIR" "$REPO_URL" "$REPO_REF"
+  checkout_ref "$VAULT_CHECKOUT_DIR" "$VAULT_REPO_URL" "$VAULT_REPO_REF"
+  chown -R ansible:ansible "$CHECKOUT_DIR" "$VAULT_CHECKOUT_DIR"
+
+  install_ansible_runtime
+  render_secret_environment
+  refresh_runtime_state_from_inventory
+
+  if [[ ! "${DISCORD_WEBHOOK_URL:-}" =~ ^https://discord.com/api/webhooks/([^/]+)/([^/]+)$ ]]; then
+    log "Discord webhook URL has an unexpected format."
+    exit 1
+  fi
+
+  DISCORD_WEBHOOK_ID="${BASH_REMATCH[1]}"
+  DISCORD_WEBHOOK_TOKEN="${BASH_REMATCH[2]}"
+  export DISCORD_WEBHOOK_ID DISCORD_WEBHOOK_TOKEN
+
+  render_runner_vars
   prepare_inventory_known_hosts
 
   log "Running full site playbook."
@@ -295,9 +434,34 @@ PY
   /usr/local/bin/ansible-playbook \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/site.yml" \
-    --extra-vars "@${MANAGED_BASELINE_VARS}" \
-    --extra-vars "@${RUNNER_VARS}" \
-    --extra-vars "@${ADMIN_ACCESS_VARS}" 2>&1 | tee "$RUNNER_PLAYBOOK_LOG"
+    --vault-password-file "$VAULT_PASSWORD_FILE" \
+    --extra-vars "@${VAULT_CHECKOUT_DIR}/config.yml" \
+    --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/common.yml" \
+    --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/bastion.yml" \
+    --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/web.yml" \
+    --extra-vars "@${RUNNER_VARS}" 2>&1 | tee "$RUNNER_PLAYBOOK_LOG"
+}
+
+main() {
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    log "Another runner invocation is already active; queueing follow-up run."
+    touch "$PENDING_FILE"
+    exit 0
+  fi
+
+  trap on_error ERR
+
+  while true; do
+    rm -f "$PENDING_FILE"
+    run_once
+
+    if [[ ! -f "$PENDING_FILE" ]]; then
+      break
+    fi
+
+    log "Pending runner request detected; starting another convergence pass."
+  done
 }
 
 main "$@"
