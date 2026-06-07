@@ -42,6 +42,8 @@
     fail_msg: "Present users require full_name, password_hash, and ssh_keys."
     quiet: true
   loop: "{{ users }}"
+  loop_control:
+    label: "{{ item.username | default('undefined') }}"
   no_log: true
 
 - name: Derive managed user state lists
@@ -70,6 +72,8 @@
     password: "{{ item.password_hash }}"
     state: present
   loop: "{{ admin_access_present_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   no_log: true
 
 - name: Create present user SSH directories
@@ -80,6 +84,8 @@
     group: "{{ item.username }}"
     mode: "0700"
   loop: "{{ admin_access_present_users }}"
+  loop_control:
+    label: "{{ item.username }}"
 
 - name: Install present user authorized SSH keys
   ansible.builtin.copy:
@@ -89,6 +95,8 @@
     mode: "0600"
     content: "{{ item.ssh_keys | join('\n') }}\n"
   loop: "{{ admin_access_present_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   no_log: true
 
 - name: Check absent user home directories
@@ -96,6 +104,8 @@
     path: "/home/{{ item.username }}"
   register: admin_access_absent_homes
   loop: "{{ admin_access_absent_users }}"
+  loop_control:
+    label: "{{ item.username }}"
 
 - name: Archive absent user home directories before deletion
   ansible.builtin.command:
@@ -108,6 +118,8 @@
     - item.stat.exists
     - item.item.home_mode | default('archive') == 'archive'
   loop: "{{ admin_access_absent_homes.results }}"
+  loop_control:
+    label: "{{ item.item.username }}"
   changed_when: true
   vars:
     admin_access_archive_filename: >-
@@ -119,3 +131,5 @@
     state: absent
     remove: true
   loop: "{{ admin_access_absent_users }}"
+  loop_control:
+    label: "{{ item.username }}"
