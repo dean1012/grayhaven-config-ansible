@@ -54,6 +54,20 @@
     - web_static
 
   post_tasks:
+    - name: Check for active AlmaLinux bootstrap user processes
+      ansible.builtin.command:
+        cmd: pgrep -u almalinux
+      register: grayhaven_almalinux_processes
+      changed_when: false
+      failed_when: false
+
+    - name: Remove bootstrap AlmaLinux user after successful convergence
+      ansible.builtin.user:
+        name: almalinux
+        state: absent
+        remove: true
+      when: grayhaven_almalinux_processes.rc != 0
+
     - name: Build Discord successful host target order
       ansible.builtin.set_fact:
         automation_notifications_success_targets: >-

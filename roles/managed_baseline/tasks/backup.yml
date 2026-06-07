@@ -1,0 +1,167 @@
+---
+- name: Validate backup variables
+  ansible.builtin.assert:
+    that:
+      - restic_password is defined
+      - restic_password is string
+      - restic_password | length > 0
+      - backup.schedule | default('daily') == 'daily'
+    fail_msg: "Local backups require restic_password and support only a daily schedule."
+    quiet: true
+  no_log: true
+
+- name: Derive local backup settings
+  ansible.builtin.set_fact:
+    managed_baseline_backup_repository_path: >-
+      {{
+        backup.repositories.local.repository_path
+        | default('/var/backups/restic')
+      }}
+    managed_baseline_backup_homedir_archive_path: >-
+      {{
+        backup.repositories.local.homedir_archive_path
+        | default('/var/backups/deleted-homedir-archives')
+      }}
+    managed_baseline_backup_keep_daily: "{{ backup.retention.keep_daily | default(7) }}"
+    managed_baseline_backup_include_paths: >-
+      {{
+        backup.include
+        | default([
+            backup.repositories.local.homedir_archive_path | default('/var/backups/deleted-homedir-archives'),
+            '/home',
+            '/var/log'
+          ])
+      }}
+    managed_baseline_backup_exclude_paths: >-
+      {{
+        [
+          '/home/ansible/grayhaven-config-ansible/.git',
+          '/home/ansible/grayhaven-vault/.git',
+          '/var/log/journal',
+          '/var/log/audit',
+          '/var/log/dnf*',
+          '/var/log/yum.log'
+        ]
+        + (backup.exclude | default([]))
+      }}
+
+- name: Ensure local backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - "{{ managed_baseline_backup_repository_path }}"
+    - "{{ managed_baseline_backup_homedir_archive_path }}"
+    - /etc/grayhaven/backup
+
+- name: Store restic password file
+  ansible.builtin.copy:
+    dest: /etc/grayhaven/backup/restic-password
+    owner: root
+    group: root
+    mode: "0600"
+    content: "{{ restic_password }}"
+  no_log: true
+
+- name: Store restic include list
+  ansible.builtin.copy:
+    dest: /etc/grayhaven/backup/include
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ managed_baseline_backup_include_paths | join('\n') }}\n"
+
+- name: Store restic exclude list
+  ansible.builtin.copy:
+    dest: /etc/grayhaven/backup/exclude
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ managed_baseline_backup_exclude_paths | join('\n') }}\n"
+
+- name: Initialize local restic repository
+  ansible.builtin.command:
+    cmd: >-
+      restic
+      --repo {{ managed_baseline_backup_repository_path | quote }}
+      --password-file /etc/grayhaven/backup/restic-password
+      init
+    creates: "{{ managed_baseline_backup_repository_path }}/config"
+  no_log: true
+
+- name: Install local restic backup script
+  ansible.builtin.copy:
+    dest: /usr/local/sbin/grayhaven-restic-backup
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+
+      REPOSITORY={{ managed_baseline_backup_repository_path | quote }}
+      PASSWORD_FILE=/etc/grayhaven/backup/restic-password
+      INCLUDE_FILE=/etc/grayhaven/backup/include
+      EXCLUDE_FILE=/etc/grayhaven/backup/exclude
+      KEEP_DAILY={{ managed_baseline_backup_keep_daily | quote }}
+
+      restic \
+        --repo "$REPOSITORY" \
+        --password-file "$PASSWORD_FILE" \
+        backup \
+        --files-from "$INCLUDE_FILE" \
+        --exclude-file "$EXCLUDE_FILE" \
+        --tag grayhaven-local \
+        --host "$(hostname -f)"
+
+      restic \
+        --repo "$REPOSITORY" \
+        --password-file "$PASSWORD_FILE" \
+        forget \
+        --keep-daily "$KEEP_DAILY" \
+        --prune
+
+- name: Install local restic backup service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-restic-backup.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Grayhaven local restic backup
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/grayhaven-restic-backup
+
+- name: Install local restic backup timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-restic-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Run Grayhaven local restic backup daily
+
+      [Timer]
+      OnCalendar=*-*-* 02:37:00
+      RandomizedDelaySec=15m
+      Persistent=true
+      Unit=grayhaven-restic-backup.service
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Enable local restic backup timer
+  ansible.builtin.systemd_service:
+    name: grayhaven-restic-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true

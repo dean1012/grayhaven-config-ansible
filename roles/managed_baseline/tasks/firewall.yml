@@ -1,5 +1,89 @@
 ---
-- name: Install Grayhaven firewalld zone
+- name: Ensure firewalld policy cache directory exists
+  ansible.builtin.file:
+    path: /etc/grayhaven/firewall
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Fetch firewalld policy from infrastructure repository
+  ansible.builtin.uri:
+    url: "{{ managed_baseline_firewall_policy_url }}"
+    return_content: true
+    status_code: 200
+    timeout: 15
+  register: managed_baseline_firewall_policy_fetch
+  failed_when: false
+  changed_when: false
+  vars:
+    managed_baseline_firewall_policy_url: >-
+      {{ managed_baseline_firewall_policy_base_url }}/{{ managed_baseline_environment }}.yml
+    managed_baseline_firewall_policy_base_url: >-
+      {{ managed_baseline_firewall_policy_repo_url }}/{{ managed_baseline_policy_ref }}/policy/firewall
+    managed_baseline_firewall_policy_repo_url: >-
+      https://raw.githubusercontent.com/dean1012/grayhaven-infra-opentofu
+    managed_baseline_policy_ref: "{{ managed_baseline_infra_policy_repo_ref | default('main') }}"
+
+- name: Cache fetched firewalld policy
+  ansible.builtin.copy:
+    dest: /etc/grayhaven/firewall/policy.yml
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ managed_baseline_firewall_policy_fetch.content }}"
+  when: managed_baseline_firewall_policy_fetch.status == 200
+
+- name: Check cached firewalld policy
+  ansible.builtin.stat:
+    path: /etc/grayhaven/firewall/policy.yml
+  register: managed_baseline_firewall_policy_cache
+
+- name: Notify Discord when cached firewalld policy is used
+  ansible.builtin.include_role:
+    name: automation_notifications
+  vars:
+    automation_notifications_title: Firewalld Policy Cache Used
+    automation_notifications_color: "{{ automation_notifications_colors.info }}"
+    automation_notifications_target: >-
+      {{ inventory_hostname }}
+
+      Environment: {{ managed_baseline_environment }}
+  when:
+    - managed_baseline_firewall_policy_fetch.status != 200
+    - managed_baseline_firewall_policy_cache.stat.exists
+
+- name: Notify Discord when firewalld policy is unavailable
+  ansible.builtin.include_role:
+    name: automation_notifications
+  vars:
+    automation_notifications_title: Firewalld Policy Unavailable - Existing Rules Preserved
+    automation_notifications_color: "{{ automation_notifications_colors.warning }}"
+    automation_notifications_target: >-
+      {{ inventory_hostname }}
+
+      Environment: {{ managed_baseline_environment }}
+  when:
+    - managed_baseline_firewall_policy_fetch.status != 200
+    - not managed_baseline_firewall_policy_cache.stat.exists
+
+- name: Read cached firewalld policy
+  ansible.builtin.slurp:
+    src: /etc/grayhaven/firewall/policy.yml
+  register: managed_baseline_firewall_policy_slurp
+  when: managed_baseline_firewall_policy_cache.stat.exists
+
+- name: Parse cached firewalld policy
+  ansible.builtin.set_fact:
+    managed_baseline_firewall_policy: "{{ managed_baseline_firewall_policy_slurp.content | b64decode | from_yaml }}"
+  when: managed_baseline_firewall_policy_cache.stat.exists
+
+- name: Derive role firewalld policy
+  ansible.builtin.set_fact:
+    managed_baseline_firewall_role_policy: "{{ managed_baseline_firewall_policy.firewalls[grayhaven_role] }}"
+  when: managed_baseline_firewall_policy_cache.stat.exists
+
+- name: Install Grayhaven firewalld zone from policy
   ansible.builtin.template:
     src: grayhaven-firewalld-zone.xml.j2
     dest: /etc/firewalld/zones/grayhaven.xml
@@ -7,6 +91,7 @@
     group: root
     mode: "0644"
   notify: Reload firewalld
+  when: managed_baseline_firewall_policy_cache.stat.exists
 
 - name: Set Grayhaven as the configured default firewalld zone
   ansible.builtin.lineinfile:
@@ -15,6 +100,7 @@
     line: DefaultZone=grayhaven
     state: present
   notify: Reload firewalld
+  when: managed_baseline_firewall_policy_cache.stat.exists
 
 - name: Enable and start firewalld without blocking SSH convergence
   ansible.builtin.systemd_service:

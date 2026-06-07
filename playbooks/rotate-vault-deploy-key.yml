@@ -1,0 +1,60 @@
+---
+- name: Rotate staged Ansible deploy key
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    staged_deploy_private_key_path: /home/ansible/new_ansible_deploy_key
+    staged_deploy_public_key_path: /home/ansible/new_ansible_deploy_key.pub
+
+  tasks:
+    - name: Read staged deploy public key from a bastion
+      ansible.builtin.slurp:
+        src: "{{ staged_deploy_public_key_path }}"
+      register: rotate_deploy_public_key_slurp
+      run_once: true
+      delegate_to: "{{ groups.get('tag_role_bastion', [inventory_hostname])[0] }}"
+      no_log: true
+
+    - name: Set staged deploy public key fact
+      ansible.builtin.set_fact:
+        rotate_deploy_public_key: "{{ rotate_deploy_public_key_slurp.content | b64decode | trim }}"
+      no_log: true
+
+    - name: Authorize staged deploy key for ansible user
+      ansible.posix.authorized_key:
+        user: ansible
+        key: "{{ rotate_deploy_public_key }}"
+        state: present
+      no_log: true
+
+    - name: Install staged deploy private key on bastions
+      ansible.builtin.copy:
+        src: "{{ staged_deploy_private_key_path }}"
+        dest: /home/ansible/.ssh/id_ed25519
+        owner: ansible
+        group: ansible
+        mode: "0600"
+        remote_src: true
+      when: grayhaven_role == "bastion"
+      no_log: true
+
+    - name: Install staged deploy public key on bastions
+      ansible.builtin.copy:
+        content: "{{ rotate_deploy_public_key }}\n"
+        dest: /home/ansible/.ssh/id_ed25519.pub
+        owner: ansible
+        group: ansible
+        mode: "0644"
+      when: grayhaven_role == "bastion"
+      no_log: true
+
+    - name: Remove staged deploy key files from bastions
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ staged_deploy_private_key_path }}"
+        - "{{ staged_deploy_public_key_path }}"
+      when: grayhaven_role == "bastion"
+      no_log: true

@@ -2,7 +2,7 @@
 - name: Set root password hash
   ansible.builtin.user:
     name: root
-    password: "{{ managed_baseline_root_password_hash }}"
+    password: "{{ root_password_hash }}"
   no_log: true
 
 - name: Remove root authorized SSH keys
@@ -55,11 +55,21 @@
     content: "{{ managed_baseline_ansible_control_public_key | trim }}\n"
   when: grayhaven_role == "bastion"
 
-- name: Install ansible authorized key on non-bastion hosts
+- name: Install ansible authorized key on managed hosts
   ansible.builtin.copy:
     dest: /home/ansible/.ssh/authorized_keys
     owner: ansible
     group: ansible
     mode: "0600"
-    content: "{{ managed_baseline_ansible_control_public_key | trim }}\n"
-  when: grayhaven_role != "bastion"
+    content: "{{ managed_baseline_ansible_authorized_keys | join('\n') }}\n"
+  vars:
+    managed_baseline_ansible_authorized_keys: >-
+      {{
+        [
+          managed_baseline_ansible_control_public_key | trim,
+          ansible_control_public_key | default('') | trim
+        ]
+        | reject('equalto', '')
+        | unique
+        | list
+      }}

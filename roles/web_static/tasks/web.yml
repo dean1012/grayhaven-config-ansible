@@ -7,8 +7,14 @@
       - web_static_certbot_email is string
       - web_static_certbot_email | trim | length > 0
       - web_static_certbot_environment in ["production", "staging"]
+      - web_static_tls_mode in ["host", "load_balancer"]
+      - dev_basic_auth_htpasswd_line is defined
+      - dev_basic_auth_htpasswd_line is string
+      - dev_basic_auth_htpasswd_line | trim | length > 0
+      - web_static_tls_mode == "load_balancer" or digitalocean_dns_api_token is defined
     fail_msg: "Required web static hosting variables were not provided."
     quiet: true
+  no_log: true
 
 - name: Install web hosting packages
   ansible.builtin.dnf:
@@ -26,28 +32,35 @@
     - /etc/letsencrypt
     - /etc/letsencrypt/renewal-hooks
     - /etc/letsencrypt/renewal-hooks/deploy
+  when: web_static_tls_mode == "host"
 
-- name: Verify persisted web secrets exist
-  ansible.builtin.stat:
+- name: Remove host certificate material in load balancer TLS mode
+  ansible.builtin.file:
     path: "{{ item }}"
+    state: absent
   loop:
-    - "{{ web_static_certbot_dns_token_file }}"
-    - "{{ web_static_dev_htpasswd_source }}"
-  register: web_static_secret_stats
-  no_log: true
+    - /etc/letsencrypt/live
+    - /etc/letsencrypt/archive
+    - /etc/letsencrypt/renewal
+  when: web_static_tls_mode == "load_balancer"
+  notify: Reload nginx
 
-- name: Fail if persisted web secrets are missing
+- name: Disable Certbot renewal timer in load balancer TLS mode
+  ansible.builtin.systemd_service:
+    name: certbot-renew.timer
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: web_static_tls_mode == "load_balancer"
+
+- name: Validate DigitalOcean DNS token in host TLS mode
   ansible.builtin.assert:
     that:
-      - web_static_secret_stats.results | map(attribute='stat.exists') | min
-    fail_msg: "Required persisted web secrets are missing."
+      - digitalocean_dns_api_token is string
+      - digitalocean_dns_api_token | trim | length > 0
+    fail_msg: "digitalocean_dns_api_token is required in host TLS mode."
     quiet: true
-  no_log: true
-
-- name: Read DigitalOcean DNS token for Certbot
-  ansible.builtin.slurp:
-    src: "{{ web_static_certbot_dns_token_file }}"
-  register: web_static_dns_token
+  when: web_static_tls_mode == "host"
   no_log: true
 
 - name: Install Certbot DigitalOcean credentials file
@@ -57,19 +70,27 @@
     group: root
     mode: "0600"
     content: |
-      dns_digitalocean_token = {{ web_static_dns_token.content | b64decode | trim }}
+      dns_digitalocean_token = {{ digitalocean_dns_api_token | trim }}
+  when: web_static_tls_mode == "host"
+  no_log: true
+
+- name: Remove Certbot DigitalOcean credentials file in load balancer TLS mode
+  ansible.builtin.file:
+    path: "{{ web_static_certbot_credentials_file }}"
+    state: absent
+  when: web_static_tls_mode == "load_balancer"
   no_log: true
 
 - name: Install development basic-auth file for nginx
   ansible.builtin.copy:
-    src: "{{ web_static_dev_htpasswd_source }}"
     dest: "{{ web_static_dev_htpasswd_file }}"
     owner: root
     group: nginx
     mode: "0640"
-    remote_src: true
+    content: "{{ dev_basic_auth_htpasswd_line | trim }}\n"
   no_log: true
   notify: Reload nginx
+
 
 - name: Create static website directories
   ansible.builtin.file:
@@ -153,6 +174,24 @@
   loop_control:
     label: "{{ item.cert_name }}"
   notify: Reload nginx
+  when: web_static_tls_mode == "host"
+
+- name: Verify host TLS certificate files exist
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ item.cert_name }}/fullchain.pem"
+  loop: "{{ web_static_sites }}"
+  loop_control:
+    label: "{{ item.cert_name }}"
+  register: web_static_certificate_stats
+  when: web_static_tls_mode == "host"
+
+- name: Fail if host TLS certificate files are missing
+  ansible.builtin.assert:
+    that:
+      - web_static_certificate_stats.results | map(attribute='stat.exists') | min
+    fail_msg: "One or more host TLS certificate files are missing after Certbot execution."
+    quiet: true
+  when: web_static_tls_mode == "host"
 
 - name: Install nginx static site configuration
   ansible.builtin.template:
@@ -180,6 +219,7 @@
       set -Eeuo pipefail
 
       systemctl reload nginx
+  when: web_static_tls_mode == "host"
 
 - name: Enable Certbot renewal timer when present
   ansible.builtin.systemd_service:
@@ -187,6 +227,7 @@
     enabled: true
     state: started
   failed_when: false
+  when: web_static_tls_mode == "host"
 
 - name: Enable and start nginx
   ansible.builtin.systemd_service:

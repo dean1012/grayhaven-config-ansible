@@ -21,12 +21,12 @@ for the DigitalOcean Ansible collection used by the dynamic inventory.
 Run the same validation commands used by CI:
 
 ```bash
-yamllint .
+git ls-files '*.yml' '*.yaml' | xargs -r yamllint
 ansible-lint .
 ansible-playbook -i localhost, --connection=local --syntax-check playbooks/bootstrap.yml
 ansible-playbook -i localhost, --connection=local --syntax-check playbooks/site.yml
 shellcheck files/grayhaven-ansible-runner
-markdownlint-cli2 '**/*.md'
+git ls-files '*.md' | xargs -r markdownlint-cli2
 ```
 
 Before committing changes, also check the current diff for whitespace errors:

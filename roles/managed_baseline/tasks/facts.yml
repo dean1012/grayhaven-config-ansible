@@ -44,11 +44,13 @@
         | list
       }}
 
-- name: Fall back to VPC CIDR when bastion private address is unavailable
+- name: Build web SSH source list for control-node failover
   ansible.builtin.set_fact:
     managed_baseline_web_ssh_sources: >-
       {{
-        managed_baseline_bastion_private_sources
-        if (managed_baseline_bastion_private_sources | length > 0)
-        else [managed_baseline_fallback_vpc_cidr]
+        (
+          [managed_baseline_fallback_vpc_cidr]
+          + managed_baseline_bastion_private_sources
+        )
+        | unique
       }}
