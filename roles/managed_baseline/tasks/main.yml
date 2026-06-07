@@ -5,9 +5,9 @@
       - grayhaven_role is defined
       - grayhaven_role is string
       - grayhaven_role in ["bastion", "web"]
-      - managed_baseline_root_password_hash is defined
-      - managed_baseline_root_password_hash is string
-      - managed_baseline_root_password_hash | trim | length > 0
+      - root_password_hash is defined
+      - root_password_hash is string
+      - root_password_hash | trim | length > 0
     fail_msg: "Required managed baseline variables were not provided."
     quiet: true
   no_log: true
@@ -23,6 +23,9 @@
 
 - name: Enforce local users and privileged access
   ansible.builtin.import_tasks: users.yml
+
+- name: Enforce local backup baseline
+  ansible.builtin.import_tasks: backup.yml
 
 - name: Enforce host identity and local name resolution
   ansible.builtin.import_tasks: identity.yml

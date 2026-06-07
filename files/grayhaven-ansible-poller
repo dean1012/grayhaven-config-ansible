@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+RUNNER_ENV="/etc/grayhaven/ansible/runner.env"
+STATE_DIR="/var/lib/grayhaven/ansible-poller"
+ANSIBLE_HOME="/home/ansible"
+ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
+DEFAULT_REPO_URL="https://github.com/dean1012/grayhaven-config-ansible.git"
+DEFAULT_REPO_REF="main"
+
+log() {
+  printf '[grayhaven-ansible-poller] %s\n' "$*"
+}
+
+require_file() {
+  local path="$1"
+
+  if [[ ! -f "$path" ]]; then
+    log "Required file is missing: $path"
+    exit 1
+  fi
+}
+
+remote_ref() {
+  local repo_url="$1"
+  local repo_ref="$2"
+
+  git ls-remote "$repo_url" "refs/heads/${repo_ref}" "refs/tags/${repo_ref}" | awk 'NR == 1 { print $1 }'
+}
+
+main() {
+  require_file "$RUNNER_ENV"
+  require_file "$ANSIBLE_CONTROL_PRIVATE_KEY"
+
+  # shellcheck disable=SC1090
+  source "$RUNNER_ENV"
+
+  REPO_URL="${REPO_URL:-$DEFAULT_REPO_URL}"
+  REPO_REF="${REPO_REF:-$DEFAULT_REPO_REF}"
+
+  export GIT_SSH_COMMAND="ssh -i ${ANSIBLE_CONTROL_PRIVATE_KEY} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
+  install -d -o root -g root -m 0755 "$STATE_DIR"
+
+  local config_ref
+  local vault_ref
+  local previous_config_ref
+  local previous_vault_ref
+
+  config_ref="$(remote_ref "$REPO_URL" "$REPO_REF")"
+  vault_ref="$(remote_ref "$VAULT_REPO_URL" "$VAULT_REPO_REF")"
+
+  previous_config_ref="$(cat "${STATE_DIR}/config.ref" 2>/dev/null || true)"
+  previous_vault_ref="$(cat "${STATE_DIR}/vault.ref" 2>/dev/null || true)"
+
+  if [[ "$config_ref" == "$previous_config_ref" && "$vault_ref" == "$previous_vault_ref" ]]; then
+    log "No repository changes detected."
+    exit 0
+  fi
+
+  printf '%s\n' "$config_ref" > "${STATE_DIR}/config.ref"
+  printf '%s\n' "$vault_ref" > "${STATE_DIR}/vault.ref"
+
+  log "Repository change detected; triggering Ansible runner."
+  systemctl start --no-block grayhaven-ansible-runner.service
+}
+
+main "$@"

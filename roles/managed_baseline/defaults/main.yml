@@ -22,8 +22,11 @@ managed_baseline_required_packages:
   - fail2ban
   - firewalld
   - git
+  - httpd-tools
   - NetworkManager
   - openssh-server
+  - python3-firewall
+  - restic
   - yum-utils
 
 managed_baseline_unneeded_packages:
@@ -46,7 +49,12 @@ managed_baseline_quad9_resolvers:
   - 9.9.9.9
   - 149.112.112.112
 
-managed_baseline_fallback_vpc_cidr: 10.10.0.0/16
+managed_baseline_environment_vpc_cidrs:
+  staging: 10.20.0.0/16
+  prod: 10.30.0.0/16
+
+managed_baseline_fallback_vpc_cidr: >-
+  {{ managed_baseline_environment_vpc_cidrs.get(managed_baseline_environment, '10.10.0.0/16') }}
 
 managed_baseline_runner_checkout_dir: /home/ansible/grayhaven-config-ansible
 managed_baseline_runner_repo_url: https://github.com/dean1012/grayhaven-config-ansible.git
