@@ -28,6 +28,16 @@ remote_ref() {
   git ls-remote "$repo_url" "refs/heads/${repo_ref}" "refs/tags/${repo_ref}" | awk 'NR == 1 { print $1 }'
 }
 
+persist_ref() {
+  local path="$1"
+  local value="$2"
+  local temp_path
+
+  temp_path="$(mktemp "${STATE_DIR}/.ref.XXXXXX")"
+  printf '%s\n' "$value" > "$temp_path"
+  mv "$temp_path" "$path"
+}
+
 main() {
   require_file "$RUNNER_ENV"
   require_file "$ANSIBLE_CONTROL_PRIVATE_KEY"
@@ -49,6 +59,10 @@ main() {
 
   config_ref="$(remote_ref "$REPO_URL" "$REPO_REF")"
   vault_ref="$(remote_ref "$VAULT_REPO_URL" "$VAULT_REPO_REF")"
+  if [[ -z "$config_ref" || -z "$vault_ref" ]]; then
+    log "Unable to resolve one or more tracked repository refs."
+    exit 1
+  fi
 
   previous_config_ref="$(cat "${STATE_DIR}/config.ref" 2>/dev/null || true)"
   previous_vault_ref="$(cat "${STATE_DIR}/vault.ref" 2>/dev/null || true)"
@@ -58,11 +72,13 @@ main() {
     exit 0
   fi
 
-  printf '%s\n' "$config_ref" > "${STATE_DIR}/config.ref"
-  printf '%s\n' "$vault_ref" > "${STATE_DIR}/vault.ref"
-
   log "Repository change detected; triggering Ansible runner."
   systemctl start --no-block grayhaven-ansible-runner.service
+
+  # Record the observed refs only after systemd accepts the runner request. If
+  # the trigger fails, the next poll should retry the same repository change.
+  persist_ref "${STATE_DIR}/config.ref" "$config_ref"
+  persist_ref "${STATE_DIR}/vault.ref" "$vault_ref"
 }
 
 main "$@"

@@ -7,6 +7,9 @@
   become: true
 
   tasks:
+    # Validate the OpenTofu/cloud-init handoff before any persistent host
+    # changes are made. Most values are no_log because bootstrap variables can
+    # include deploy keys and vault material on bastion hosts.
     - name: Validate common bootstrap variables
       ansible.builtin.assert:
         that:
@@ -61,6 +64,8 @@
       no_log: true
       when: grayhaven_role == "bastion"
 
+    # First boot needs enough local baseline state to let the full runner take
+    # over reliably, even on small droplets.
     - name: Set system hostname
       ansible.builtin.hostname:
         name: "{{ grayhaven_hostname }}"
@@ -194,6 +199,8 @@
         path: /var/log/droplet-agent
         state: absent
 
+    # Bastions keep the deploy/control key and vault password because they run
+    # full convergence. Web hosts receive only the public automation key.
     - name: Install bastion runner OS dependencies
       ansible.builtin.dnf:
         name:

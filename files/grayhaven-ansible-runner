@@ -33,6 +33,10 @@ require_file() {
   fi
 }
 
+cleanup_runtime_files() {
+  rm -f "$RUNNER_SECRET_ENV" "$RUNNER_VARS"
+}
+
 failed_playbook_targets() {
   if [[ ! -f "$RUNNER_PLAYBOOK_LOG" ]]; then
     return 0
@@ -150,6 +154,9 @@ checkout_ref() {
   fi
 
   run_as_ansible git -C "$checkout_dir" reset --hard HEAD
+  # These checkouts are owned by the runner. Cleaning them prevents deleted
+  # repository files from lingering across convergence runs.
+  run_as_ansible git -C "$checkout_dir" clean -ffd
 }
 
 prepare_github_known_hosts() {
@@ -237,6 +244,7 @@ install_ansible_runtime() {
 }
 
 render_secret_environment() {
+  install -o root -g root -m 0600 /dev/null "$RUNNER_SECRET_ENV"
   /usr/bin/python3 - "$VAULT_CHECKOUT_DIR" "$VAULT_PASSWORD_FILE" <<'PY' > "$RUNNER_SECRET_ENV"
 import io
 import os
@@ -285,7 +293,6 @@ print(f"DO_API_TOKEN={shlex.quote(str(inventory_token))}")
 print(f"DISCORD_WEBHOOK_URL={shlex.quote(str(webhook_url))}")
 print(f"GRAYHAVEN_CERTIFICATE_ENVIRONMENT={shlex.quote(str(certificate_environment))}")
 PY
-  chmod 0600 "$RUNNER_SECRET_ENV"
   # shellcheck disable=SC1090
   source "$RUNNER_SECRET_ENV"
   export DO_API_TOKEN DISCORD_WEBHOOK_URL GRAYHAVEN_CERTIFICATE_ENVIRONMENT
@@ -358,6 +365,7 @@ PY
 
 render_runner_vars() {
   log "Preparing runtime variables derived from local control state."
+  install -o root -g root -m 0600 /dev/null "$RUNNER_VARS"
   ANSIBLE_CONTROL_PUBLIC_KEY="$(ssh-keygen -y -f "$ANSIBLE_CONTROL_PRIVATE_KEY")"
   export ANSIBLE_CONTROL_PUBLIC_KEY
   /usr/bin/python3 - <<'PY' > "$RUNNER_VARS"
@@ -443,6 +451,8 @@ run_once() {
 }
 
 main() {
+  trap cleanup_runtime_files EXIT
+
   exec 9>"$LOCK_FILE"
   if ! flock -n 9; then
     log "Another runner invocation is already active; queueing follow-up run."

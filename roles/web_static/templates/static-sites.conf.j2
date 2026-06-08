@@ -1,5 +1,7 @@
 {% for site in web_static_sites %}
 {% if web_static_tls_mode == "host" %}
+# Host TLS mode: nginx redirects HTTP to HTTPS and serves local Certbot
+# certificates for production and development hostnames.
 server {
     listen 80;
     server_name {{ site.domain }};
@@ -94,6 +96,8 @@ server {
     }
 }
 {% else %}
+# Load balancer TLS mode: DigitalOcean terminates HTTPS and nginx serves HTTP
+# backends only. Development hostnames remain protected with basic auth.
 server {
     listen 80;
     server_name {{ site.domain }} {{ site.aliases | join(' ') }};

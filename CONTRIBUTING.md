@@ -2,6 +2,13 @@
 
 Thank you for your interest in improving `grayhaven-config-ansible`.
 
+## Table of Contents
+
+- [Development Setup](#development-setup)
+- [Validation](#validation)
+- [Pull Requests](#pull-requests)
+- [Documentation Guidelines](#documentation-guidelines)
+
 ## Development Setup
 
 Install Ansible runtime and validation dependencies:
@@ -16,6 +23,8 @@ ansible-galaxy collection install -r galaxy_requirements.yml
 The Python packages in `pip3_requirements.txt` follow the runtime prerequisites
 for the DigitalOcean Ansible collection used by the dynamic inventory.
 
+[Back to top](#contributing)
+
 ## Validation
 
 Run the same validation commands used by CI:
@@ -25,7 +34,7 @@ git ls-files '*.yml' '*.yaml' | xargs -r yamllint
 ansible-lint .
 ansible-playbook -i localhost, --connection=local --syntax-check playbooks/bootstrap.yml
 ansible-playbook -i localhost, --connection=local --syntax-check playbooks/site.yml
-shellcheck files/grayhaven-ansible-runner
+shellcheck files/grayhaven-ansible-runner files/grayhaven-ansible-poller
 git ls-files '*.md' | xargs -r markdownlint-cli2
 ```
 
@@ -34,6 +43,8 @@ Before committing changes, also check the current diff for whitespace errors:
 ```bash
 git diff --check
 ```
+
+[Back to top](#contributing)
 
 ## Pull Requests
 
@@ -51,9 +62,13 @@ git commit -S -m "<message> (Refs #<issue-number>)"
 CI runs on pushes and pull requests. Pull requests are squash merged after CI
 passes and review conversations are resolved.
 
+[Back to top](#contributing)
+
 ## Documentation Guidelines
 
 Keep user-facing behavior documented in `README.md` and architecture details in
 `docs/architecture.md`. Add inline comments for non-obvious implementation
 decisions, security boundaries, and assumptions. Avoid comments that merely
 restate straightforward Ansible tasks or shell commands.
+
+[Back to top](#contributing)

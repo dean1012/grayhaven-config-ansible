@@ -1,4 +1,6 @@
 ---
+# Host TLS mode uses local Certbot certificates. Load balancer TLS mode keeps
+# web hosts as HTTP backends and removes local certificate state.
 - name: Validate web static hosting variables
   ansible.builtin.assert:
     that:
@@ -81,6 +83,8 @@
   when: web_static_tls_mode == "load_balancer"
   no_log: true
 
+# Development hostnames are intentionally protected while temporary static sites
+# are served from this repository.
 - name: Install development basic-auth file for nginx
   ansible.builtin.copy:
     dest: "{{ web_static_dev_htpasswd_file }}"
@@ -90,7 +94,6 @@
     content: "{{ dev_basic_auth_htpasswd_line | trim }}\n"
   no_log: true
   notify: Reload nginx
-
 
 - name: Create static website directories
   ansible.builtin.file:
@@ -141,6 +144,9 @@
   register: web_static_restorecon
   changed_when: web_static_restorecon.stdout | trim | length > 0
 
+# Initial host certificates are issued only in host TLS mode. In load balancer
+# TLS mode, OpenTofu owns the certificate attached to the DigitalOcean load
+# balancer.
 - name: Issue or renew initial Let's Encrypt certificates
   ansible.builtin.command:
     argv: "{{ web_static_certbot_command }}"
