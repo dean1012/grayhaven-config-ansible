@@ -4,18 +4,81 @@
 - name: Validate web static hosting variables
   ansible.builtin.assert:
     that:
-      - web_static_sites is iterable
-      - web_static_sites | length > 0
+      - hosted_domains is iterable
+      - hosted_domains | length > 0
       - web_static_certbot_email is string
       - web_static_certbot_email | trim | length > 0
       - web_static_certbot_environment in ["production", "staging"]
       - web_static_tls_mode in ["host", "load_balancer"]
-      - dev_basic_auth_htpasswd_line is defined
-      - dev_basic_auth_htpasswd_line is string
-      - dev_basic_auth_htpasswd_line | trim | length > 0
       - web_static_tls_mode == "load_balancer" or digitalocean_dns_api_token is defined
     fail_msg: "Required web static hosting variables were not provided."
     quiet: true
+  no_log: true
+
+- name: Validate hosted domain entries
+  ansible.builtin.assert:
+    that:
+      - item.domain is defined
+      - item.domain is string
+      - item.domain | trim | length > 0
+      - item.dev is defined
+      - item.dev is mapping
+      - item.dev.htpasswd_entries is defined
+      - item.dev.htpasswd_entries is iterable
+      - item.dev.htpasswd_entries | length > 0
+      - item.dev.htpasswd_entries | select('match', '^[^:]+:.+') | list | length == item.dev.htpasswd_entries | length
+    fail_msg: "Each hosted domain must define domain and dev.htpasswd_entries."
+    quiet: true
+  loop: "{{ hosted_domains }}"
+  loop_control:
+    label: "{{ item.domain | default('undefined-domain') }}"
+  no_log: true
+
+- name: Initialize static site definitions
+  ansible.builtin.set_fact:
+    web_static_sites: []
+
+- name: Build static site definitions from hosted domains
+  ansible.builtin.set_fact:
+    web_static_sites: "{{ web_static_sites + [web_static_site] }}"
+  loop: "{{ hosted_domains }}"
+  loop_control:
+    label: "{{ item.domain }}"
+  vars:
+    web_static_domain: "{{ item.domain | trim }}"
+    web_static_source_name: "{{ item.static_site | default('') | trim }}"
+    web_static_site:
+      root_name: "{{ web_static_domain }}"
+      source_name: "{{ web_static_source_name }}"
+      domain: "{{ web_static_domain if web_static_environment == 'prod' else 'staging.' ~ web_static_domain }}"
+      aliases:
+        - >-
+          {{
+            'www.' ~ web_static_domain
+            if web_static_environment == 'prod'
+            else 'www.staging.' ~ web_static_domain
+          }}
+      dev_domain: >-
+        {{
+          'dev.' ~ web_static_domain
+          if web_static_environment == 'prod'
+          else 'dev.staging.' ~ web_static_domain
+        }}
+      cert_name: >-
+        {{
+          web_static_domain
+          if web_static_environment == 'prod'
+          else 'staging.' ~ web_static_domain
+        }}
+      auth_realm: >-
+        {{ item.dev.auth_realm | default(web_static_domain ~ ' Development Environment') }}
+      htpasswd_file: >-
+        {{
+          web_static_dev_htpasswd_dir ~ '/'
+          ~ (web_static_domain | regex_replace('[^A-Za-z0-9_.-]', '_'))
+          ~ '.htpasswd'
+        }}
+      htpasswd_entries: "{{ item.dev.htpasswd_entries }}"
   no_log: true
 
 - name: Install web hosting packages
@@ -85,13 +148,24 @@
 
 # Development hostnames are intentionally protected while temporary static sites
 # are served from this repository.
-- name: Install development basic-auth file for nginx
+- name: Create development basic-auth directory for nginx
+  ansible.builtin.file:
+    path: "{{ web_static_dev_htpasswd_dir }}"
+    state: directory
+    owner: root
+    group: nginx
+    mode: "0750"
+
+- name: Install development basic-auth files for nginx
   ansible.builtin.copy:
-    dest: "{{ web_static_dev_htpasswd_file }}"
+    dest: "{{ item.htpasswd_file }}"
     owner: root
     group: nginx
     mode: "0640"
-    content: "{{ dev_basic_auth_htpasswd_line | trim }}\n"
+    content: "{{ item.htpasswd_entries | map('trim') | join('\n') }}\n"
+  loop: "{{ web_static_sites }}"
+  loop_control:
+    label: "{{ item.root_name }}"
   no_log: true
   notify: Reload nginx
 
@@ -107,7 +181,7 @@
     web_static_site_directories: >-
       {{
         web_static_sites
-        | map(attribute='source_domain')
+        | map(attribute='root_name')
         | product(['prod', 'dev'])
         | map('join', '/')
         | map('regex_replace', '^', web_static_root ~ '/')
@@ -127,15 +201,29 @@
 
 - name: Deploy temporary static website content
   ansible.builtin.copy:
-    src: "{{ web_static_source_root }}/{{ item.0.source_domain }}/{{ item.1 }}/"
-    dest: "{{ web_static_root }}/{{ item.0.source_domain }}/{{ item.1 }}/"
+    src: "{{ web_static_source_root }}/{{ item.0.source_name }}/{{ item.1 }}/"
+    dest: "{{ web_static_root }}/{{ item.0.root_name }}/{{ item.1 }}/"
     owner: root
     group: root
     directory_mode: "0755"
     mode: "0644"
-  loop: "{{ web_static_sites | product(['prod', 'dev']) | list }}"
+  loop: "{{ web_static_sites | selectattr('source_name') | product(['prod', 'dev']) | list }}"
   loop_control:
-    label: "{{ item.0.source_domain }} {{ item.1 }}"
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+  notify: Reload nginx
+
+- name: Deploy generic static website content
+  ansible.builtin.template:
+    src: "generic-static-site-{{ item.1 }}.html.j2"
+    dest: "{{ web_static_root }}/{{ item.0.root_name }}/{{ item.1 }}/index.html"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ web_static_sites | rejectattr('source_name') | product(['prod', 'dev']) | list }}"
+  loop_control:
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+  vars:
+    web_static_generic_domain: "{{ item.0.root_name }}"
   notify: Reload nginx
 
 - name: Restore SELinux contexts for static website content
