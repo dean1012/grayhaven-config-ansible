@@ -16,6 +16,10 @@ DEFAULT_VAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-vault"
 DEFAULT_REPO_URL="https://github.com/dean1012/grayhaven-config-ansible.git"
 DEFAULT_REPO_REF="main"
 
+###############################################################################
+# Logging, guards, and cleanup
+###############################################################################
+
 log() {
   printf '[grayhaven-ansible-runner] %s\n' "$*"
 }
@@ -36,6 +40,10 @@ require_file() {
 cleanup_runtime_files() {
   rm -f "$RUNNER_SECRET_ENV" "$RUNNER_VARS"
 }
+
+###############################################################################
+# Failure notification
+###############################################################################
 
 failed_playbook_targets() {
   if [[ ! -f "$RUNNER_PLAYBOOK_LOG" ]]; then
@@ -134,6 +142,10 @@ on_error() {
   exit "$status"
 }
 
+###############################################################################
+# Git and SSH preparation
+###############################################################################
+
 checkout_ref() {
   local checkout_dir="$1"
   local repo_url="$2"
@@ -220,6 +232,10 @@ PY
   chmod 0644 /etc/ssh/ssh_known_hosts
 }
 
+###############################################################################
+# Runtime dependency installation
+###############################################################################
+
 install_ansible_runtime() {
   log "Ensuring pip-managed Ansible runtime is available."
   /usr/bin/python3 -m pip install --upgrade --root-user-action=ignore pip
@@ -242,6 +258,10 @@ install_ansible_runtime() {
     --requirements-file "${CHECKOUT_DIR}/galaxy_requirements.yml" \
     --force
 }
+
+###############################################################################
+# Secret and inventory-derived runtime state
+###############################################################################
 
 render_secret_environment() {
   install -o root -g root -m 0600 /dev/null "$RUNNER_SECRET_ENV"
@@ -363,6 +383,10 @@ PY
   rm -f "$inventory_json" "$runtime_env"
 }
 
+###############################################################################
+# Playbook variable rendering
+###############################################################################
+
 render_runner_vars() {
   log "Preparing runtime variables derived from local control state."
   install -o root -g root -m 0600 /dev/null "$RUNNER_VARS"
@@ -393,6 +417,10 @@ for key, value in vars_to_render.items():
     print(f"{key}: {json.dumps(value)}")
 PY
 }
+
+###############################################################################
+# Runner orchestration
+###############################################################################
 
 run_once() {
   require_file "$RUNNER_ENV"
