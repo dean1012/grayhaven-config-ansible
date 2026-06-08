@@ -30,7 +30,7 @@ jobs:
         uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca  # master
         with:
           version: v0.11.0
-          additional_files: files/grayhaven-ansible-runner
+          additional_files: files/grayhaven-ansible-runner files/grayhaven-ansible-poller
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6

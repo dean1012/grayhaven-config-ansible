@@ -13,6 +13,15 @@ OpenTofu provisions the servers, cloud-init runs the bootstrap playbook on first
 boot, and the active control bastion runs the full Ansible playbook on a timer,
 on repository-change poller events, or by manual invocation.
 
+## Table of Contents
+
+- [Scope](#scope)
+- [Manual Runner Invocation](#manual-runner-invocation)
+- [Maintenance Playbooks](#maintenance-playbooks)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Scope
 
 - Create and secure the `ansible` automation account.
@@ -34,6 +43,8 @@ on repository-change poller events, or by manual invocation.
 This repository is not a general-purpose deployment template. Deploying similar
 automation for another organization requires review and adaptation.
 
+[Back to top](#grayhaven-configuration)
+
 ## Manual Runner Invocation
 
 Connect to the active control bastion through the easy `bastion.*` DNS record,
@@ -51,6 +62,11 @@ sudo systemctl status grayhaven-ansible-runner.timer
 sudo systemctl status grayhaven-ansible-poller.timer
 sudo journalctl -u grayhaven-ansible-runner.service
 ```
+
+See [Operations](docs/operations.md) for runner, poller, and maintenance
+playbook procedures.
+
+[Back to top](#grayhaven-configuration)
 
 ## Maintenance Playbooks
 
@@ -87,11 +103,26 @@ The files should be owned by `ansible:ansible`; the private key should be mode
 Rotate the Ansible control key from vault values with
 `playbooks/rotate-ansible-control-key.yml`.
 
+See [Operations](docs/operations.md) for safe prerequisites and validation.
+
+[Back to top](#grayhaven-configuration)
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Operations](docs/operations.md)
+
+[Back to top](#grayhaven-configuration)
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, validation
 commands, and contribution guidelines.
+
+[Back to top](#grayhaven-configuration)
+
+## License
+
+MIT
+
+[Back to top](#grayhaven-configuration)
