@@ -41,12 +41,12 @@ server {
     listen 443 ssl;
     server_name {{ site.domain }};
 
-    root {{ web_static_root }}/{{ site.source_domain }}/prod;
+    root {{ web_static_root }}/{{ site.root_name }}/prod;
     index index.html;
     autoindex off;
 
-    access_log /var/log/nginx/{{ site.source_domain }}.prod.access.log;
-    error_log /var/log/nginx/{{ site.source_domain }}.prod.error.log;
+    access_log /var/log/nginx/{{ site.root_name }}.prod.access.log;
+    error_log /var/log/nginx/{{ site.root_name }}.prod.error.log;
 
     ssl_certificate /etc/letsencrypt/live/{{ site.cert_name }}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{{ site.cert_name }}/privkey.pem;
@@ -69,12 +69,12 @@ server {
     listen 443 ssl;
     server_name {{ site.dev_domain }};
 
-    root {{ web_static_root }}/{{ site.source_domain }}/dev;
+    root {{ web_static_root }}/{{ site.root_name }}/dev;
     index index.html;
     autoindex off;
 
-    access_log /var/log/nginx/{{ site.source_domain }}.dev.access.log;
-    error_log /var/log/nginx/{{ site.source_domain }}.dev.error.log;
+    access_log /var/log/nginx/{{ site.root_name }}.dev.access.log;
+    error_log /var/log/nginx/{{ site.root_name }}.dev.error.log;
 
     ssl_certificate /etc/letsencrypt/live/{{ site.cert_name }}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{{ site.cert_name }}/privkey.pem;
@@ -84,7 +84,7 @@ server {
     ssl_session_cache shared:SSL:10m;
 
     auth_basic "{{ site.auth_realm }}";
-    auth_basic_user_file {{ web_static_dev_htpasswd_file }};
+    auth_basic_user_file {{ site.htpasswd_file }};
 
     location /assets/ {
         alias {{ web_static_assets_root }}/;
@@ -102,12 +102,12 @@ server {
     listen 80;
     server_name {{ site.domain }} {{ site.aliases | join(' ') }};
 
-    root {{ web_static_root }}/{{ site.source_domain }}/prod;
+    root {{ web_static_root }}/{{ site.root_name }}/prod;
     index index.html;
     autoindex off;
 
-    access_log /var/log/nginx/{{ site.source_domain }}.prod.access.log;
-    error_log /var/log/nginx/{{ site.source_domain }}.prod.error.log;
+    access_log /var/log/nginx/{{ site.root_name }}.prod.access.log;
+    error_log /var/log/nginx/{{ site.root_name }}.prod.error.log;
 
     location /assets/ {
         alias {{ web_static_assets_root }}/;
@@ -123,15 +123,15 @@ server {
     listen 80;
     server_name {{ site.dev_domain }};
 
-    root {{ web_static_root }}/{{ site.source_domain }}/dev;
+    root {{ web_static_root }}/{{ site.root_name }}/dev;
     index index.html;
     autoindex off;
 
-    access_log /var/log/nginx/{{ site.source_domain }}.dev.access.log;
-    error_log /var/log/nginx/{{ site.source_domain }}.dev.error.log;
+    access_log /var/log/nginx/{{ site.root_name }}.dev.access.log;
+    error_log /var/log/nginx/{{ site.root_name }}.dev.error.log;
 
     auth_basic "{{ site.auth_realm }}";
-    auth_basic_user_file {{ web_static_dev_htpasswd_file }};
+    auth_basic_user_file {{ site.htpasswd_file }};
 
     location /assets/ {
         alias {{ web_static_assets_root }}/;

@@ -90,7 +90,7 @@ Vault values provide:
 - DigitalOcean inventory and DNS API tokens;
 - Discord notification webhooks;
 - Ansible control key values;
-- development basic-auth htpasswd entry.
+- hosted domain definitions and development basic-auth htpasswd entries.
 
 [Back to top](#architecture)
 
@@ -143,8 +143,10 @@ the encrypted local restic backup set by default.
 
 ## Web Hosting
 
-Web hosts install Nginx and serve temporary static placeholder assets for
-`grayhavensystems.com` and `jerry-smith.net`.
+Web hosts install Nginx and serve static placeholder assets for vault-defined
+hosted domains. Existing custom static sites remain in `files/static-sites/`.
+Domains without a custom static-site source are rendered from the generic
+placeholder templates in the web role.
 
 Host TLS mode issues certificates with Let's Encrypt through DNS-01 validation
 using the role-specific DigitalOcean DNS token from the vault. Certbot renewals
@@ -155,8 +157,16 @@ Load balancer TLS mode configures web hosts as HTTP backends. Certbot renewal
 is disabled, local host certificate material is removed, and TLS is terminated
 by the DigitalOcean load balancer managed by OpenTofu.
 
-Development hostnames require HTTP basic authentication. The current htpasswd
-entry is shared across all hosted domains.
+Development hostnames require HTTP basic authentication. Each hosted domain
+defines its own `dev.htpasswd_entries` list in `vault/web.yml`, and Ansible
+writes a separate htpasswd file for each domain. If `dev.auth_realm` is
+omitted, the realm defaults to `<domain> Development Environment`.
+
+New hosted domains require both DNS policy in
+[`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
+and matching `hosted_domains` data in the private vault. The public
+[`grayhaven-vault-example`](https://github.com/dean1012/grayhaven-vault-example)
+repository documents the expected vault shape.
 
 [Back to top](#architecture)
 

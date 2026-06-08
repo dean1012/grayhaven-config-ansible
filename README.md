@@ -34,10 +34,11 @@ on repository-change poller events, or by manual invocation.
 - Enforce a shared managed-host baseline for access, SSH, SELinux, time sync,
   package state, DigitalOcean agents, firewalld, local backups, and local host
   aliases.
-- Serve temporary static placeholders for the Grayhaven Systems LLC and
-  personal domains while dedicated website repositories are being prepared.
+- Serve configured static placeholders for hosted domains while dedicated
+  website repositories are being prepared.
 - Manage Nginx, host TLS certificates, load-balancer backend behavior, dev
-  basic authentication, and certificate renewal on web hosts.
+  basic authentication, per-domain htpasswd files, and certificate renewal on
+  web hosts.
 - Validate Ansible, YAML, Markdown, and shell scripts through GitHub Actions.
 
 This repository is not a general-purpose deployment template. Deploying similar
