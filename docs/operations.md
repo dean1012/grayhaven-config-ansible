@@ -51,8 +51,19 @@ retry the same change.
 
 ## Vault Password Rotation
 
-Rotate the persisted vault password by placing the new value in a temporary
-vars file and passing that file with `--extra-vars`:
+Vault password rotation has three coordinated parts:
+
+1. Rekey the encrypted files in the private vault repository for the target
+   environment branch.
+2. Update the matching infra variable,
+   `TF_VAR_grayhaven_vault_password_staging` or
+   `TF_VAR_grayhaven_vault_password_prod`, so future droplets bootstrap with
+   the new password.
+3. Rotate the persisted password already stored on deployed bastions.
+
+After the vault files and infra environment are updated, rotate the persisted
+vault password by placing the new value in a temporary vars file and passing
+that file with `--extra-vars`:
 
 ```bash
 ansible-playbook \
@@ -69,7 +80,12 @@ new_vault_password: "<new password>"
 
 Avoid passing the new password directly on the shell command line. Remove the
 temporary vars file after the playbook completes and verify a runner invocation
-can decrypt the vault with the new password.
+can decrypt the vault with the new password:
+
+```bash
+sudo systemctl start grayhaven-ansible-runner.service
+sudo journalctl -u grayhaven-ansible-runner.service
+```
 
 [Back to top](#operations)
 
