@@ -74,8 +74,10 @@ playbook procedures.
 Maintenance playbooks are manual change-control tools intended to be run from
 the active control bastion by an authorized administrator.
 
-Rotate the persisted vault password by placing the new value in a temporary
-vars file and using `--extra-vars` with that file:
+After encrypted vault files are rekeyed and the matching infra environment
+variable is updated, rotate the persisted vault password on deployed bastions
+by placing the new value in a temporary vars file and using `--extra-vars` with
+that file:
 
 ```bash
 ansible-playbook \
@@ -90,7 +92,10 @@ The temporary vars file should contain:
 new_vault_password: "<new password>"
 ```
 
-Avoid passing the new password directly on the shell command line.
+Avoid passing the new password directly on the shell command line. Remove the
+temporary vars file after the playbook completes, then run a manual runner
+invocation to confirm the active control bastion can decrypt the vault with the
+new password.
 
 Rotate the deploy/control key with `playbooks/rotate-vault-deploy-key.yml`.
 Place the staged files on bastion hosts before running the playbook:
