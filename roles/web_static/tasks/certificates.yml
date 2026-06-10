@@ -1,0 +1,55 @@
+---
+# Initial host certificates are issued only in host TLS mode. In load balancer
+# TLS mode, OpenTofu owns the certificate attached to the DigitalOcean load
+# balancer.
+- name: Issue or renew initial Let's Encrypt certificates
+  ansible.builtin.command:
+    argv: "{{ web_static_certbot_command }}"
+    creates: "/etc/letsencrypt/live/{{ item.cert_name }}/fullchain.pem"
+  vars:
+    web_static_certbot_domains: "{{ [item.domain] + item.aliases + [item.dev_domain] }}"
+    web_static_certbot_domain_args: >-
+      {{
+        web_static_certbot_domains
+        | map('regex_replace', '^', '-d ')
+        | join(' ')
+        | split(' ')
+      }}
+    web_static_certbot_command: >-
+      {{
+        [
+          'certbot',
+          'certonly',
+          '--non-interactive',
+          '--agree-tos',
+          '--email', web_static_certbot_email,
+          '--cert-name', item.cert_name,
+          '--dns-digitalocean',
+          '--dns-digitalocean-credentials', web_static_certbot_credentials_file,
+          '--dns-digitalocean-propagation-seconds', '30'
+        ]
+        + (['--test-cert'] if web_static_certbot_environment == 'staging' else [])
+        + web_static_certbot_domain_args
+      }}
+  loop: "{{ web_static_sites }}"
+  loop_control:
+    label: "{{ item.cert_name }}"
+  notify: Reload nginx
+  when: web_static_tls_mode == "host"
+
+- name: Verify host TLS certificate files exist
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ item.cert_name }}/fullchain.pem"
+  loop: "{{ web_static_sites }}"
+  loop_control:
+    label: "{{ item.cert_name }}"
+  register: web_static_certificate_stats
+  when: web_static_tls_mode == "host"
+
+- name: Fail if host TLS certificate files are missing
+  ansible.builtin.assert:
+    that:
+      - web_static_certificate_stats.results | map(attribute='stat.exists') | min
+    fail_msg: "One or more host TLS certificate files are missing after Certbot execution."
+    quiet: true
+  when: web_static_tls_mode == "host"

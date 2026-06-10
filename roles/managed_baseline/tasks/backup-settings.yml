@@ -1,0 +1,35 @@
+---
+- name: Derive local backup settings
+  ansible.builtin.set_fact:
+    managed_baseline_backup_repository_path: >-
+      {{
+        backup.repositories.local.repository_path
+        | default('/var/backups/restic')
+      }}
+    managed_baseline_backup_homedir_archive_path: >-
+      {{
+        backup.repositories.local.homedir_archive_path
+        | default('/var/backups/deleted-homedir-archives')
+      }}
+    managed_baseline_backup_keep_daily: "{{ backup.retention.keep_daily | default(7) }}"
+    managed_baseline_backup_include_paths: >-
+      {{
+        backup.include
+        | default([
+            backup.repositories.local.homedir_archive_path | default('/var/backups/deleted-homedir-archives'),
+            '/home',
+            '/var/log'
+          ])
+      }}
+    managed_baseline_backup_exclude_paths: >-
+      {{
+        [
+          '/home/ansible/grayhaven-config-ansible/.git',
+          '/home/ansible/grayhaven-vault/.git',
+          '/var/log/journal',
+          '/var/log/audit',
+          '/var/log/dnf*',
+          '/var/log/yum.log'
+        ]
+        + (backup.exclude | default([]))
+      }}

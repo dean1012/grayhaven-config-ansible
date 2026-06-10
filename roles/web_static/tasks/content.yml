@@ -1,0 +1,63 @@
+---
+- name: Create static website directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ web_static_required_directories }}"
+  vars:
+    web_static_site_directories: >-
+      {{
+        web_static_sites
+        | map(attribute='root_name')
+        | product(['prod', 'dev'])
+        | map('join', '/')
+        | map('regex_replace', '^', web_static_root ~ '/')
+        | list
+      }}
+    web_static_required_directories: "{{ [web_static_assets_root] + web_static_site_directories }}"
+
+- name: Deploy shared static website assets
+  ansible.builtin.copy:
+    src: "{{ web_static_source_root }}/assets/"
+    dest: "{{ web_static_assets_root }}/"
+    owner: root
+    group: root
+    directory_mode: "0755"
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Deploy temporary static website content
+  ansible.builtin.copy:
+    src: "{{ web_static_source_root }}/{{ item.0.source_name }}/{{ item.1 }}/"
+    dest: "{{ web_static_root }}/{{ item.0.root_name }}/{{ item.1 }}/"
+    owner: root
+    group: root
+    directory_mode: "0755"
+    mode: "0644"
+  loop: "{{ web_static_sites | selectattr('source_name') | product(['prod', 'dev']) | list }}"
+  loop_control:
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+  notify: Reload nginx
+
+- name: Deploy generic static website content
+  ansible.builtin.template:
+    src: "generic-static-site-{{ item.1 }}.html.j2"
+    dest: "{{ web_static_root }}/{{ item.0.root_name }}/{{ item.1 }}/index.html"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ web_static_sites | rejectattr('source_name') | product(['prod', 'dev']) | list }}"
+  loop_control:
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+  vars:
+    web_static_generic_domain: "{{ item.0.root_name }}"
+  notify: Reload nginx
+
+- name: Restore SELinux contexts for static website content
+  ansible.builtin.command:
+    cmd: "restorecon -RFv {{ web_static_root }}"
+  register: web_static_restorecon
+  changed_when: web_static_restorecon.stdout | trim | length > 0
