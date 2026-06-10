@@ -1,0 +1,23 @@
+---
+# Development hostnames are intentionally protected while temporary static sites
+# are served from this repository.
+- name: Create development basic-auth directory for nginx
+  ansible.builtin.file:
+    path: "{{ web_static_dev_htpasswd_dir }}"
+    state: directory
+    owner: root
+    group: nginx
+    mode: "0750"
+
+- name: Install development basic-auth files for nginx
+  ansible.builtin.copy:
+    dest: "{{ item.htpasswd_file }}"
+    owner: root
+    group: nginx
+    mode: "0640"
+    content: "{{ item.htpasswd_entries | map('trim') | join('\n') }}\n"
+  loop: "{{ web_static_sites }}"
+  loop_control:
+    label: "{{ item.root_name }}"
+  no_log: true
+  notify: Reload nginx

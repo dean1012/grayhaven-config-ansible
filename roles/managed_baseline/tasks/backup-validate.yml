@@ -1,0 +1,11 @@
+---
+- name: Validate backup variables
+  ansible.builtin.assert:
+    that:
+      - restic_password is defined
+      - restic_password is string
+      - restic_password | length > 0
+      - backup.schedule | default('daily') == 'daily'
+    fail_msg: "Local backups require restic_password and support only a daily schedule."
+    quiet: true
+  no_log: true
