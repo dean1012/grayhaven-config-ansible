@@ -25,14 +25,3 @@
     name: chronyd
     state: started
     enabled: true
-
-- name: Check whether a reboot is required
-  ansible.builtin.command:
-    cmd: needs-restarting -r
-  register: managed_baseline_reboot_check
-  changed_when: false
-  failed_when: managed_baseline_reboot_check.rc not in [0, 1]
-
-- name: Record reboot requirement fact
-  ansible.builtin.set_fact:
-    managed_baseline_reboot_required: "{{ managed_baseline_reboot_check.rc == 1 }}"
