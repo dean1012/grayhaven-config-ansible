@@ -27,6 +27,9 @@
 - name: Enforce local backup baseline
   ansible.builtin.import_tasks: backup.yml
 
+- name: Enforce system time configuration
+  ansible.builtin.import_tasks: time.yml
+
 - name: Enforce host identity and local name resolution
   ansible.builtin.import_tasks: identity.yml
 
@@ -35,9 +38,6 @@
 
 - name: Enforce DNS resolver configuration
   ansible.builtin.import_tasks: dns.yml
-
-- name: Enforce system time configuration
-  ansible.builtin.import_tasks: time.yml
 
 - name: Enforce software firewall
   ansible.builtin.import_tasks: firewall.yml

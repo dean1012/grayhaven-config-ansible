@@ -4,6 +4,7 @@
 {% set gray = '\033[90m' -%}
 {% set green = '\033[1;32m' -%}
 {% set yellow = '\033[1;33m' -%}
+{% set blue = '\033[1;34m' -%}
 {% set reset = '\033[0m' -%}
 {{ '' }}
 {{ gray }}{{ border }}
@@ -12,6 +13,9 @@
 # {{ green }}{{ '%-76s' | format(host_line) }}{{ gray }} #
 # {{ '%-76s' | format('') }} #
 # {{ yellow }}{{ '%-76s' | format(environment_line) }}{{ gray }} #
+{% if managed_baseline_reboot_required | default(false) == true -%}
+# {{ blue }}{{ '%-76s' | format('Reboot required') }}{{ gray }} #
+{% endif -%}
 # {{ '%-76s' | format('Deployed by: OpenTofu') }} #
 # {{ '%-76s' | format('Configured by: Ansible') }} #
 {{ border }}{{ reset }}{{ '\n\n' }}
