@@ -1,7 +1,5 @@
 # Operations
 
-[Return to README](../README.md)
-
 Grayhaven configuration is normally applied by the active control bastion. This
 document covers manual runner use and maintenance playbooks.
 
