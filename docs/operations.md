@@ -9,6 +9,7 @@ document covers manual runner use and maintenance playbooks.
 
 - [Manual Runner Invocation](#manual-runner-invocation)
 - [Runner And Poller Status](#runner-and-poller-status)
+- [Manual Discord Notification Test](#manual-discord-notification-test)
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
@@ -53,6 +54,39 @@ Managed hosts send one informational `Server Rebooted` Discord notification
 after each boot. The local `grayhaven-reboot-notify.service` records the current
 boot ID after a successful notification so repeated service checks do not resend
 the same reboot event.
+
+[Back to top](#operations)
+
+## Manual Discord Notification Test
+
+Use a test webhook when manually checking Discord notification formatting. The
+manual request should include an explicit user agent because Discord may reject
+default client user agents.
+
+```bash
+WEBHOOK_URL="<insert webhook URL here>"
+
+curl \
+  --silent \
+  --show-error \
+  --request POST \
+  --header "Content-Type: application/json" \
+  --user-agent "GrayhavenSystemsLLC/1.0 (+https://grayhavensystems.com)" \
+  --data @- \
+  "$WEBHOOK_URL" <<'JSON'
+{
+  "embeds": [
+    {
+      "title": "Server Rebooted",
+      "description": "manual-test.grayhavensystems.com\n\nEnvironment: test\n2026-06-12 01:00 PM",
+      "color": 5811424
+    }
+  ]
+}
+JSON
+```
+
+Discord returns HTTP `204` when the webhook accepts the notification.
 
 [Back to top](#operations)
 
