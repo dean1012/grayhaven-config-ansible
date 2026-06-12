@@ -91,3 +91,11 @@
     owner: root
     group: root
     mode: "0644"
+
+- name: Install managed shell prompt policy
+  ansible.builtin.template:
+    src: grayhaven-prompt.sh.j2
+    dest: /etc/profile.d/grayhaven-prompt.sh
+    owner: root
+    group: root
+    mode: "0644"

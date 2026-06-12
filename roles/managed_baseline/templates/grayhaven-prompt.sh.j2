@@ -1,0 +1,10 @@
+# Managed by Ansible. Do not edit manually.
+
+case "$-" in
+  *i*) ;;
+  *) return 0 2>/dev/null || exit 0 ;;
+esac
+
+if [ "$(id -u)" -eq 0 ]; then
+  PS1='\[\033[1;31m\][\u@\h \W]#\[\033[0m\] '
+fi
