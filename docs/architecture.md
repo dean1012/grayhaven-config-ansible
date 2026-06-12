@@ -1,7 +1,5 @@
 # Architecture
 
-[Return to README](../README.md)
-
 Grayhaven configuration is split into first-boot bootstrap and ongoing
 full-playbook convergence.
 
