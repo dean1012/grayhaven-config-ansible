@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Grayhaven login MOTD
+After=local-fs.target
+Before=sshd.service
+ConditionPathExists=/etc/ansible/facts.d/grayhaven.fact
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/grayhaven-refresh-motd
+
+[Install]
+WantedBy=multi-user.target
