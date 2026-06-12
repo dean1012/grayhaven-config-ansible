@@ -1,0 +1,13 @@
+[Unit]
+Description=Notify Discord after Grayhaven server reboot
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/ansible/facts.d/grayhaven.fact
+ConditionPathExists=/etc/grayhaven/notifications/discord-webhook.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/grayhaven-reboot-notify
+
+[Install]
+WantedBy=multi-user.target

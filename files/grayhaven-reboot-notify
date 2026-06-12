@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Send one Discord notification per host boot."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+
+FACT_PATH = Path("/etc/ansible/facts.d/grayhaven.fact")
+CONFIG_PATH = Path("/etc/grayhaven/notifications/discord-webhook.json")
+BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
+STATE_DIR = Path("/var/lib/grayhaven/reboot-notify")
+LAST_BOOT_ID_PATH = STATE_DIR / "last-boot-id"
+
+DISCORD_API_BASE = "https://discord.com/api/webhooks"
+DISCORD_USER_AGENT = "GrayhavenSystemsLLC/1.0 grayhaven-reboot-notify"
+INFO_COLOR = 5811424
+DEFAULT_TIMEZONE = "America/Chicago"
+
+
+def load_json(path: Path, description: str) -> dict[str, object]:
+    """Load a required JSON file."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        sys.stderr.write(f"{description} is missing: {path}\n")
+        raise SystemExit(1) from None
+    except json.JSONDecodeError as exc:
+        sys.stderr.write(f"{description} is invalid JSON: {exc}\n")
+        raise SystemExit(1) from None
+
+
+def current_boot_id() -> str:
+    """Return the current kernel boot ID."""
+    try:
+        return BOOT_ID_PATH.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        sys.stderr.write(f"Boot ID file is missing: {BOOT_ID_PATH}\n")
+        raise SystemExit(1) from None
+
+
+def already_notified(boot_id: str) -> bool:
+    """Return whether this boot ID has already been reported."""
+    try:
+        return LAST_BOOT_ID_PATH.read_text(encoding="utf-8").strip() == boot_id
+    except FileNotFoundError:
+        return False
+
+
+def record_boot_id(boot_id: str) -> None:
+    """Persist the boot ID after the notification succeeds."""
+    STATE_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        dir=str(STATE_DIR),
+        prefix=".last-boot-id.",
+        text=True,
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+            temp_file.write(f"{boot_id}\n")
+        temp_path.chmod(0o600)
+        os.replace(temp_path, LAST_BOOT_ID_PATH)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+def notification_timestamp(timezone_name: str) -> str:
+    """Return a local timestamp matching existing automation notifications."""
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        timezone = ZoneInfo(DEFAULT_TIMEZONE)
+
+    return datetime.now(timezone).strftime("%Y-%m-%d %I:%M %p")
+
+
+def build_payload(facts: dict[str, object], timezone_name: str) -> dict[str, object]:
+    """Build the Discord webhook payload."""
+    hostname = str(facts.get("hostname", "unknown"))
+    environment = str(facts.get("environment", "unknown"))
+
+    return {
+        "embeds": [
+            {
+                "title": "Server Rebooted",
+                "description": (
+                    f"{hostname}\n\n"
+                    f"Environment: {environment}\n"
+                    f"{notification_timestamp(timezone_name)}"
+                ),
+                "color": INFO_COLOR,
+            }
+        ]
+    }
+
+
+def send_discord_notification(config: dict[str, object], payload: dict[str, object]) -> None:
+    """Send a Discord webhook notification."""
+    webhook_id = str(config.get("webhook_id", "")).strip()
+    webhook_token = str(config.get("webhook_token", "")).strip()
+    if not webhook_id or not webhook_token:
+        sys.stderr.write("Discord webhook config is missing webhook_id or webhook_token\n")
+        raise SystemExit(1)
+
+    request = urllib.request.Request(
+        f"{DISCORD_API_BASE}/{webhook_id}/{webhook_token}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": DISCORD_USER_AGENT,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if response.status not in (200, 204):
+                sys.stderr.write(f"Discord webhook returned HTTP {response.status}\n")
+                raise SystemExit(1)
+    except urllib.error.URLError as exc:
+        sys.stderr.write(f"Discord webhook request failed: {exc}\n")
+        raise SystemExit(1) from None
+
+
+def main() -> int:
+    """Send the reboot notification once for the current boot."""
+    boot_id = current_boot_id()
+    if already_notified(boot_id):
+        print("already-notified")
+        return 0
+
+    facts = load_json(FACT_PATH, "Grayhaven local facts")
+    config = load_json(CONFIG_PATH, "Discord webhook config")
+    timezone_name = str(config.get("timezone", DEFAULT_TIMEZONE))
+    send_discord_notification(config, build_payload(facts, timezone_name))
+    record_boot_id(boot_id)
+    print("notified")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

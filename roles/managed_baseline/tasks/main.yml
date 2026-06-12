@@ -48,6 +48,9 @@
 - name: Enforce bastion runner installation
   ansible.builtin.import_tasks: runner.yml
 
+- name: Enforce local reboot notifications
+  ansible.builtin.import_tasks: notifications.yml
+
 - name: Refresh local reboot status
   ansible.builtin.import_tasks: reboot-status.yml
 
