@@ -101,7 +101,7 @@ role-specific configuration. The baseline covers:
 
 - root password hash and root SSH authorized-key removal;
 - `ansible` automation user, sudo policy, and SSH key state;
-- SSH daemon hardening for public-key-only access;
+- SSH daemon hardening for public-key-only access and idle-session keepalives;
 - managed SSH known-host entries on bastion;
 - SELinux enforcing mode;
 - common administration packages and unnecessary service removal;

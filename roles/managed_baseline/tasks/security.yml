@@ -36,6 +36,8 @@
       KbdInteractiveAuthentication no
       PubkeyAuthentication yes
       Banner /etc/issue
+      ClientAliveInterval 60
+      ClientAliveCountMax 5
   notify: Restart sshd
 
 - name: Enable and start SSH daemon
