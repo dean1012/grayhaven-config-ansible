@@ -1,14 +1,17 @@
 {% set border = '#' * 80 -%}
 {% set host_line = 'Host: ' ~ inventory_hostname -%}
 {% set environment_line = 'Environment: ' ~ managed_baseline_environment -%}
+{% set gray = '\033[90m' -%}
+{% set green = '\033[1;32m' -%}
+{% set yellow = '\033[1;33m' -%}
+{% set reset = '\033[0m' -%}
 {{ '' }}
-{{ border }}
+{{ gray }}{{ border }}
 # {{ '%-76s' | format('Grayhaven Systems LLC') }} #
 {{ border }}
-# {{ '%-76s' | format(host_line) }} #
+{{ green }}# {{ '%-76s' | format(host_line) }} #{{ gray }}
 # {{ '%-76s' | format('') }} #
-# {{ '%-76s' | format(environment_line) }} #
+{{ yellow }}# {{ '%-76s' | format(environment_line) }} #{{ gray }}
 # {{ '%-76s' | format('Deployed by: OpenTofu') }} #
 # {{ '%-76s' | format('Configured by: Ansible') }} #
-{{ border }}
-{{ '' }}
+{{ border }}{{ reset }}{{ '\n' }}
