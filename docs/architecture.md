@@ -112,6 +112,7 @@ role-specific configuration. The baseline covers:
 - local host aliases such as `grayhaven-core-prod-web-01` and
   `grayhaven-core-prod-web-01.internal`;
 - local Ansible facts at `/etc/ansible/facts.d/grayhaven.fact`;
+- root-only Discord webhook configuration for post-reboot notifications;
 - local encrypted restic backups.
 
 The playbook records whether a reboot is required, displays that status in the
@@ -119,6 +120,13 @@ login MOTD, and includes it in the completion notification. A managed
 `grayhaven-refresh-motd.service` refreshes the MOTD at boot so a completed
 reboot clears the login warning before the next convergence run. Ansible does
 not reboot servers automatically.
+
+Full convergence also installs `grayhaven-reboot-notify.service` on managed
+hosts. The service sends one informational `Server Rebooted` Discord
+notification after each boot and records the boot ID locally so the same boot is
+not reported more than once. The Discord webhook values come from the encrypted
+vault and are persisted only in the root-readable local configuration used by
+the service.
 
 Managed hosts publish a local Ansible fact at
 `/etc/ansible/facts.d/grayhaven.fact`. This exposes the host role,

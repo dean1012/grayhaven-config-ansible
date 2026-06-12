@@ -1,0 +1,60 @@
+---
+- name: Validate reboot notification webhook variables
+  ansible.builtin.assert:
+    that:
+      - automation_notifications_discord_webhook_id is defined
+      - automation_notifications_discord_webhook_id is string
+      - automation_notifications_discord_webhook_id | trim | length > 0
+      - automation_notifications_discord_webhook_token is defined
+      - automation_notifications_discord_webhook_token is string
+      - automation_notifications_discord_webhook_token | trim | length > 0
+    fail_msg: "Discord webhook values are required for reboot notifications."
+    quiet: true
+  no_log: true
+
+- name: Create local notification secret directory
+  ansible.builtin.file:
+    path: /etc/grayhaven/notifications
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install local Discord webhook config
+  ansible.builtin.copy:
+    dest: /etc/grayhaven/notifications/discord-webhook.json
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      {{
+        {
+          'webhook_id': automation_notifications_discord_webhook_id,
+          'webhook_token': automation_notifications_discord_webhook_token,
+          'timezone': managed_baseline_timezone,
+        }
+        | to_nice_json
+      }}
+  no_log: true
+
+- name: Install reboot notification command
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/grayhaven-reboot-notify"
+    dest: /usr/local/sbin/grayhaven-reboot-notify
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install reboot notification service
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-reboot-notify.service"
+    dest: /etc/systemd/system/grayhaven-reboot-notify.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable reboot notification service
+  ansible.builtin.systemd_service:
+    name: grayhaven-reboot-notify.service
+    enabled: true
+    daemon_reload: true

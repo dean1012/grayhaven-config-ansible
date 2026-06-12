@@ -38,14 +38,21 @@ sudo systemctl status grayhaven-ansible-runner.service
 sudo systemctl status grayhaven-ansible-runner.timer
 sudo systemctl status grayhaven-ansible-poller.service
 sudo systemctl status grayhaven-ansible-poller.timer
+sudo systemctl status grayhaven-reboot-notify.service
 sudo journalctl -u grayhaven-ansible-runner.service
 sudo journalctl -u grayhaven-ansible-poller.service
+sudo journalctl -u grayhaven-reboot-notify.service
 ```
 
 The poller checks the tracked config and vault refs every five minutes. When it
 detects a change, it starts the runner and then records the observed refs. If
 the runner trigger fails, the ref state is not advanced so the next poll can
 retry the same change.
+
+Managed hosts send one informational `Server Rebooted` Discord notification
+after each boot. The local `grayhaven-reboot-notify.service` records the current
+boot ID after a successful notification so repeated service checks do not resend
+the same reboot event.
 
 [Back to top](#operations)
 

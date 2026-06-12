@@ -34,6 +34,8 @@ on repository-change poller events, or by manual invocation.
 - Enforce a shared managed-host baseline for access, SSH, SELinux, time sync,
   package state, DigitalOcean agents, firewalld, local backups, and local host
   aliases.
+- Send operational Discord notifications for convergence events and server
+  reboots.
 - Serve configured static placeholders for hosted domains while dedicated
   website repositories are being prepared.
 - Manage Nginx, host TLS certificates, load-balancer backend behavior, dev
