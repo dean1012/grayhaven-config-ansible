@@ -131,6 +131,6 @@ commands, and contribution guidelines.
 
 ## License
 
-MIT
+[MIT](LICENSE)
 
 [Back to top](#grayhaven-configuration)
