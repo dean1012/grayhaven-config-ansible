@@ -1,0 +1,28 @@
+---
+- name: Install MOTD refresh command
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/grayhaven-refresh-motd"
+    dest: /usr/local/sbin/grayhaven-refresh-motd
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install MOTD refresh service
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-refresh-motd.service"
+    dest: /etc/systemd/system/grayhaven-refresh-motd.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable MOTD refresh service
+  ansible.builtin.systemd_service:
+    name: grayhaven-refresh-motd.service
+    enabled: true
+    daemon_reload: true
+
+- name: Refresh message of the day
+  ansible.builtin.command:
+    cmd: /usr/local/sbin/grayhaven-refresh-motd
+  register: managed_baseline_motd_refresh
+  changed_when: "'updated' in managed_baseline_motd_refresh.stdout"

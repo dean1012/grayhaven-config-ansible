@@ -54,6 +54,16 @@
     - web_static
 
   post_tasks:
+    - name: Refresh reboot status after convergence
+      ansible.builtin.include_role:
+        name: managed_baseline
+        tasks_from: reboot-status
+
+    - name: Refresh message of the day after convergence
+      ansible.builtin.include_role:
+        name: managed_baseline
+        tasks_from: motd
+
     - name: Check for active AlmaLinux bootstrap user processes
       ansible.builtin.command:
         cmd: pgrep -u almalinux

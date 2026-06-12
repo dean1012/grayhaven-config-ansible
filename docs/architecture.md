@@ -114,8 +114,11 @@ role-specific configuration. The baseline covers:
 - local Ansible facts at `/etc/ansible/facts.d/grayhaven.fact`;
 - local encrypted restic backups.
 
-The playbook records whether a reboot is required, but it does not reboot
-servers automatically.
+The playbook records whether a reboot is required, displays that status in the
+login MOTD, and includes it in the completion notification. A managed
+`grayhaven-refresh-motd.service` refreshes the MOTD at boot so a completed
+reboot clears the login warning before the next convergence run. Ansible does
+not reboot servers automatically.
 
 Managed hosts publish a local Ansible fact at
 `/etc/ansible/facts.d/grayhaven.fact`. This exposes the host role,

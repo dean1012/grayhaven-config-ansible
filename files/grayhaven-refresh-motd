@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Refresh the Grayhaven login MOTD from local host state."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+FACT_PATH = Path("/etc/ansible/facts.d/grayhaven.fact")
+MOTD_PATH = Path("/etc/motd")
+WIDTH = 80
+FIELD_WIDTH = WIDTH - 4
+
+GRAY = "\033[90m"
+GREEN = "\033[1;32m"
+YELLOW = "\033[1;33m"
+BLUE = "\033[1;34m"
+RESET = "\033[0m"
+BORDER = "#" * WIDTH
+
+
+def fit_text(text: str) -> str:
+    """Fit text into the MOTD field without changing the border width."""
+    if len(text) <= FIELD_WIDTH:
+        return text
+
+    return f"{text[: FIELD_WIDTH - 3]}..."
+
+
+def motd_line(text: str = "", color: str | None = None) -> str:
+    """Render one bordered MOTD line with optional colored field content."""
+    field = f"{fit_text(text):<{FIELD_WIDTH}}"
+    if color:
+        return f"# {color}{field}{GRAY} #"
+
+    return f"# {field} #"
+
+
+def load_facts() -> dict[str, object]:
+    """Load Grayhaven local facts written by Ansible."""
+    try:
+        return json.loads(FACT_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        sys.stderr.write(f"Local fact file is missing: {FACT_PATH}\n")
+        raise SystemExit(1) from None
+    except json.JSONDecodeError as exc:
+        sys.stderr.write(f"Local fact file is invalid JSON: {exc}\n")
+        raise SystemExit(1) from None
+
+
+def reboot_required() -> bool:
+    """Return whether the current host needs a reboot."""
+    if shutil.which("needs-restarting") is None:
+        sys.stderr.write("Required command is missing: needs-restarting\n")
+        raise SystemExit(1)
+
+    result = subprocess.run(
+        ["needs-restarting", "-r"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if result.returncode == 0:
+        return False
+    if result.returncode == 1:
+        return True
+
+    sys.stderr.write(f"needs-restarting returned unexpected status: {result.returncode}\n")
+    raise SystemExit(1)
+
+
+def render_motd(facts: dict[str, object], show_reboot_required: bool) -> str:
+    """Render the complete Grayhaven MOTD."""
+    hostname = str(facts.get("hostname", "unknown"))
+    environment = str(facts.get("environment", "unknown"))
+
+    lines = [
+        "",
+        f"{GRAY}{BORDER}",
+        motd_line("Grayhaven Systems LLC"),
+        BORDER,
+        motd_line(f"Host: {hostname}", GREEN),
+        motd_line(),
+        motd_line(f"Environment: {environment}", YELLOW),
+    ]
+    if show_reboot_required:
+        lines.append(motd_line("Reboot required", BLUE))
+
+    lines.extend(
+        [
+            motd_line("Deployed by: OpenTofu"),
+            motd_line("Configured by: Ansible"),
+            f"{BORDER}{RESET}",
+        ]
+    )
+    return "\n".join(lines) + "\n\n"
+
+
+def write_if_changed(content: str) -> bool:
+    """Write /etc/motd atomically when the rendered content changed."""
+    current = MOTD_PATH.read_text(encoding="utf-8") if MOTD_PATH.exists() else None
+    if current == content:
+        return False
+
+    fd, temp_name = tempfile.mkstemp(
+        dir=str(MOTD_PATH.parent),
+        prefix=f".{MOTD_PATH.name}.",
+        text=True,
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+            temp_file.write(content)
+        temp_path.chmod(0o644)
+        os.replace(temp_path, MOTD_PATH)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+    return True
+
+
+def main() -> int:
+    """Refresh the MOTD and report whether the file changed."""
+    content = render_motd(load_facts(), reboot_required())
+    if write_if_changed(content):
+        print("updated")
+    else:
+        print("unchanged")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

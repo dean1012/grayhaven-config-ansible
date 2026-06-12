@@ -35,6 +35,7 @@
       PasswordAuthentication no
       KbdInteractiveAuthentication no
       PubkeyAuthentication yes
+      Banner /etc/issue
   notify: Restart sshd
 
 - name: Enable and start SSH daemon

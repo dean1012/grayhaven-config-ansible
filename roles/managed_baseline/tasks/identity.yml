@@ -84,10 +84,10 @@
     group: root
     mode: "0644"
 
-- name: Install message of the day
+- name: Install managed shell prompt policy
   ansible.builtin.template:
-    src: motd.j2
-    dest: /etc/motd
+    src: grayhaven-prompt.sh.j2
+    dest: /etc/profile.d/grayhaven-prompt.sh
     owner: root
     group: root
     mode: "0644"
