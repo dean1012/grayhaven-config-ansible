@@ -11,3 +11,6 @@
 # Ansible runtime artifacts
 *.retry
 ansible.log
+
+# Python runtime artifacts
+__pycache__/

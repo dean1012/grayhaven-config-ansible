@@ -91,3 +91,11 @@
     owner: root
     group: root
     mode: "0644"
+
+- name: Install managed shell editor policy
+  ansible.builtin.template:
+    src: grayhaven-editor.sh.j2
+    dest: /etc/profile.d/grayhaven-editor.sh
+    owner: root
+    group: root
+    mode: "0644"
