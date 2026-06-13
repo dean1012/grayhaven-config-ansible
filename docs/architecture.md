@@ -106,7 +106,7 @@ role-specific configuration. The baseline covers:
 - managed swap;
 - Quad9 DNS resolvers through NetworkManager;
 - AlmaLinux time synchronization;
-- firewalld inbound rules from the infrastructure firewall policy;
+- firewalld inbound rules from the vault firewall policy;
 - local host aliases such as `grayhaven-core-prod-web-01` and
   `grayhaven-core-prod-web-01.internal`;
 - local Ansible facts at `/etc/ansible/facts.d/grayhaven.fact`;
@@ -181,18 +181,18 @@ repository documents the expected vault shape.
 
 ## Firewalld Policy
 
-The managed baseline downloads the firewall policy from
-[grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
-and caches it locally under `/etc/grayhaven/firewall/policy.yml`.
+The managed baseline reads the environment firewall policy from `firewall.yml`
+in the checked-out private vault repository and caches it locally under
+`/etc/grayhaven/firewall/policy.yml`.
 
-If the policy fetch fails and a cached policy exists, Ansible uses the cached
-policy and sends an informational Discord notification. If no valid policy is
-available, Ansible sends a warning notification and skips firewalld policy
-changes, preserving the current local firewall state while allowing the rest of
-the playbook to converge.
+If the vault firewall policy is unavailable and a cached policy exists, Ansible
+uses the cached policy and sends an informational Discord notification. If no
+valid policy is available, Ansible sends a warning notification and skips
+firewalld policy changes, preserving the current local firewall state while
+allowing the rest of the playbook to converge.
 
 At this time, Ansible enforces inbound firewalld policy from the
-environment-specific infrastructure policy file. DigitalOcean cloud firewalls
+environment-specific vault firewall policy file. DigitalOcean cloud firewalls
 continue to enforce both inbound and outbound cloud firewall policy.
 
 For SSH from bastion to managed hosts, local firewalld allows the environment

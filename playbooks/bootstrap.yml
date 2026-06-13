@@ -25,9 +25,6 @@
           - grayhaven_config_repo_ref is defined
           - grayhaven_config_repo_ref is string
           - grayhaven_config_repo_ref | trim | length > 0
-          - grayhaven_infra_policy_repo_ref is defined
-          - grayhaven_infra_policy_repo_ref is string
-          - grayhaven_infra_policy_repo_ref | trim | length > 0
           - grayhaven_ansible_deploy_public_key is defined
           - grayhaven_ansible_deploy_public_key is string
           - grayhaven_ansible_deploy_public_key | trim | length > 0
@@ -218,7 +215,6 @@
         content: |
           REPO_URL={{ "https://github.com/dean1012/grayhaven-config-ansible.git" | quote }}
           REPO_REF={{ grayhaven_config_repo_ref | quote }}
-          INFRA_POLICY_REPO_REF={{ grayhaven_infra_policy_repo_ref | quote }}
           CHECKOUT_DIR={{ "/home/ansible/grayhaven-config-ansible" | quote }}
           VAULT_REPO_URL={{ grayhaven_vault_repo_url | quote }}
           VAULT_REPO_REF={{ grayhaven_vault_repo_ref | quote }}

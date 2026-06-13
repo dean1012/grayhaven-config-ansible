@@ -7,50 +7,25 @@
     group: root
     mode: "0755"
 
-- name: Fetch firewalld policy candidates from infrastructure repository
-  ansible.builtin.uri:
-    url: "{{ item }}"
-    return_content: true
-    status_code: 200
-    timeout: 15
-  loop: "{{ managed_baseline_firewall_policy_urls }}"
-  register: managed_baseline_firewall_policy_fetches
-  failed_when: false
-  changed_when: false
-  vars:
-    managed_baseline_firewall_policy_repo_url: >-
-      https://raw.githubusercontent.com/dean1012/grayhaven-infra-opentofu
-    managed_baseline_policy_ref: "{{ managed_baseline_infra_policy_repo_ref | default('main') }}"
-    managed_baseline_firewall_policy_base_url: >-
-      {{ managed_baseline_firewall_policy_repo_url }}/{{ managed_baseline_policy_ref }}/policy
-    managed_baseline_firewall_policy_urls:
-      - >-
-        {{ managed_baseline_firewall_policy_base_url }}/{{ managed_baseline_environment }}/firewall.yml
-      - >-
-        {{ managed_baseline_firewall_policy_base_url }}/firewall/{{ managed_baseline_environment }}.yml
-
-- name: Select fetched firewalld policy
+- name: Derive vault firewalld policy path
   ansible.builtin.set_fact:
-    managed_baseline_firewall_policy_fetch: >-
-      {{
-        (
-          managed_baseline_firewall_policy_fetches.results
-          | selectattr('status', 'defined')
-          | selectattr('status', 'equalto', 200)
-          | list
-          | first
-        )
-        | default({'status': 0, 'content': ''}, true)
-      }}
+    managed_baseline_vault_firewall_policy_path: >-
+      {{ managed_baseline_vault_checkout_dir | default('/home/ansible/grayhaven-vault') }}/firewall.yml
 
-- name: Cache fetched firewalld policy
+- name: Check vault firewalld policy
+  ansible.builtin.stat:
+    path: "{{ managed_baseline_vault_firewall_policy_path }}"
+  register: managed_baseline_vault_firewall_policy
+
+- name: Cache vault firewalld policy
   ansible.builtin.copy:
+    src: "{{ managed_baseline_vault_firewall_policy_path }}"
     dest: /etc/grayhaven/firewall/policy.yml
     owner: root
     group: root
     mode: "0644"
-    content: "{{ managed_baseline_firewall_policy_fetch.content }}"
-  when: managed_baseline_firewall_policy_fetch.status == 200
+    remote_src: true
+  when: managed_baseline_vault_firewall_policy.stat.exists
 
 - name: Check cached firewalld policy
   ansible.builtin.stat:
@@ -68,7 +43,7 @@
 
       Environment: {{ managed_baseline_environment }}
   when:
-    - managed_baseline_firewall_policy_fetch.status != 200
+    - not managed_baseline_vault_firewall_policy.stat.exists
     - managed_baseline_firewall_policy_cache.stat.exists
 
 - name: Notify Discord when firewalld policy is unavailable
@@ -82,7 +57,7 @@
 
       Environment: {{ managed_baseline_environment }}
   when:
-    - managed_baseline_firewall_policy_fetch.status != 200
+    - not managed_baseline_vault_firewall_policy.stat.exists
     - not managed_baseline_firewall_policy_cache.stat.exists
 
 - name: Read cached firewalld policy
