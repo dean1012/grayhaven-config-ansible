@@ -7,23 +7,41 @@
     group: root
     mode: "0755"
 
-- name: Fetch firewalld policy from infrastructure repository
+- name: Fetch firewalld policy candidates from infrastructure repository
   ansible.builtin.uri:
-    url: "{{ managed_baseline_firewall_policy_url }}"
+    url: "{{ item }}"
     return_content: true
     status_code: 200
     timeout: 15
-  register: managed_baseline_firewall_policy_fetch
+  loop: "{{ managed_baseline_firewall_policy_urls }}"
+  register: managed_baseline_firewall_policy_fetches
   failed_when: false
   changed_when: false
   vars:
-    managed_baseline_firewall_policy_url: >-
-      {{ managed_baseline_firewall_policy_base_url }}/{{ managed_baseline_environment }}.yml
-    managed_baseline_firewall_policy_base_url: >-
-      {{ managed_baseline_firewall_policy_repo_url }}/{{ managed_baseline_policy_ref }}/policy/firewall
     managed_baseline_firewall_policy_repo_url: >-
       https://raw.githubusercontent.com/dean1012/grayhaven-infra-opentofu
     managed_baseline_policy_ref: "{{ managed_baseline_infra_policy_repo_ref | default('main') }}"
+    managed_baseline_firewall_policy_base_url: >-
+      {{ managed_baseline_firewall_policy_repo_url }}/{{ managed_baseline_policy_ref }}/policy
+    managed_baseline_firewall_policy_urls:
+      - >-
+        {{ managed_baseline_firewall_policy_base_url }}/{{ managed_baseline_environment }}/firewall.yml
+      - >-
+        {{ managed_baseline_firewall_policy_base_url }}/firewall/{{ managed_baseline_environment }}.yml
+
+- name: Select fetched firewalld policy
+  ansible.builtin.set_fact:
+    managed_baseline_firewall_policy_fetch: >-
+      {{
+        (
+          managed_baseline_firewall_policy_fetches.results
+          | selectattr('status', 'defined')
+          | selectattr('status', 'equalto', 200)
+          | list
+          | first
+        )
+        | default({'status': 0, 'content': ''}, true)
+      }}
 
 - name: Cache fetched firewalld policy
   ansible.builtin.copy:

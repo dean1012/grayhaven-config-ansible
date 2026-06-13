@@ -191,14 +191,14 @@ available, Ansible sends a warning notification and skips firewalld policy
 changes, preserving the current local firewall state while allowing the rest of
 the playbook to converge.
 
-At this time, Ansible enforces inbound firewalld policy from the shared policy
-file. DigitalOcean hardware firewalls continue to enforce both inbound and
-outbound cloud firewall policy.
+At this time, Ansible enforces inbound firewalld policy from the
+environment-specific infrastructure policy file. DigitalOcean cloud firewalls
+continue to enforce both inbound and outbound cloud firewall policy.
 
 For SSH from bastion to managed hosts, local firewalld allows the environment
 VPC CIDR as well as known bastion private addresses. This prevents active
 control-node failover from locking the new control bastion out of existing
-managed hosts. DigitalOcean hardware firewalls still enforce the tighter
+managed hosts. DigitalOcean cloud firewalls still enforce the tighter
 bastion source-tag boundary before traffic reaches the host.
 
 [Back to top](#architecture)
