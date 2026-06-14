@@ -95,8 +95,9 @@ for prerequisites, commands, and validation steps.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, validation
-commands, and contribution guidelines.
+See [development setup](CONTRIBUTING.md#development-setup),
+[local validation](CONTRIBUTING.md#local-validation), and
+[pull request](CONTRIBUTING.md#pull-requests) guidelines.
 
 [Back to top](#grayhaven-systems-llc-configuration-ansible)
 

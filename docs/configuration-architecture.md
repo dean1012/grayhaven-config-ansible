@@ -19,10 +19,11 @@ full-playbook convergence.
 
 The
 [grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
-repository renders role-specific cloud-init user-data for each droplet. During
-first boot, cloud-init installs Ansible, writes bootstrap variables to
-`/etc/grayhaven/bootstrap/bootstrap-vars.yml`, and runs `ansible-pull` against
-this repository.
+repository renders
+[role-specific cloud-init user-data](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/runtime-architecture.md#configuration-handoff)
+for each droplet. During first boot, cloud-init installs Ansible, writes
+bootstrap variables to `/etc/grayhaven/bootstrap/bootstrap-vars.yml`, and runs
+`ansible-pull` against this repository.
 
 The bootstrap playbook prepares the host for management:
 
@@ -84,8 +85,12 @@ active control bastion.
 ## Vault Loading
 
 The private `grayhaven-vault` repository supplies runtime selectors and
-encrypted operational values. The `config.yml` and `firewall.yml` files remain
-plaintext, and the `vault/*.yml` files are decrypted by Ansible at runtime.
+encrypted operational values. Its structure follows the
+[file schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md)
+documented in the
+[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+repository. The `config.yml` and `firewall.yml` files remain plaintext, and the
+`vault/*.yml` files are decrypted by Ansible at runtime.
 
 Production reads the vault `main` branch. Staging reads the vault `staging`
 branch.
@@ -148,8 +153,11 @@ DigitalOcean API access.
 
 ## Managed Users
 
-Managed users are defined in `vault/common.yml`. Users may be marked
-`present` or `absent`.
+Managed users are defined in `vault/common.yml`. The
+[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+repository documents the
+[user schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#vaultcommonyml).
+Users may be marked `present` or `absent`.
 
 `present` users are created with configured password hashes, SSH keys, and
 optional password sudo access. `absent` users are removed. If `home_mode` is
@@ -184,10 +192,16 @@ writes a separate htpasswd file for each domain. If `dev.auth_realm` is
 omitted, the realm defaults to `<domain> Development Environment`.
 
 New hosted domains require both DNS policy in
-[`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
-and matching `hosted_domains` data in the private vault. The public
-[`grayhaven-vault-example`](https://github.com/dean1012/grayhaven-vault-example)
-repository documents the expected vault shape.
+[grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
+and matching `hosted_domains` data in the private vault. See the
+[DNS architecture documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/dns-architecture.md)
+in the
+[grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
+repository and the
+[hosted domain DNS coordination documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#hosted-domain-dns-coordination)
+in the
+[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+repository.
 
 [Back to top](#configuration-architecture)
 
@@ -195,7 +209,10 @@ repository documents the expected vault shape.
 
 The managed baseline reads the environment firewall policy from `firewall.yml`
 in the checked-out private vault repository and caches it locally under
-`/etc/grayhaven/firewall/policy.yml`.
+`/etc/grayhaven/firewall/policy.yml`. The
+[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+repository documents the
+[firewall policy schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#firewallyml).
 
 If the vault firewall policy is unavailable and a cached policy exists, Ansible
 uses the cached policy and sends an informational Discord notification. If no
@@ -218,7 +235,11 @@ bastion source-tag boundary before traffic reaches the host.
 ## Backups
 
 Each managed server creates encrypted local restic backups using settings from
-`grayhaven-vault/config.yml`. The local repository path defaults to
+`grayhaven-vault/config.yml`. The
+[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+repository documents the
+[backup settings schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#configyml).
+The local repository path defaults to
 `/var/backups/restic`, and the homedir archive path defaults to
 `/var/backups/deleted-homedir-archives`.
 
