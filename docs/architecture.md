@@ -32,11 +32,16 @@ The bootstrap playbook prepares the host for management:
   bursts;
 - creates the password-locked `ansible` automation user;
 - grants the `ansible` user passwordless sudo;
-- installs the bootstrap deployment public key for the `ansible` user;
-- installs the bootstrap deployment private key only on bastion hosts;
+- installs the bootstrap deployment public key for first-boot `ansible` access;
+- installs the vault deployment key and temporary first-boot automation key on
+  bastion hosts;
 - stores the Ansible Vault password only on bastion hosts;
 - installs runner and poller services on bastion hosts;
 - enables runner and poller timers only on the declared control bastion.
+
+The bootstrap variables file is removed before the initial runner starts. It is
+only a first-boot handoff file and is not a long-term source of truth for
+managed secrets.
 
 Bootstrap does not persist application secrets, human user secrets, Discord
 webhooks, or DigitalOcean service tokens outside the vault model.
@@ -54,6 +59,11 @@ persistent checkouts of:
 The runner installs pinned runtime dependencies, decrypts vault values through
 Ansible Vault, prepares SSH known hosts for remote managed hosts, and runs
 `playbooks/site.yml`.
+
+Private vault repository SSH access uses the vault deployment SSH key stored at
+`/home/ansible/.ssh/grayhaven_vault_deploy_key` on bastion hosts. Repository
+SSH access uses pinned GitHub host keys published by GitHub instead of
+accepting host keys dynamically at runtime.
 
 Before each playbook run, the runner refreshes live DigitalOcean inventory data.
 The current control-node status and TLS mode are derived from environment
@@ -103,6 +113,8 @@ role-specific configuration. The baseline covers:
 - managed SSH known-host entries on bastion;
 - SELinux enforcing mode;
 - common administration packages and unnecessary service removal;
+- the DigitalOcean metrics agent from the managed DigitalOcean package
+  repository;
 - managed swap;
 - Quad9 DNS resolvers through NetworkManager;
 - AlmaLinux time synchronization;
@@ -234,9 +246,12 @@ Personal private keys are not stored on Grayhaven servers.
 
 The `ansible` account is automation-only. OpenTofu supplies bootstrap
 deployment key material for first-boot automation and private vault repository
-access. After convergence, the vault-defined Ansible control key is the
-persistent SSH key for managed-host automation. On managed hosts, the matching
-public key is authorized for the `ansible` account. This supports scheduled
+access. On bastions, that key is retained separately as the vault deployment
+SSH key used for private vault repository access.
+
+Full convergence replaces the temporary first-boot `id_ed25519` automation key
+with the vault-defined Ansible control key and enforces the matching public key
+as the only managed `ansible` authorized key. This supports scheduled
 convergence from the active control bastion without depending on a human SSH
 agent.
 

@@ -10,6 +10,7 @@ RUNNER_SECRET_ENV="/run/grayhaven-ansible-runner-secrets.env"
 RUNNER_PLAYBOOK_LOG="/run/grayhaven-ansible-runner-playbook.log"
 ANSIBLE_HOME="/home/ansible"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
+VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
 CHECKOUT_PARENT="${ANSIBLE_HOME}"
 DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
 DEFAULT_VAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-vault"
@@ -26,6 +27,20 @@ log() {
 
 run_as_ansible() {
   runuser -u ansible -- "$@"
+}
+
+run_git_as_ansible() {
+  local private_key="$1"
+  shift
+
+  if [[ -n "$private_key" ]]; then
+    runuser -u ansible -- env \
+      GIT_SSH_COMMAND="ssh -i ${private_key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ANSIBLE_HOME}/.ssh/known_hosts" \
+      git "$@"
+    return
+  fi
+
+  run_as_ansible git "$@"
 }
 
 require_file() {
@@ -150,30 +165,35 @@ checkout_ref() {
   local checkout_dir="$1"
   local repo_url="$2"
   local repo_ref="$3"
+  local private_key="${4:-}"
 
   if [[ ! -d "${checkout_dir}/.git" ]]; then
-    run_as_ansible git clone "$repo_url" "$checkout_dir"
+    run_git_as_ansible "$private_key" clone "$repo_url" "$checkout_dir"
   fi
 
-  run_as_ansible git -C "$checkout_dir" fetch --prune origin \
+  run_git_as_ansible "$private_key" -C "$checkout_dir" fetch --prune origin \
     '+refs/heads/*:refs/remotes/origin/*' \
     '+refs/tags/*:refs/tags/*'
 
-  if run_as_ansible git -C "$checkout_dir" rev-parse --verify --quiet "origin/${repo_ref}" >/dev/null; then
-    run_as_ansible git -C "$checkout_dir" checkout -B "$repo_ref" "origin/${repo_ref}"
+  if run_git_as_ansible "$private_key" -C "$checkout_dir" rev-parse --verify --quiet "origin/${repo_ref}" >/dev/null; then
+    run_git_as_ansible "$private_key" -C "$checkout_dir" checkout -B "$repo_ref" "origin/${repo_ref}"
   else
-    run_as_ansible git -C "$checkout_dir" checkout --detach "$repo_ref"
+    run_git_as_ansible "$private_key" -C "$checkout_dir" checkout --detach "$repo_ref"
   fi
 
-  run_as_ansible git -C "$checkout_dir" reset --hard HEAD
+  run_git_as_ansible "$private_key" -C "$checkout_dir" reset --hard HEAD
   # These checkouts are owned by the runner. Cleaning them prevents deleted
   # repository files from lingering across convergence runs.
-  run_as_ansible git -C "$checkout_dir" clean -ffd
+  run_git_as_ansible "$private_key" -C "$checkout_dir" clean -ffd
 }
 
 prepare_github_known_hosts() {
   install -d -o ansible -g ansible -m 0700 "${ANSIBLE_HOME}/.ssh"
-  run_as_ansible ssh-keyscan -T 5 -t ed25519 github.com > "${ANSIBLE_HOME}/.ssh/known_hosts"
+  cat > "${ANSIBLE_HOME}/.ssh/known_hosts" <<'EOF'
+github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+EOF
   chown ansible:ansible "${ANSIBLE_HOME}/.ssh/known_hosts"
   chmod 0644 "${ANSIBLE_HOME}/.ssh/known_hosts"
 }
@@ -390,14 +410,11 @@ PY
 render_runner_vars() {
   log "Preparing runtime variables derived from local control state."
   install -o root -g root -m 0600 /dev/null "$RUNNER_VARS"
-  ANSIBLE_CONTROL_PUBLIC_KEY="$(ssh-keygen -y -f "$ANSIBLE_CONTROL_PRIVATE_KEY")"
-  export ANSIBLE_CONTROL_PUBLIC_KEY
   /usr/bin/python3 - <<'PY' > "$RUNNER_VARS"
 import json
 import os
 
 vars_to_render = {
-    "managed_baseline_ansible_control_public_key": os.environ["ANSIBLE_CONTROL_PUBLIC_KEY"],
     "managed_baseline_config_repo_ref": os.environ["REPO_REF"],
     "managed_baseline_vault_repo_url": os.environ["VAULT_REPO_URL"],
     "managed_baseline_vault_checkout_dir": os.environ["VAULT_CHECKOUT_DIR"],
@@ -425,6 +442,7 @@ run_once() {
   require_file "$RUNNER_ENV"
   require_file "$VAULT_PASSWORD_FILE"
   require_file "$ANSIBLE_CONTROL_PRIVATE_KEY"
+  require_file "$VAULT_DEPLOY_PRIVATE_KEY"
 
   # shellcheck disable=SC1090
   source "$RUNNER_ENV"
@@ -444,7 +462,7 @@ run_once() {
   install -d -o ansible -g ansible -m 0755 "$CHECKOUT_PARENT"
   prepare_github_known_hosts
   checkout_ref "$CHECKOUT_DIR" "$REPO_URL" "$REPO_REF"
-  checkout_ref "$VAULT_CHECKOUT_DIR" "$VAULT_REPO_URL" "$VAULT_REPO_REF"
+  checkout_ref "$VAULT_CHECKOUT_DIR" "$VAULT_REPO_URL" "$VAULT_REPO_REF" "$VAULT_DEPLOY_PRIVATE_KEY"
   chown -R ansible:ansible "$CHECKOUT_DIR" "$VAULT_CHECKOUT_DIR"
 
   install_ansible_runtime
@@ -464,7 +482,7 @@ run_once() {
   prepare_inventory_known_hosts
 
   log "Running full site playbook."
-  rm -f "$RUNNER_PLAYBOOK_LOG"
+  install -o root -g root -m 0600 /dev/null "$RUNNER_PLAYBOOK_LOG"
   /usr/local/bin/ansible-playbook \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/site.yml" \

@@ -134,8 +134,11 @@ sudo journalctl -u grayhaven-ansible-runner.service
 
 Rotate the bootstrap deployment SSH keypair with
 `playbooks/rotate-vault-deploy-key.yml`. This keypair is supplied by OpenTofu
-for first-boot automation and `grayhaven-vault` repository access. Place the
-staged files on bastion hosts before running the playbook:
+for first-boot automation and `grayhaven-vault` repository access. After full
+convergence, bastions keep this keypair separately for private vault repository
+access at `/home/ansible/.ssh/grayhaven_vault_deploy_key`.
+
+Place the staged files on bastion hosts before running the playbook:
 
 - `/home/ansible/new_ansible_deploy_key`
 - `/home/ansible/new_ansible_deploy_key.pub`
@@ -150,15 +153,20 @@ ansible-playbook --inventory inventory playbooks/rotate-vault-deploy-key.yml
 ```
 
 After the playbook completes, verify the runner can refresh the public config
-repository and private vault repository, then run a full convergence pass. The
+repository and private vault repository, then run a full convergence pass. This
+playbook does not change the Ansible control key used for managed-host SSH. The
 playbook removes the staged key files from bastions.
 
 [Back to top](#operations)
 
 ## Ansible Control Key Rotation
 
-Rotate the Ansible control key from encrypted vault values with
-`playbooks/rotate-ansible-control-key.yml`:
+Normal convergence enforces the vault-defined Ansible control key. After
+updating `ansible_control_public_key` and `ansible_control_private_key` in the
+private vault, run the normal runner service from the active control bastion.
+
+The maintenance playbook remains available when you need to rotate the control
+key directly from encrypted vault values:
 
 ```bash
 ansible-playbook \

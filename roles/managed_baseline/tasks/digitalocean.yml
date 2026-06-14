@@ -19,15 +19,24 @@
     - /etc/droplet-agent
     - /var/log/droplet-agent
 
-- name: Gather service facts for DigitalOcean metrics agent
-  ansible.builtin.service_facts:
+- name: Import DigitalOcean metrics agent repository GPG key
+  ansible.builtin.rpm_key:
+    key: https://repos.insights.digitalocean.com/sonar-agent.asc
+    state: present
 
-- name: Install DigitalOcean metrics agent when missing
-  ansible.builtin.shell:
-    cmd: "set -o pipefail && curl -sSL https://repos.insights.digitalocean.com/install.sh | bash"
-    executable: /bin/bash
-  changed_when: true
-  when: "'do-agent.service' not in ansible_facts.services"
+- name: Configure DigitalOcean metrics agent repository
+  ansible.builtin.yum_repository:
+    name: sonar
+    description: DigitalOcean metrics agent
+    baseurl: https://repos.insights.digitalocean.com/yum/do-agent/$basearch
+    enabled: true
+    gpgcheck: true
+    gpgkey: https://repos.insights.digitalocean.com/sonar-agent.asc
+
+- name: Install DigitalOcean metrics agent package
+  ansible.builtin.dnf:
+    name: do-agent
+    state: present
 
 - name: Enable and start DigitalOcean metrics agent
   ansible.builtin.service:

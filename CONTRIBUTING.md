@@ -59,6 +59,9 @@ Before committing changes, also check the current diff for whitespace errors:
 git diff --check
 ```
 
+When adding scripts, Python helpers, workflows, or managed templates, update
+CI and local validation commands so the new files are checked.
+
 [Back to top](#contributing)
 
 ## Pull Requests
