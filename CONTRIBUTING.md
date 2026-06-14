@@ -47,9 +47,10 @@ Validate formatting and syntax from the repository root:
 ```bash
 git ls-files '*.yml' '*.yaml' | xargs -r yamllint
 ansible-lint .
-ansible-playbook -i localhost, --connection=local --syntax-check playbooks/bootstrap.yml
-ansible-playbook -i localhost, --connection=local --syntax-check playbooks/site.yml
+find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
+  | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
 shellcheck files/grayhaven-ansible-runner files/grayhaven-ansible-poller
+python3 -m py_compile files/grayhaven-reboot-notify files/grayhaven-refresh-motd
 git ls-files '*.md' | xargs -r markdownlint-cli2
 ```
 

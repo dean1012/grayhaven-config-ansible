@@ -77,7 +77,7 @@ Maintenance playbooks are manual change-control tools intended to be run from
 the active control bastion by an authorized administrator.
 
 Supported maintenance playbooks rotate the persisted Ansible Vault password,
-the bootstrap deployment SSH keypair, and the Ansible control key used for
+the vault deployment SSH keypair, and the Ansible control key used for
 managed-host SSH. See [Operations](docs/operations.md) for prerequisites,
 commands, and validation steps.
 
