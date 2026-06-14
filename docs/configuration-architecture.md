@@ -193,7 +193,9 @@ defines its own `dev.htpasswd_entries` list in `vault/web.yml`, and Ansible
 writes a separate htpasswd file for each domain. If `dev.auth_realm` is
 omitted, the realm defaults to `<domain> Development Environment`.
 
-New hosted domains require both DNS policy in
+New hosted domains require both
+[environment DNS policy](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/policy.md#environment-dns-policy)
+in
 [grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
 and matching `hosted_domains` data in the private vault. See the
 [DNS architecture documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/dns-architecture.md)
