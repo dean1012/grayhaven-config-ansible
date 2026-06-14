@@ -22,9 +22,9 @@ then start the runner:
 sudo systemctl start grayhaven-ansible-runner.service
 ```
 
-The runner refreshes the public config checkout and private vault checkout,
-loads vault values, refreshes live DigitalOcean inventory, prepares SSH known
-hosts, and runs `playbooks/site.yml`.
+The runner refreshes the public configuration checkout and private vault
+checkout, loads vault values, refreshes live DigitalOcean inventory, prepares
+SSH known hosts, and runs `playbooks/site.yml`.
 
 [Back to top](#operations)
 
@@ -43,10 +43,10 @@ sudo journalctl -u grayhaven-ansible-poller.service
 sudo journalctl -u grayhaven-reboot-notify.service
 ```
 
-The poller checks the tracked config and vault refs every five minutes. When it
-detects a change, it starts the runner and then records the observed refs. If
-the runner trigger fails, the ref state is not advanced so the next poll can
-retry the same change.
+The poller checks the tracked configuration and vault refs every five minutes.
+When it detects a change, it starts the runner and then records the observed
+refs. If the runner trigger fails, the ref state is not advanced so the next
+poll can retry the same change.
 
 Managed hosts send one informational `Server Rebooted` Discord notification
 after each boot. The local `grayhaven-reboot-notify.service` records the current
@@ -98,7 +98,7 @@ Vault password rotation has three coordinated parts:
    in the
    [`grayhaven-vault-example`](https://github.com/dean1012/grayhaven-vault-example)
    repository.
-2. Update the matching infra variable,
+2. Update the matching `grayhaven-infra-opentofu` variable,
    `TF_VAR_grayhaven_vault_password_staging` or
    `TF_VAR_grayhaven_vault_password_prod`, by following the
    [Ansible vault passphrase rotation documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#ansible-vault-passphrase-rotation)
@@ -107,9 +107,9 @@ Vault password rotation has three coordinated parts:
    repository so future droplets bootstrap with the new password.
 3. Rotate the persisted password already stored on deployed bastions.
 
-After the vault files and infra environment are updated, rotate the persisted
-vault password by placing the new value in a temporary vars file and passing
-that file with `--extra-vars`:
+After the vault files and `grayhaven-infra-opentofu` environment variables are
+updated, rotate the persisted vault password by placing the new value in a
+temporary vars file and passing that file with `--extra-vars`:
 
 ```bash
 ansible-playbook \
@@ -157,10 +157,10 @@ Run the playbook from the active control bastion:
 ansible-playbook --inventory inventory playbooks/rotate-vault-deploy-key.yml
 ```
 
-After the playbook completes, verify the runner can refresh the public config
-repository and private vault repository, then run a full convergence pass. This
-playbook does not change the Ansible control key used for managed-host SSH. The
-playbook removes the staged key files from bastions.
+After the playbook completes, verify the runner can refresh the public
+configuration repository and private vault repository, then run a full
+convergence pass. This playbook does not change the Ansible control key used
+for managed-host SSH. The playbook removes the staged key files from bastions.
 
 [Back to top](#operations)
 
@@ -190,8 +190,9 @@ the `ansible` user and run a full convergence pass.
 
 Active control bastion selection and web TLS mode are defined in
 [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
-policy. Make those changes in infra, apply the target workspace, then run a
-manual configuration pass from the active control bastion.
+policy. Changes to these settings must be applied in the
+`grayhaven-infra-opentofu` repository. After applying the target workspace, run
+a manual configuration pass from the active control bastion.
 
 See the
 [bastion failover documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#bastion-failover)
@@ -199,6 +200,6 @@ and
 [TLS mode documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#updating-workspace-environment-tls-mode)
 in the
 [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
-repository for the infra-side procedures.
+repository for the OpenTofu-side procedures.
 
 [Back to top](#operations)

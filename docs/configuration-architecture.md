@@ -71,10 +71,10 @@ The current control-node status and TLS mode are derived from environment
 droplet tags so OpenTofu policy changes can be applied without relying on stale
 first-boot bootstrap values.
 
-The poller checks the public config repository and private vault repository for
-changes every five minutes. If either tracked ref changes, it starts the normal
-runner service. The daily runner timer remains in place as a convergence safety
-net.
+The poller checks the public configuration repository and private vault
+repository for changes every five minutes. If either tracked ref changes, it
+starts the normal runner service. The daily runner timer remains in place as a
+convergence safety net.
 
 Only the active control bastion runs the scheduled runner and poller. Other
 bastions are configured as SSH jump points and are managed over SSH by the
