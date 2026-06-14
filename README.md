@@ -1,4 +1,4 @@
-# Grayhaven Systems LLC Configuration
+# Grayhaven Systems LLC Configuration (Ansible)
 
 [![CI](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/ci.yml/badge.svg)](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/ci.yml)
 
@@ -46,7 +46,7 @@ on repository-change poller events, or by manual invocation.
 This repository is not a general-purpose deployment template. Deploying similar
 automation for another organization requires review and adaptation.
 
-[Back to top](#grayhaven-systems-llc-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## Manual Runner Invocation
 
@@ -69,7 +69,7 @@ sudo journalctl -u grayhaven-ansible-runner.service
 See [Operations](docs/operations.md) for runner, poller, and maintenance
 playbook procedures.
 
-[Back to top](#grayhaven-systems-llc-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## Maintenance Playbooks
 
@@ -81,24 +81,24 @@ the vault deployment SSH keypair, and the Ansible control key used for
 managed-host SSH. See [Operations](docs/operations.md) for prerequisites,
 commands, and validation steps.
 
-[Back to top](#grayhaven-systems-llc-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## Documentation
 
 - [Configuration Architecture](docs/configuration-architecture.md)
 - [Operations](docs/operations.md)
 
-[Back to top](#grayhaven-systems-llc-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, validation
 commands, and contribution guidelines.
 
-[Back to top](#grayhaven-systems-llc-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## License
 
 [MIT](LICENSE)
 
-[Back to top](#grayhaven-systems-llc-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
