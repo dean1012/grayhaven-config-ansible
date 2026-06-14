@@ -38,7 +38,7 @@ jobs:
           python-version: "3.12"
 
       - name: Run Python syntax checks
-        run: python -m py_compile files/grayhaven-reboot-notify
+        run: python -m py_compile files/grayhaven-reboot-notify files/grayhaven-refresh-motd
 
       - name: Install Ansible validation tools
         run: |
