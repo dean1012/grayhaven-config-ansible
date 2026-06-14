@@ -1,5 +1,5 @@
 [Unit]
-Description=Poll Grayhaven Ansible repositories for changes
+Description=Poll Grayhaven Systems LLC Ansible repositories for changes
 
 [Timer]
 OnBootSec=5m

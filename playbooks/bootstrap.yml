@@ -175,7 +175,7 @@
         content: "{{ grayhaven_ansible_deploy_public_key | trim }}\n"
       when: grayhaven_role == "bastion"
 
-    - name: Create Grayhaven secrets directory
+    - name: Create Grayhaven Systems LLC secrets directory
       ansible.builtin.file:
         path: /etc/grayhaven/ansible/secrets
         state: directory

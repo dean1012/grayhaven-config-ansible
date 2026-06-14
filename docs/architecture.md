@@ -1,6 +1,6 @@
 # Architecture
 
-Grayhaven configuration is split into first-boot bootstrap and ongoing
+Grayhaven Systems LLC configuration is split into first-boot bootstrap and ongoing
 full-playbook convergence.
 
 ## Table of Contents
@@ -242,7 +242,7 @@ implemented in this repository at this time.
 Human administrative access and automation access are intentionally separate.
 
 Human administrators use personal accounts and local SSH agent forwarding.
-Personal private keys are not stored on Grayhaven servers.
+Personal private keys are not stored on Grayhaven Systems LLC servers.
 
 The `ansible` account is automation-only. OpenTofu supplies bootstrap
 deployment key material for first-boot automation and private vault repository

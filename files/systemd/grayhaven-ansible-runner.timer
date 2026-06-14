@@ -1,5 +1,5 @@
 [Unit]
-Description=Run Grayhaven Ansible full playbook daily
+Description=Run Grayhaven Systems LLC Ansible full playbook daily
 
 [Timer]
 OnCalendar=*-*-* 03:17:00

@@ -1,7 +1,7 @@
 # Operations
 
-Grayhaven configuration is normally applied by the active control bastion. This
-document covers manual runner use and maintenance playbooks.
+Grayhaven Systems LLC configuration is normally applied by the active control
+bastion. This document covers manual runner use and maintenance playbooks.
 
 ## Table of Contents
 

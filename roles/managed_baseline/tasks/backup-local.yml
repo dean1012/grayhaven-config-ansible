@@ -86,7 +86,7 @@
     mode: "0644"
     content: |
       [Unit]
-      Description=Grayhaven local restic backup
+      Description=Grayhaven Systems LLC local restic backup
       Wants=network-online.target
       After=network-online.target
 
@@ -102,7 +102,7 @@
     mode: "0644"
     content: |
       [Unit]
-      Description=Run Grayhaven local restic backup daily
+      Description=Run Grayhaven Systems LLC local restic backup daily
 
       [Timer]
       OnCalendar=*-*-* 02:37:00

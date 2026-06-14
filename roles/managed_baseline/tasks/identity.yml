@@ -56,7 +56,7 @@
     group: root
     mode: "0755"
 
-- name: Publish Grayhaven local host facts
+- name: Publish Grayhaven Systems LLC local host facts
   ansible.builtin.copy:
     dest: /etc/ansible/facts.d/grayhaven.fact
     owner: root
