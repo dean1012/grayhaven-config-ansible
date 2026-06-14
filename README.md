@@ -66,8 +66,9 @@ sudo systemctl status grayhaven-ansible-poller.timer
 sudo journalctl -u grayhaven-ansible-runner.service
 ```
 
-See [Operations](docs/operations.md) for runner, poller, and maintenance
-playbook procedures.
+See [manual runner invocation](docs/operations.md#manual-runner-invocation)
+and [runner and poller status](docs/operations.md#runner-and-poller-status)
+for operational details.
 
 [Back to top](#grayhaven-systems-llc-configuration-ansible)
 
@@ -78,8 +79,10 @@ the active control bastion by an authorized administrator.
 
 Supported maintenance playbooks rotate the persisted Ansible Vault password,
 the vault deployment SSH keypair, and the Ansible control key used for
-managed-host SSH. See [Operations](docs/operations.md) for prerequisites,
-commands, and validation steps.
+managed-host SSH. See [vault password rotation](docs/operations.md#vault-password-rotation),
+[deploy key rotation](docs/operations.md#deploy-key-rotation), and
+[Ansible control key rotation](docs/operations.md#ansible-control-key-rotation)
+for prerequisites, commands, and validation steps.
 
 [Back to top](#grayhaven-systems-llc-configuration-ansible)
 
