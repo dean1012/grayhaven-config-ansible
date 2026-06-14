@@ -265,6 +265,10 @@ list is appended after the configured homedir archive path. This keeps
 removed-user archives in the encrypted local backup set even when an environment
 uses a custom include list.
 
+`backup.exclude` is passed to restic as an exclude file and can exclude paths
+that were included automatically. Excluding the configured homedir archive path
+deliberately opts removed-user archives out of backup.
+
 The local restic repository is encrypted. Local backups are not a substitute for
 disaster recovery.
 
