@@ -200,6 +200,6 @@ and
 [TLS mode documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#updating-workspace-environment-tls-mode)
 in the
 [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
-repository for the OpenTofu-side procedures.
+repository.
 
 [Back to top](#operations)
