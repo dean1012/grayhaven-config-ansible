@@ -37,39 +37,31 @@
     group: ansible
     mode: "0700"
 
-- name: Enforce ansible private key permissions on bastion hosts
-  ansible.builtin.file:
-    path: /home/ansible/.ssh/id_ed25519
-    state: file
+- name: Install vault Ansible control private key on bastion hosts
+  ansible.builtin.copy:
+    dest: /home/ansible/.ssh/id_ed25519
     owner: ansible
     group: ansible
     mode: "0600"
+    content: "{{ ansible_control_private_key | trim }}\n"
   when: grayhaven_role == "bastion"
+  no_log: true
 
-- name: Install derived ansible public key on bastion hosts
+- name: Install vault Ansible control public key on bastion hosts
   ansible.builtin.copy:
     dest: /home/ansible/.ssh/id_ed25519.pub
     owner: ansible
     group: ansible
     mode: "0644"
-    content: "{{ managed_baseline_ansible_control_public_key | trim }}\n"
+    content: "{{ ansible_control_public_key | trim }}\n"
   when: grayhaven_role == "bastion"
+  no_log: true
 
-- name: Install ansible authorized key on managed hosts
+- name: Enforce vault Ansible control authorized key on managed hosts
   ansible.builtin.copy:
     dest: /home/ansible/.ssh/authorized_keys
     owner: ansible
     group: ansible
     mode: "0600"
-    content: "{{ managed_baseline_ansible_authorized_keys | join('\n') }}\n"
-  vars:
-    managed_baseline_ansible_authorized_keys: >-
-      {{
-        [
-          managed_baseline_ansible_control_public_key | trim,
-          ansible_control_public_key | default('') | trim
-        ]
-        | reject('equalto', '')
-        | unique
-        | list
-      }}
+    content: "{{ ansible_control_public_key | trim }}\n"
+  no_log: true

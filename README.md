@@ -1,4 +1,4 @@
-# Grayhaven Configuration
+# Grayhaven Systems LLC Configuration (Ansible)
 
 [![CI](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/ci.yml/badge.svg)](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/ci.yml)
 
@@ -26,8 +26,9 @@ on repository-change poller events, or by manual invocation.
 
 - Create and secure the `ansible` automation account.
 - Bootstrap only the minimum access needed for ongoing convergence.
-- Pull encrypted operational values from the private `grayhaven-vault`
-  repository on the active control bastion.
+- Pull encrypted operational values from the private
+  `grayhaven-vault` repository
+  on the active control bastion.
 - Run full Ansible convergence from the active control bastion.
 - Manage configured users, SSH access, sudo access, and absent-user homedir
   archival.
@@ -46,7 +47,7 @@ on repository-change poller events, or by manual invocation.
 This repository is not a general-purpose deployment template. Deploying similar
 automation for another organization requires review and adaptation.
 
-[Back to top](#grayhaven-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## Manual Runner Invocation
 
@@ -66,71 +67,42 @@ sudo systemctl status grayhaven-ansible-poller.timer
 sudo journalctl -u grayhaven-ansible-runner.service
 ```
 
-See [Operations](docs/operations.md) for runner, poller, and maintenance
-playbook procedures.
+See [manual runner invocation](docs/operations.md#manual-runner-invocation)
+and [runner and poller status](docs/operations.md#runner-and-poller-status)
+for operational details.
 
-[Back to top](#grayhaven-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## Maintenance Playbooks
 
 Maintenance playbooks are manual change-control tools intended to be run from
 the active control bastion by an authorized administrator.
 
-After encrypted vault files are rekeyed and the matching infra environment
-variable is updated, rotate the persisted vault password on deployed bastions
-by placing the new value in a temporary vars file and using `--extra-vars` with
-that file:
+Supported maintenance playbooks rotate the persisted Ansible Vault password,
+the vault deployment SSH keypair, and the Ansible control key used for
+managed-host SSH. See [vault password rotation](docs/operations.md#vault-password-rotation),
+[deploy key rotation](docs/operations.md#deploy-key-rotation), and
+[Ansible control key rotation](docs/operations.md#ansible-control-key-rotation)
+for prerequisites, commands, and validation steps.
 
-```bash
-ansible-playbook \
-  --inventory inventory \
-  playbooks/rotate-vault-password.yml \
-  --extra-vars @/path/to/temp-vault-password.yml
-```
-
-The temporary vars file should contain:
-
-```yaml
-new_vault_password: "<new password>"
-```
-
-Avoid passing the new password directly on the shell command line. Remove the
-temporary vars file after the playbook completes, then run a manual runner
-invocation to confirm the active control bastion can decrypt the vault with the
-new password.
-
-Rotate the deploy/control key with `playbooks/rotate-vault-deploy-key.yml`.
-Place the staged files on bastion hosts before running the playbook:
-
-- `/home/ansible/new_ansible_deploy_key`
-- `/home/ansible/new_ansible_deploy_key.pub`
-
-The files should be owned by `ansible:ansible`; the private key should be mode
-`0600`, and the public key should be mode `0644`.
-
-Rotate the Ansible control key from vault values with
-`playbooks/rotate-ansible-control-key.yml`.
-
-See [Operations](docs/operations.md) for safe prerequisites and validation.
-
-[Back to top](#grayhaven-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
+- [Configuration Architecture](docs/configuration-architecture.md)
 - [Operations](docs/operations.md)
 
-[Back to top](#grayhaven-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, validation
 commands, and contribution guidelines.
 
-[Back to top](#grayhaven-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)
 
 ## License
 
 [MIT](LICENSE)
 
-[Back to top](#grayhaven-configuration)
+[Back to top](#grayhaven-systems-llc-configuration-ansible)

@@ -1,5 +1,5 @@
 [Unit]
-Description=Grayhaven Ansible full playbook runner
+Description=Grayhaven Systems LLC Ansible full playbook runner
 Wants=network-online.target
 After=network-online.target
 

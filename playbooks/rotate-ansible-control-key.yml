@@ -18,7 +18,7 @@
         quiet: true
       no_log: true
 
-    - name: Authorize vault control key for ansible user
+    - name: Add vault control key before replacing bastion private key
       ansible.posix.authorized_key:
         user: ansible
         key: "{{ ansible_control_public_key | trim }}"
@@ -33,6 +33,15 @@
         mode: "0600"
         content: "{{ ansible_control_private_key | trim }}\n"
       when: grayhaven_role == "bastion"
+      no_log: true
+
+    - name: Enforce vault control key as the only ansible authorized key
+      ansible.builtin.copy:
+        dest: /home/ansible/.ssh/authorized_keys
+        owner: ansible
+        group: ansible
+        mode: "0600"
+        content: "{{ ansible_control_public_key | trim }}\n"
       no_log: true
 
     - name: Install vault control public key on bastions

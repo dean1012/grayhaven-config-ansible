@@ -137,7 +137,26 @@
         mode: "0600"
         content: "{{ grayhaven_ansible_deploy_public_key | trim }}\n"
 
-    - name: Install Ansible control and vault deploy private key on bastion hosts
+    - name: Install bootstrap vault deploy private key on bastion hosts
+      ansible.builtin.copy:
+        dest: /home/ansible/.ssh/grayhaven_vault_deploy_key
+        owner: ansible
+        group: ansible
+        mode: "0600"
+        content: "{{ grayhaven_ansible_deploy_private_key | trim }}\n"
+      when: grayhaven_role == "bastion"
+      no_log: true
+
+    - name: Install bootstrap vault deploy public key on bastion hosts
+      ansible.builtin.copy:
+        dest: /home/ansible/.ssh/grayhaven_vault_deploy_key.pub
+        owner: ansible
+        group: ansible
+        mode: "0644"
+        content: "{{ grayhaven_ansible_deploy_public_key | trim }}\n"
+      when: grayhaven_role == "bastion"
+
+    - name: Install temporary bootstrap Ansible control private key on bastion hosts
       ansible.builtin.copy:
         dest: /home/ansible/.ssh/id_ed25519
         owner: ansible
@@ -147,7 +166,7 @@
       when: grayhaven_role == "bastion"
       no_log: true
 
-    - name: Install Ansible control and vault deploy public key on bastion hosts
+    - name: Install temporary bootstrap Ansible control public key on bastion hosts
       ansible.builtin.copy:
         dest: /home/ansible/.ssh/id_ed25519.pub
         owner: ansible
@@ -156,7 +175,7 @@
         content: "{{ grayhaven_ansible_deploy_public_key | trim }}\n"
       when: grayhaven_role == "bastion"
 
-    - name: Create Grayhaven secrets directory
+    - name: Create Grayhaven Systems LLC secrets directory
       ansible.builtin.file:
         path: /etc/grayhaven/ansible/secrets
         state: directory
@@ -196,8 +215,9 @@
         path: /var/log/droplet-agent
         state: absent
 
-    # Bastions keep the deploy/control key and vault password because they run
-    # full convergence. Web hosts receive only the public automation key.
+    # The id_ed25519 bootstrap copy is temporary first-boot access. Full
+    # convergence replaces it with the vault-defined Ansible control key and
+    # removes the consumed bootstrap variable handoff file.
     - name: Install bastion runner OS dependencies
       ansible.builtin.dnf:
         name:
@@ -295,6 +315,12 @@
         state: "{{ (grayhaven_is_control_node | bool) | ternary('started', 'stopped') }}"
         daemon_reload: true
       when: grayhaven_role == "bastion"
+
+    - name: Remove consumed bootstrap variables
+      ansible.builtin.file:
+        path: /etc/grayhaven/bootstrap/bootstrap-vars.yml
+        state: absent
+      no_log: true
 
     - name: Trigger initial control bastion runner execution without blocking bootstrap
       ansible.builtin.command:

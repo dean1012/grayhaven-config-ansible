@@ -1,5 +1,5 @@
 [Unit]
-Description=Notify Discord after Grayhaven server reboot
+Description=Notify Discord after Grayhaven Systems LLC server reboot
 Wants=network-online.target
 After=network-online.target
 ConditionPathExists=/etc/ansible/facts.d/grayhaven.fact

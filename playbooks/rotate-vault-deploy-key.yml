@@ -6,6 +6,8 @@
   vars:
     staged_deploy_private_key_path: /home/ansible/new_ansible_deploy_key
     staged_deploy_public_key_path: /home/ansible/new_ansible_deploy_key.pub
+    vault_deploy_private_key_path: /home/ansible/.ssh/grayhaven_vault_deploy_key
+    vault_deploy_public_key_path: /home/ansible/.ssh/grayhaven_vault_deploy_key.pub
 
   tasks:
     - name: Read staged deploy public key from a bastion
@@ -21,17 +23,10 @@
         rotate_deploy_public_key: "{{ rotate_deploy_public_key_slurp.content | b64decode | trim }}"
       no_log: true
 
-    - name: Authorize staged deploy key for ansible user
-      ansible.posix.authorized_key:
-        user: ansible
-        key: "{{ rotate_deploy_public_key }}"
-        state: present
-      no_log: true
-
     - name: Install staged deploy private key on bastions
       ansible.builtin.copy:
         src: "{{ staged_deploy_private_key_path }}"
-        dest: /home/ansible/.ssh/id_ed25519
+        dest: "{{ vault_deploy_private_key_path }}"
         owner: ansible
         group: ansible
         mode: "0600"
@@ -42,7 +37,7 @@
     - name: Install staged deploy public key on bastions
       ansible.builtin.copy:
         content: "{{ rotate_deploy_public_key }}\n"
-        dest: /home/ansible/.ssh/id_ed25519.pub
+        dest: "{{ vault_deploy_public_key_path }}"
         owner: ansible
         group: ansible
         mode: "0644"

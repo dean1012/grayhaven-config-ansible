@@ -1,5 +1,5 @@
 [Unit]
-Description=Refresh Grayhaven login MOTD
+Description=Refresh Grayhaven Systems LLC login MOTD
 After=local-fs.target
 Before=sshd.service
 ConditionPathExists=/etc/ansible/facts.d/grayhaven.fact

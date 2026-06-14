@@ -1,5 +1,5 @@
 ---
-- name: Apply Grayhaven base configuration
+- name: Apply Grayhaven Systems LLC base configuration
   hosts: all
   become: true
   gather_facts: false

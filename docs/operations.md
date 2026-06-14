@@ -1,7 +1,7 @@
 # Operations
 
-Grayhaven configuration is normally applied by the active control bastion. This
-document covers manual runner use and maintenance playbooks.
+Grayhaven Systems LLC configuration is normally applied by the active control
+bastion. This document covers manual runner use and maintenance playbooks.
 
 ## Table of Contents
 
@@ -11,7 +11,7 @@ document covers manual runner use and maintenance playbooks.
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
-- [Control Bastion And TLS Policy Changes](#control-bastion-and-tls-policy-changes)
+- [Infrastructure Policy Changes](#infrastructure-policy-changes)
 
 ## Manual Runner Invocation
 
@@ -22,9 +22,9 @@ then start the runner:
 sudo systemctl start grayhaven-ansible-runner.service
 ```
 
-The runner refreshes the public config checkout and private vault checkout,
-loads vault values, refreshes live DigitalOcean inventory, prepares SSH known
-hosts, and runs `playbooks/site.yml`.
+The runner refreshes the public configuration checkout and private vault
+checkout, loads vault values, refreshes live DigitalOcean inventory, prepares
+SSH known hosts, and runs `playbooks/site.yml`.
 
 [Back to top](#operations)
 
@@ -43,10 +43,10 @@ sudo journalctl -u grayhaven-ansible-poller.service
 sudo journalctl -u grayhaven-reboot-notify.service
 ```
 
-The poller checks the tracked config and vault refs every five minutes. When it
-detects a change, it starts the runner and then records the observed refs. If
-the runner trigger fails, the ref state is not advanced so the next poll can
-retry the same change.
+The poller checks the tracked configuration and vault refs every five minutes.
+When it detects a change, it starts the runner and then records the observed
+refs. If the runner trigger fails, the ref state is not advanced so the next
+poll can retry the same change.
 
 Managed hosts send one informational `Server Rebooted` Discord notification
 after each boot. The local `grayhaven-reboot-notify.service` records the current
@@ -93,16 +93,23 @@ Discord returns HTTP `204` when the webhook accepts the notification.
 Vault password rotation has three coordinated parts:
 
 1. Rekey the encrypted files in the private vault repository for the target
-   environment branch.
-2. Update the matching infra variable,
+   environment branch by following the
+   [vault password rotation documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#vault-password-rotation)
+   in the
+   [`grayhaven-vault-example`](https://github.com/dean1012/grayhaven-vault-example)
+   repository.
+2. Update the matching variable in
+   [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu),
    `TF_VAR_grayhaven_vault_password_staging` or
-   `TF_VAR_grayhaven_vault_password_prod`, so future droplets bootstrap with
-   the new password.
+   `TF_VAR_grayhaven_vault_password_prod`, by following the
+   [Ansible vault passphrase rotation documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#ansible-vault-passphrase-rotation)
+   in the `grayhaven-infra-opentofu` repository so future droplets bootstrap
+   with the new password.
 3. Rotate the persisted password already stored on deployed bastions.
 
-After the vault files and infra environment are updated, rotate the persisted
-vault password by placing the new value in a temporary vars file and passing
-that file with `--extra-vars`:
+After the vault files and `grayhaven-infra-opentofu` environment variables are
+updated, rotate the persisted vault password by placing the new value in a
+temporary vars file and passing that file with `--extra-vars`:
 
 ```bash
 ansible-playbook \
@@ -130,9 +137,14 @@ sudo journalctl -u grayhaven-ansible-runner.service
 
 ## Deploy Key Rotation
 
-Rotate the shared deploy/control key with
-`playbooks/rotate-vault-deploy-key.yml`. Place the staged files on bastion hosts
-before running the playbook:
+Rotate the vault deployment SSH keypair with
+`playbooks/rotate-vault-deploy-key.yml`. OpenTofu supplies this keypair during
+first boot so bastions can read the private
+`grayhaven-vault` repository.
+After full convergence, bastions keep it only for private vault repository
+access at `/home/ansible/.ssh/grayhaven_vault_deploy_key`.
+
+Place the staged files on bastion hosts before running the playbook:
 
 - `/home/ansible/new_ansible_deploy_key`
 - `/home/ansible/new_ansible_deploy_key.pub`
@@ -146,15 +158,21 @@ Run the playbook from the active control bastion:
 ansible-playbook --inventory inventory playbooks/rotate-vault-deploy-key.yml
 ```
 
-After the playbook completes, verify the runner can refresh both repositories.
-The playbook removes the staged key files from bastions.
+After the playbook completes, verify the runner can refresh the public
+configuration repository and private vault repository, then run a full
+convergence pass. This playbook does not change the Ansible control key used
+for managed-host SSH. The playbook removes the staged key files from bastions.
 
 [Back to top](#operations)
 
 ## Ansible Control Key Rotation
 
-Rotate the Ansible control key from encrypted vault values with
-`playbooks/rotate-ansible-control-key.yml`:
+Normal convergence enforces the vault-defined Ansible control key. After
+updating `ansible_control_public_key` and `ansible_control_private_key` in the
+private vault, run the normal runner service from the active control bastion.
+
+The maintenance playbook remains available when you need to rotate the control
+key directly from encrypted vault values:
 
 ```bash
 ansible-playbook \
@@ -169,15 +187,20 @@ the `ansible` user and run a full convergence pass.
 
 [Back to top](#operations)
 
-## Control Bastion And TLS Policy Changes
+## Infrastructure Policy Changes
 
 Active control bastion selection and web TLS mode are defined in
 [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
-policy. Make those changes in infra, apply the target workspace, then run a
-manual configuration pass from the active control bastion.
+policy. Changes to these settings must be applied in the
+`grayhaven-infra-opentofu` repository. After applying the target workspace, run
+a manual configuration pass from the active control bastion.
 
-See
-[`grayhaven-infra-opentofu` Workspace Operations](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/workspaces.md)
-for the control-node and TLS-mode procedures.
+See the
+[bastion failover documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#bastion-failover)
+and
+[TLS mode documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#updating-workspace-environment-tls-mode)
+in the
+`grayhaven-infra-opentofu`
+repository.
 
 [Back to top](#operations)

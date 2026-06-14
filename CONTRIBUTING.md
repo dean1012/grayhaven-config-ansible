@@ -1,11 +1,16 @@
 # Contributing
 
-Thank you for your interest in improving `grayhaven-config-ansible`.
+This document is intended for Grayhaven Systems LLC employees and assumes that
+this repository has been initialized and configured appropriately.
+
+If you are not a Grayhaven Systems LLC employee, we still welcome your support
+and contribution.
 
 ## Table of Contents
 
 - [Development Setup](#development-setup)
-- [Validation](#validation)
+- [Workflow](#workflow)
+- [Local Validation](#local-validation)
 - [Pull Requests](#pull-requests)
 - [Documentation Guidelines](#documentation-guidelines)
 
@@ -14,9 +19,10 @@ Thank you for your interest in improving `grayhaven-config-ansible`.
 Install Ansible runtime and validation dependencies:
 
 ```bash
-python3 -m pip install --upgrade pip
+sudo dnf install ShellCheck
 python3 -m pip install -r pip3_requirements.txt
-python3 -m pip install ansible-core ansible-lint
+python3 -m pip install ansible-core ansible-lint yamllint
+npm install --global markdownlint-cli2
 ansible-galaxy collection install -r galaxy_requirements.yml
 ```
 
@@ -25,16 +31,27 @@ for the DigitalOcean Ansible collection used by the dynamic inventory.
 
 [Back to top](#contributing)
 
-## Validation
+## Workflow
 
-Run the same validation commands used by CI:
+1. Create a GitHub issue.
+2. Create a focused feature branch for the issue.
+3. Sign all commits and reference the issue number.
+4. Validate changes locally.
+5. Create a pull request to the `main` branch for code review.
+
+[Back to top](#contributing)
+
+## Local Validation
+
+Validate formatting and syntax from the repository root:
 
 ```bash
 git ls-files '*.yml' '*.yaml' | xargs -r yamllint
 ansible-lint .
-ansible-playbook -i localhost, --connection=local --syntax-check playbooks/bootstrap.yml
-ansible-playbook -i localhost, --connection=local --syntax-check playbooks/site.yml
+find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
+  | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
 shellcheck files/grayhaven-ansible-runner files/grayhaven-ansible-poller
+python3 -m py_compile files/grayhaven-reboot-notify files/grayhaven-refresh-motd
 git ls-files '*.md' | xargs -r markdownlint-cli2
 ```
 
@@ -44,31 +61,29 @@ Before committing changes, also check the current diff for whitespace errors:
 git diff --check
 ```
 
+When adding scripts, Python helpers, workflows, or managed templates, update
+CI and local validation commands so the new files are checked.
+
 [Back to top](#contributing)
 
 ## Pull Requests
 
-Create a focused feature branch for each change. Reference the related issue in
-each commit and include `Closes #<issue-number>` in the pull request
-description when the pull request should close an issue after merging.
+Pull requests must meet all of these requirements to be merged:
 
-Sign each commit so GitHub can verify its authorship. The `main` branch ruleset
-requires signed commits before merging:
-
-```bash
-git commit -S -m "<message> (Refs #<issue-number>)"
-```
-
-CI runs on pushes and pull requests. Pull requests are squash merged after CI
-passes and review conversations are resolved.
+- Reference or close a GitHub issue as appropriate.
+- Contain signed commits.
+- Have no open review conversations.
+- Pass all CI checks.
+- Document all changes appropriately.
 
 [Back to top](#contributing)
 
 ## Documentation Guidelines
 
 Keep user-facing behavior documented in `README.md` and architecture details in
-`docs/architecture.md`. Add inline comments for non-obvious implementation
-decisions, security boundaries, and assumptions. Avoid comments that merely
-restate straightforward Ansible tasks or shell commands.
+[configuration architecture](docs/configuration-architecture.md). Add inline
+comments for non-obvious implementation decisions, security boundaries, and
+assumptions. Avoid comments that merely restate straightforward Ansible tasks
+or shell commands.
 
 [Back to top](#contributing)

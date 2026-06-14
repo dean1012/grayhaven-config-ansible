@@ -76,7 +76,7 @@
     managed_baseline_firewall_role_policy: "{{ managed_baseline_firewall_policy.firewalls[grayhaven_role] }}"
   when: managed_baseline_firewall_policy_cache.stat.exists
 
-- name: Install Grayhaven firewalld zone from policy
+- name: Install grayhaven firewalld zone from policy
   ansible.builtin.template:
     src: grayhaven-firewalld-zone.xml.j2
     dest: /etc/firewalld/zones/grayhaven.xml
@@ -86,7 +86,7 @@
   notify: Reload firewalld
   when: managed_baseline_firewall_policy_cache.stat.exists
 
-- name: Set Grayhaven as the configured default firewalld zone
+- name: Set grayhaven firewalld zone as the configured default
   ansible.builtin.lineinfile:
     path: /etc/firewalld/firewalld.conf
     regexp: '^DefaultZone='

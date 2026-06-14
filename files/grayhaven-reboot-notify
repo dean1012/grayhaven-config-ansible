@@ -138,7 +138,7 @@ def main() -> int:
         print("already-notified")
         return 0
 
-    facts = load_json(FACT_PATH, "Grayhaven local facts")
+    facts = load_json(FACT_PATH, "Grayhaven Systems LLC local facts")
     config = load_json(CONFIG_PATH, "Discord webhook config")
     timezone_name = str(config.get("timezone", DEFAULT_TIMEZONE))
     send_discord_notification(config, build_payload(facts, timezone_name))
