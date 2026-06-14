@@ -84,8 +84,9 @@ active control bastion.
 
 ## Vault Loading
 
-The private `grayhaven-vault` repository supplies runtime selectors and
-encrypted operational values. Its structure follows the
+The private [`grayhaven-vault`](https://github.com/dean1012/grayhaven-vault)
+repository supplies runtime selectors and encrypted operational values. Its
+structure follows the
 [file schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md)
 documented in the
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
@@ -199,9 +200,7 @@ in
 [grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
 and matching `hosted_domains` data in the private vault. See the
 [DNS architecture documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/dns-architecture.md)
-in the
-[grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
-repository and the
+in the `grayhaven-infra-opentofu` repository and the
 [hosted domain DNS coordination documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#hosted-domain-dns-coordination)
 in the
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
@@ -239,7 +238,8 @@ bastion source-tag boundary before traffic reaches the host.
 ## Backups
 
 Each managed server creates encrypted local restic backups using settings from
-`grayhaven-vault/config.yml`. The
+the private [`grayhaven-vault`](https://github.com/dean1012/grayhaven-vault)
+repository's `config.yml` file. The
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
 repository documents the
 [backup settings schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#configyml).

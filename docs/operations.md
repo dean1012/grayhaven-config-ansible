@@ -98,13 +98,13 @@ Vault password rotation has three coordinated parts:
    in the
    [`grayhaven-vault-example`](https://github.com/dean1012/grayhaven-vault-example)
    repository.
-2. Update the matching `grayhaven-infra-opentofu` variable,
+2. Update the matching variable in
+   [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu),
    `TF_VAR_grayhaven_vault_password_staging` or
    `TF_VAR_grayhaven_vault_password_prod`, by following the
    [Ansible vault passphrase rotation documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#ansible-vault-passphrase-rotation)
-   in the
-   [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
-   repository so future droplets bootstrap with the new password.
+   in the `grayhaven-infra-opentofu` repository so future droplets bootstrap
+   with the new password.
 3. Rotate the persisted password already stored on deployed bastions.
 
 After the vault files and `grayhaven-infra-opentofu` environment variables are
@@ -139,9 +139,10 @@ sudo journalctl -u grayhaven-ansible-runner.service
 
 Rotate the vault deployment SSH keypair with
 `playbooks/rotate-vault-deploy-key.yml`. OpenTofu supplies this keypair during
-first boot so bastions can read the private `grayhaven-vault` repository. After
-full convergence, bastions keep it only for private vault repository access at
-`/home/ansible/.ssh/grayhaven_vault_deploy_key`.
+first boot so bastions can read the private
+[`grayhaven-vault`](https://github.com/dean1012/grayhaven-vault) repository.
+After full convergence, bastions keep it only for private vault repository
+access at `/home/ansible/.ssh/grayhaven_vault_deploy_key`.
 
 Place the staged files on bastion hosts before running the playbook:
 
@@ -199,7 +200,7 @@ See the
 and
 [TLS mode documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#updating-workspace-environment-tls-mode)
 in the
-[`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
+`grayhaven-infra-opentofu`
 repository.
 
 [Back to top](#operations)
