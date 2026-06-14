@@ -41,7 +41,7 @@ python3 -m pip install --dry-run --require-hashes --requirement pip3_requirement
 ```
 
 When updating Ansible Galaxy collections, update `galaxy_requirements.yml`,
-refresh `galaxy_requirements.sha256`, then validate with:
+then run the following to update `galaxy_requirements.sha256`:
 
 ```bash
 tmpdir="$(mktemp -d /tmp/grayhaven-galaxy.XXXXXX)"
