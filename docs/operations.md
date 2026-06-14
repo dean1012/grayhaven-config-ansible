@@ -132,9 +132,10 @@ sudo journalctl -u grayhaven-ansible-runner.service
 
 ## Deploy Key Rotation
 
-Rotate the `grayhaven-vault` deployment SSH keypair with
-`playbooks/rotate-vault-deploy-key.yml`. Place the staged files on bastion
-hosts before running the playbook:
+Rotate the bootstrap deployment SSH keypair with
+`playbooks/rotate-vault-deploy-key.yml`. This keypair is supplied by OpenTofu
+for first-boot automation and `grayhaven-vault` repository access. Place the
+staged files on bastion hosts before running the playbook:
 
 - `/home/ansible/new_ansible_deploy_key`
 - `/home/ansible/new_ansible_deploy_key.pub`
@@ -149,8 +150,8 @@ ansible-playbook --inventory inventory playbooks/rotate-vault-deploy-key.yml
 ```
 
 After the playbook completes, verify the runner can refresh the public config
-repository and private vault repository. The playbook removes the staged key
-files from bastions.
+repository and private vault repository, then run a full convergence pass. The
+playbook removes the staged key files from bastions.
 
 [Back to top](#operations)
 

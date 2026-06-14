@@ -219,8 +219,8 @@ By default, backups include:
 The local restic repository is encrypted. Local backups are not a substitute for
 disaster recovery.
 
-Grayhaven Systems LLC performs a manual offsite transfer of local backup data
-daily and regularly tests backup restoration. Remote backup automation is not
+Operational backup procedures should include regular offsite transfer of local
+backup data and regular restore testing. Remote backup automation is not
 implemented in this repository at this time.
 
 [Back to top](#architecture)
@@ -232,9 +232,10 @@ Human administrative access and automation access are intentionally separate.
 Human administrators use personal accounts and local SSH agent forwarding.
 Personal private keys are not stored on Grayhaven servers.
 
-The `ansible` account is automation-only. On bastion hosts it owns the private
-key used for Ansible connections to managed hosts and the private deploy key
-used to read the private vault repository. On managed hosts, the matching
+The `ansible` account is automation-only. OpenTofu supplies bootstrap
+deployment key material for first-boot automation and private vault repository
+access. After convergence, the vault-defined Ansible control key is the
+persistent SSH key for managed-host automation. On managed hosts, the matching
 public key is authorized for the `ansible` account. This supports scheduled
 convergence from the active control bastion without depending on a human SSH
 agent.
