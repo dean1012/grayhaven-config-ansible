@@ -76,42 +76,10 @@ playbook procedures.
 Maintenance playbooks are manual change-control tools intended to be run from
 the active control bastion by an authorized administrator.
 
-After encrypted vault files are rekeyed and the matching infra environment
-variable is updated, rotate the persisted vault password on deployed bastions
-by placing the new value in a temporary vars file and using `--extra-vars` with
-that file:
-
-```bash
-ansible-playbook \
-  --inventory inventory \
-  playbooks/rotate-vault-password.yml \
-  --extra-vars @/path/to/temp-vault-password.yml
-```
-
-The temporary vars file should contain:
-
-```yaml
-new_vault_password: "<new password>"
-```
-
-Avoid passing the new password directly on the shell command line. Remove the
-temporary vars file after the playbook completes, then run a manual runner
-invocation to confirm the active control bastion can decrypt the vault with the
-new password.
-
-Rotate the deploy/control key with `playbooks/rotate-vault-deploy-key.yml`.
-Place the staged files on bastion hosts before running the playbook:
-
-- `/home/ansible/new_ansible_deploy_key`
-- `/home/ansible/new_ansible_deploy_key.pub`
-
-The files should be owned by `ansible:ansible`; the private key should be mode
-`0600`, and the public key should be mode `0644`.
-
-Rotate the Ansible control key from vault values with
-`playbooks/rotate-ansible-control-key.yml`.
-
-See [Operations](docs/operations.md) for safe prerequisites and validation.
+Supported maintenance playbooks rotate the persisted Ansible Vault password,
+the `grayhaven-vault` deployment SSH keypair, and the Ansible control key used
+for managed-host SSH. See [Operations](docs/operations.md) for prerequisites,
+commands, and validation steps.
 
 [Back to top](#grayhaven-configuration)
 

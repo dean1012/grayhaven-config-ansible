@@ -11,7 +11,7 @@ document covers manual runner use and maintenance playbooks.
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
-- [Control Bastion And TLS Policy Changes](#control-bastion-and-tls-policy-changes)
+- [Infrastructure Policy Changes](#infrastructure-policy-changes)
 
 ## Manual Runner Invocation
 
@@ -93,11 +93,13 @@ Discord returns HTTP `204` when the webhook accepts the notification.
 Vault password rotation has three coordinated parts:
 
 1. Rekey the encrypted files in the private vault repository for the target
-   environment branch.
+   environment branch by following the
+   [`grayhaven-vault-example` vault password rotation documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#vault-password-rotation).
 2. Update the matching infra variable,
    `TF_VAR_grayhaven_vault_password_staging` or
-   `TF_VAR_grayhaven_vault_password_prod`, so future droplets bootstrap with
-   the new password.
+   `TF_VAR_grayhaven_vault_password_prod`, by following the
+   [`grayhaven-infra-opentofu` Ansible vault passphrase rotation documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#ansible-vault-passphrase-rotation)
+   so future droplets bootstrap with the new password.
 3. Rotate the persisted password already stored on deployed bastions.
 
 After the vault files and infra environment are updated, rotate the persisted
@@ -130,9 +132,9 @@ sudo journalctl -u grayhaven-ansible-runner.service
 
 ## Deploy Key Rotation
 
-Rotate the shared deploy/control key with
-`playbooks/rotate-vault-deploy-key.yml`. Place the staged files on bastion hosts
-before running the playbook:
+Rotate the `grayhaven-vault` deployment SSH keypair with
+`playbooks/rotate-vault-deploy-key.yml`. Place the staged files on bastion
+hosts before running the playbook:
 
 - `/home/ansible/new_ansible_deploy_key`
 - `/home/ansible/new_ansible_deploy_key.pub`
@@ -146,8 +148,9 @@ Run the playbook from the active control bastion:
 ansible-playbook --inventory inventory playbooks/rotate-vault-deploy-key.yml
 ```
 
-After the playbook completes, verify the runner can refresh both repositories.
-The playbook removes the staged key files from bastions.
+After the playbook completes, verify the runner can refresh the public config
+repository and private vault repository. The playbook removes the staged key
+files from bastions.
 
 [Back to top](#operations)
 
@@ -169,15 +172,17 @@ the `ansible` user and run a full convergence pass.
 
 [Back to top](#operations)
 
-## Control Bastion And TLS Policy Changes
+## Infrastructure Policy Changes
 
 Active control bastion selection and web TLS mode are defined in
 [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
 policy. Make those changes in infra, apply the target workspace, then run a
 manual configuration pass from the active control bastion.
 
-See
-[`grayhaven-infra-opentofu` Workspace Operations](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/workspaces.md)
-for the control-node and TLS-mode procedures.
+See the
+[`grayhaven-infra-opentofu` bastion failover documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#bastion-failover)
+and
+[`grayhaven-infra-opentofu` TLS mode documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#updating-workspace-environment-tls-mode)
+for the infra-side procedures.
 
 [Back to top](#operations)

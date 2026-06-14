@@ -32,8 +32,8 @@ The bootstrap playbook prepares the host for management:
   bursts;
 - creates the password-locked `ansible` automation user;
 - grants the `ansible` user passwordless sudo;
-- installs the shared Ansible/deploy public key for the `ansible` user;
-- installs the shared Ansible/deploy private key only on bastion hosts;
+- installs the bootstrap deployment public key for the `ansible` user;
+- installs the bootstrap deployment private key only on bastion hosts;
 - stores the Ansible Vault password only on bastion hosts;
 - installs runner and poller services on bastion hosts;
 - enables runner and poller timers only on the declared control bastion.
@@ -74,8 +74,8 @@ active control bastion.
 ## Vault Loading
 
 The private `grayhaven-vault` repository supplies runtime selectors and
-encrypted operational values. The `config.yml` file remains plaintext and the
-`vault/*.yml` files are decrypted by Ansible at runtime.
+encrypted operational values. The `config.yml` and `firewall.yml` files remain
+plaintext, and the `vault/*.yml` files are decrypted by Ansible at runtime.
 
 Production reads the vault `main` branch. Staging reads the vault `staging`
 branch.

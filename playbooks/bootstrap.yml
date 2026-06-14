@@ -196,8 +196,9 @@
         path: /var/log/droplet-agent
         state: absent
 
-    # Bastions keep the deploy/control key and vault password because they run
-    # full convergence. Web hosts receive only the public automation key.
+    # Bastions keep the bootstrap deployment key and vault password because
+    # they run full convergence. Web hosts receive only the public automation
+    # key.
     - name: Install bastion runner OS dependencies
       ansible.builtin.dnf:
         name:
