@@ -1,4 +1,4 @@
-# Architecture
+# Configuration Architecture
 
 Grayhaven Systems LLC configuration is split into first-boot bootstrap and ongoing
 full-playbook convergence.
@@ -46,7 +46,7 @@ managed secrets.
 Bootstrap does not persist application secrets, human user secrets, Discord
 webhooks, or DigitalOcean service tokens outside the vault model.
 
-[Back to top](#architecture)
+[Back to top](#configuration-architecture)
 
 ## Runner And Poller
 
@@ -79,7 +79,7 @@ Only the active control bastion runs the scheduled runner and poller. Other
 bastions are configured as SSH jump points and are managed over SSH by the
 active control bastion.
 
-[Back to top](#architecture)
+[Back to top](#configuration-architecture)
 
 ## Vault Loading
 
@@ -100,7 +100,7 @@ Vault values provide:
 - Ansible control key values;
 - hosted domain definitions and development basic-auth htpasswd entries.
 
-[Back to top](#architecture)
+[Back to top](#configuration-architecture)
 
 ## Managed Baseline
 
@@ -144,7 +144,7 @@ environment, control-node status, TLS mode, DigitalOcean tags, and known IPv4
 addresses to local scripts and administrators without requiring direct
 DigitalOcean API access.
 
-[Back to top](#architecture)
+[Back to top](#configuration-architecture)
 
 ## Managed Users
 
@@ -160,7 +160,7 @@ without archiving it.
 Homedir archives are not encrypted by the archive process. They are included in
 the encrypted local restic backup set by default.
 
-[Back to top](#architecture)
+[Back to top](#configuration-architecture)
 
 ## Web Hosting
 
@@ -189,7 +189,7 @@ and matching `hosted_domains` data in the private vault. The public
 [`grayhaven-vault-example`](https://github.com/dean1012/grayhaven-vault-example)
 repository documents the expected vault shape.
 
-[Back to top](#architecture)
+[Back to top](#configuration-architecture)
 
 ## Firewalld Policy
 
@@ -213,7 +213,7 @@ control-node failover from locking the new control bastion out of existing
 managed hosts. DigitalOcean cloud firewalls still enforce the tighter
 bastion source-tag boundary before traffic reaches the host.
 
-[Back to top](#architecture)
+[Back to top](#configuration-architecture)
 
 ## Backups
 
@@ -235,7 +235,7 @@ Operational backup procedures should include regular offsite transfer of local
 backup data and regular restore testing. Remote backup automation is not
 implemented in this repository at this time.
 
-[Back to top](#architecture)
+[Back to top](#configuration-architecture)
 
 ## Access Model
 
@@ -255,4 +255,4 @@ as the only managed `ansible` authorized key. This supports scheduled
 convergence from the active control bastion without depending on a human SSH
 agent.
 
-[Back to top](#architecture)
+[Back to top](#configuration-architecture)

@@ -79,8 +79,8 @@ Pull requests must meet all of these requirements to be merged:
 ## Documentation Guidelines
 
 Keep user-facing behavior documented in `README.md` and architecture details in
-`docs/architecture.md`. Add inline comments for non-obvious implementation
-decisions, security boundaries, and assumptions. Avoid comments that merely
-restate straightforward Ansible tasks or shell commands.
+`docs/configuration-architecture.md`. Add inline comments for non-obvious
+implementation decisions, security boundaries, and assumptions. Avoid comments
+that merely restate straightforward Ansible tasks or shell commands.
 
 [Back to top](#contributing)

@@ -85,7 +85,7 @@ commands, and validation steps.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
+- [Configuration Architecture](docs/configuration-architecture.md)
 - [Operations](docs/operations.md)
 
 [Back to top](#grayhaven-systems-llc-configuration)
