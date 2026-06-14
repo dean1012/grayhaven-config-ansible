@@ -94,12 +94,17 @@ Vault password rotation has three coordinated parts:
 
 1. Rekey the encrypted files in the private vault repository for the target
    environment branch by following the
-   [`grayhaven-vault-example` vault password rotation documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#vault-password-rotation).
+   [vault password rotation documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#vault-password-rotation)
+   in the
+   [`grayhaven-vault-example`](https://github.com/dean1012/grayhaven-vault-example)
+   repository.
 2. Update the matching infra variable,
    `TF_VAR_grayhaven_vault_password_staging` or
    `TF_VAR_grayhaven_vault_password_prod`, by following the
-   [`grayhaven-infra-opentofu` Ansible vault passphrase rotation documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#ansible-vault-passphrase-rotation)
-   so future droplets bootstrap with the new password.
+   [Ansible vault passphrase rotation documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#ansible-vault-passphrase-rotation)
+   in the
+   [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
+   repository so future droplets bootstrap with the new password.
 3. Rotate the persisted password already stored on deployed bastions.
 
 After the vault files and infra environment are updated, rotate the persisted
@@ -189,9 +194,11 @@ policy. Make those changes in infra, apply the target workspace, then run a
 manual configuration pass from the active control bastion.
 
 See the
-[`grayhaven-infra-opentofu` bastion failover documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#bastion-failover)
+[bastion failover documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#bastion-failover)
 and
-[`grayhaven-infra-opentofu` TLS mode documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#updating-workspace-environment-tls-mode)
-for the infra-side procedures.
+[TLS mode documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#updating-workspace-environment-tls-mode)
+in the
+[`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
+repository for the infra-side procedures.
 
 [Back to top](#operations)
