@@ -44,6 +44,17 @@ When updating Ansible Galaxy collections, update `galaxy_requirements.yml`,
 refresh `galaxy_requirements.sha256`, then validate with:
 
 ```bash
+tmpdir="$(mktemp -d /tmp/grayhaven-galaxy.XXXXXX)"
+ansible-galaxy collection download \
+  --requirements-file galaxy_requirements.yml \
+  --download-path "$tmpdir"
+(cd "$tmpdir" && sha256sum *.tar.gz | sort -k2) > galaxy_requirements.sha256
+rm -rf "$tmpdir"
+```
+
+Then validate the refreshed collection lock file with:
+
+```bash
 scripts/install-galaxy-collections
 ```
 
