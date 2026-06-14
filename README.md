@@ -91,6 +91,7 @@ for prerequisites, commands, and validation steps.
 
 - [Configuration Architecture](docs/configuration-architecture.md)
 - [Operations](docs/operations.md)
+- [Validation & Safety Checks](docs/validation-safety.md)
 
 [Back to top](#grayhaven-systems-llc-configuration-ansible)
 
