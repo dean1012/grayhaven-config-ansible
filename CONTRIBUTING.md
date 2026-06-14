@@ -23,12 +23,14 @@ sudo dnf install ShellCheck
 python3 -m pip install --require-hashes --requirement pip3_requirements.txt
 python3 -m pip install ansible-lint yamllint
 npm install --global markdownlint-cli2
-ansible-galaxy collection install -r galaxy_requirements.yml
+scripts/install-galaxy-collections
 ```
 
 The Python packages in `pip3_requirements.txt` are pinned with hashes and cover
 the runtime prerequisites for the DigitalOcean Ansible collection used by the
 dynamic inventory.
+Ansible Galaxy collection artifacts are version-pinned in
+`galaxy_requirements.yml` and checksum-verified through `galaxy_requirements.sha256`.
 
 When updating runtime Python dependencies, keep the full dependency closure
 pinned in `pip3_requirements.txt` and include hashes for every entry. Validate
@@ -36,6 +38,13 @@ the file with:
 
 ```bash
 python3 -m pip install --dry-run --require-hashes --requirement pip3_requirements.txt
+```
+
+When updating Ansible Galaxy collections, update `galaxy_requirements.yml`,
+refresh `galaxy_requirements.sha256`, then validate with:
+
+```bash
+scripts/install-galaxy-collections
 ```
 
 [Back to top](#contributing)

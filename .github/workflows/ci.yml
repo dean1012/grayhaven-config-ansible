@@ -47,7 +47,7 @@ jobs:
           python -m pip install ansible-lint
 
       - name: Install Ansible Galaxy collections
-        run: ansible-galaxy collection install -r galaxy_requirements.yml
+        run: scripts/install-galaxy-collections
 
       - name: Run Ansible syntax check
         run: |

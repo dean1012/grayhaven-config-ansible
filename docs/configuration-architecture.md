@@ -58,11 +58,11 @@ persistent checkouts of:
 - `/home/ansible/grayhaven-vault`
 
 The runner installs hash-pinned Python runtime dependencies into
-`/opt/grayhaven/ansible-runtime` and installs version-pinned Ansible Galaxy
-collections. Ansible commands from that virtual environment are linked into
-`/usr/local/bin` for operator use. The runner decrypts vault values through
-Ansible Vault, prepares SSH known hosts for remote managed hosts, and runs
-`playbooks/site.yml`.
+`/opt/grayhaven/ansible-runtime` and installs checksum-verified,
+version-pinned Ansible Galaxy collections. Ansible commands from that virtual
+environment are linked into `/usr/local/bin` for operator use. The runner
+decrypts vault values through Ansible Vault, prepares SSH known hosts for remote
+managed hosts, and runs `playbooks/site.yml`.
 
 Private vault repository SSH access uses the vault deployment SSH key stored at
 `/home/ansible/.ssh/grayhaven_vault_deploy_key` on bastion hosts. Repository

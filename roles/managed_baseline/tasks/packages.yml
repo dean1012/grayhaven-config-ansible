@@ -15,12 +15,6 @@
     name: "{{ managed_baseline_admin_packages + managed_baseline_required_packages }}"
     state: present
 
-- name: Upgrade pip
-  ansible.builtin.command:
-    cmd: /usr/bin/python3 -m pip install --upgrade --root-user-action=ignore pip
-  register: managed_baseline_pip_upgrade
-  changed_when: "'Successfully installed' in managed_baseline_pip_upgrade.stdout"
-
 - name: Ensure Ansible runtime directory exists on bastion hosts
   ansible.builtin.file:
     path: "{{ managed_baseline_ansible_runtime_venv | dirname }}"
@@ -72,6 +66,15 @@
     - ansible-inventory
     - ansible-playbook
     - ansible-vault
+  when: grayhaven_role == "bastion"
+
+- name: Install checksum-verified Ansible Galaxy collections on bastion hosts
+  ansible.builtin.command:
+    cmd: "{{ managed_baseline_runner_checkout_dir }}/scripts/install-galaxy-collections"
+  environment:
+    ANSIBLE_GALAXY_BIN: "{{ managed_baseline_ansible_runtime_venv }}/bin/ansible-galaxy"
+  register: managed_baseline_galaxy_install
+  changed_when: "'Installing collection' in managed_baseline_galaxy_install.stdout"
   when: grayhaven_role == "bastion"
 
 - name: Remove RPM-managed Ansible runtime from non-bastion hosts

@@ -290,9 +290,8 @@ install_ansible_runtime() {
   "$ANSIBLE_BIN" --version
 
   log "Installing pinned Ansible Galaxy collections."
-  "$ANSIBLE_GALAXY_BIN" collection install \
-    --requirements-file "${CHECKOUT_DIR}/galaxy_requirements.yml" \
-    --force
+  ANSIBLE_GALAXY_BIN="$ANSIBLE_GALAXY_BIN" \
+    "${CHECKOUT_DIR}/scripts/install-galaxy-collections"
 }
 
 ###############################################################################

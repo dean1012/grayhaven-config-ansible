@@ -24,6 +24,8 @@ CI and local validation check the repository before changes are merged:
 - Markdown with `markdownlint-cli2`.
 
 Runtime Python dependencies are pinned with hashes in `pip3_requirements.txt`.
+Ansible Galaxy collection artifacts are version-pinned and checksum-verified
+before installation.
 The full local validation flow is documented in [CONTRIBUTING.md](../CONTRIBUTING.md#local-validation).
 
 [Back to top](#validation--safety-checks)

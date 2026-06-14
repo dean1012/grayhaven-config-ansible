@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+requirements_file="${1:-${repo_root}/galaxy_requirements.yml}"
+checksum_file="${2:-${repo_root}/galaxy_requirements.sha256}"
+ansible_galaxy_bin="${ANSIBLE_GALAXY_BIN:-ansible-galaxy}"
+download_dir="$(mktemp -d /tmp/grayhaven-galaxy.XXXXXX)"
+
+cleanup() {
+  rm -rf "$download_dir"
+}
+
+trap cleanup EXIT
+
+expected_count="$(grep -Ec '^[0-9a-f]{64}[[:space:]]+' "$checksum_file")"
+
+"$ansible_galaxy_bin" collection download \
+  --requirements-file "$requirements_file" \
+  --download-path "$download_dir"
+
+actual_count="$(find "$download_dir" -maxdepth 1 -type f -name '*.tar.gz' | wc -l)"
+if [[ "$expected_count" -ne "$actual_count" ]]; then
+  printf 'Expected %s collection artifact(s), downloaded %s.\n' "$expected_count" "$actual_count" >&2
+  exit 1
+fi
+
+(
+  cd "$download_dir"
+  sha256sum --check "$checksum_file"
+)
+
+while IFS= read -r -d '' artifact; do
+  "$ansible_galaxy_bin" collection install "$artifact" --force
+done < <(find "$download_dir" -maxdepth 1 -type f -name '*.tar.gz' -print0 | sort -z)
