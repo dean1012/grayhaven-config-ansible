@@ -155,8 +155,10 @@ DigitalOcean API access.
 
 Managed users are defined in `vault/common.yml`. The
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
-repository documents the
-[user schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#vaultcommonyml).
+repository documents the expected
+[user file schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#vaultcommonyml)
+and
+[user management procedure](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#managing-users).
 Users may be marked `present` or `absent`.
 
 `present` users are created with configured password hashes, SSH keys, and
@@ -248,6 +250,10 @@ By default, backups include:
 - configured homedir archive path;
 - `/home`;
 - `/var/log`.
+
+When `backup.include` is set in `grayhaven-vault/config.yml`, that explicit
+list is used as the backup include list. Include the configured homedir archive
+path there when you want removed-user archives backed up.
 
 The local restic repository is encrypted. Local backups are not a substitute for
 disaster recovery.

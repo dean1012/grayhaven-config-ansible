@@ -19,6 +19,7 @@ and contribution.
 Install Ansible runtime and validation dependencies:
 
 ```bash
+sudo dnf install ShellCheck
 python3 -m pip install -r pip3_requirements.txt
 python3 -m pip install ansible-core ansible-lint yamllint
 npm install --global markdownlint-cli2
