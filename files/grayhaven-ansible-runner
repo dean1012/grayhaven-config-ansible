@@ -11,11 +11,17 @@ RUNNER_PLAYBOOK_LOG="/run/grayhaven-ansible-runner-playbook.log"
 ANSIBLE_HOME="/home/ansible"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
+ANSIBLE_RUNTIME_VENV="/opt/grayhaven/ansible-runtime"
 CHECKOUT_PARENT="${ANSIBLE_HOME}"
 DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
 DEFAULT_VAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-vault"
 DEFAULT_REPO_URL="https://github.com/dean1012/grayhaven-config-ansible.git"
 DEFAULT_REPO_REF="main"
+ANSIBLE_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible"
+ANSIBLE_GALAXY_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible-galaxy"
+ANSIBLE_INVENTORY_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible-inventory"
+ANSIBLE_PLAYBOOK_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible-playbook"
+ANSIBLE_VAULT_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible-vault"
 
 ###############################################################################
 # Logging, guards, and cleanup
@@ -48,6 +54,15 @@ require_file() {
 
   if [[ ! -f "$path" ]]; then
     log "Required file is missing: $path"
+    exit 1
+  fi
+}
+
+require_env() {
+  local name="$1"
+
+  if [[ -z "${!name:-}" ]]; then
+    log "Required environment variable is unset: $name"
     exit 1
   fi
 }
@@ -127,7 +142,7 @@ import os
 
 description = (
     f"{os.environ['DISCORD_TARGET']}\n\n"
-    f"Environment: {os.environ.get('GRAYHAVEN_ENVIRONMENT', 'prod')}\n"
+    f"Environment: {os.environ.get('GRAYHAVEN_ENVIRONMENT', 'unknown')}\n"
     f"{os.environ['DISCORD_TIMESTAMP']}"
 )
 
@@ -203,7 +218,7 @@ prepare_inventory_known_hosts() {
   local scan_targets
 
   inventory_json="$(mktemp)"
-  /usr/local/bin/ansible-inventory \
+  "$ANSIBLE_INVENTORY_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     --list > "$inventory_json"
 
@@ -258,23 +273,24 @@ PY
 
 install_ansible_runtime() {
   log "Ensuring pip-managed Ansible runtime is available."
-  /usr/bin/python3 -m pip install --upgrade --root-user-action=ignore pip
-  if ! /usr/local/bin/ansible --version 2>/dev/null | head -n 1 | grep -q "core 2.21.0"; then
-    /usr/bin/python3 -m pip install \
-      --upgrade \
-      --ignore-installed \
-      --root-user-action=ignore \
-      ansible-core==2.21.0
-  fi
-  /usr/local/bin/ansible --version
+  install -d -o root -g root -m 0755 "$(dirname "$ANSIBLE_RUNTIME_VENV")"
+  /usr/bin/python3 -m venv "$ANSIBLE_RUNTIME_VENV"
+  "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install --upgrade pip
 
-  log "Installing pinned Python dependencies."
-  /usr/bin/python3 -m pip install \
-    --root-user-action=ignore \
+  log "Installing hash-pinned Python and Ansible runtime dependencies."
+  "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install \
+    --upgrade \
+    --require-hashes \
     --requirement "${CHECKOUT_DIR}/pip3_requirements.txt"
+  ln -sfn "$ANSIBLE_BIN" /usr/local/bin/ansible
+  ln -sfn "$ANSIBLE_GALAXY_BIN" /usr/local/bin/ansible-galaxy
+  ln -sfn "$ANSIBLE_INVENTORY_BIN" /usr/local/bin/ansible-inventory
+  ln -sfn "$ANSIBLE_PLAYBOOK_BIN" /usr/local/bin/ansible-playbook
+  ln -sfn "$ANSIBLE_VAULT_BIN" /usr/local/bin/ansible-vault
+  "$ANSIBLE_BIN" --version
 
   log "Installing pinned Ansible Galaxy collections."
-  /usr/local/bin/ansible-galaxy collection install \
+  "$ANSIBLE_GALAXY_BIN" collection install \
     --requirements-file "${CHECKOUT_DIR}/galaxy_requirements.yml" \
     --force
 }
@@ -302,7 +318,7 @@ with open(os.path.join(vault_checkout_dir, "config.yml"), encoding="utf-8") as c
 
 result = subprocess.run(
     [
-        "/usr/local/bin/ansible-vault",
+        os.environ["ANSIBLE_VAULT_BIN"],
         "view",
         "--vault-password-file",
         vault_password_file,
@@ -346,7 +362,7 @@ refresh_runtime_state_from_inventory() {
   inventory_json="$(mktemp)"
   runtime_env="$(mktemp)"
 
-  /usr/local/bin/ansible-inventory \
+  "$ANSIBLE_INVENTORY_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     --list > "$inventory_json"
 
@@ -451,10 +467,14 @@ run_once() {
   REPO_REF="${REPO_REF:-$DEFAULT_REPO_REF}"
   CHECKOUT_DIR="${CHECKOUT_DIR:-$DEFAULT_CHECKOUT_DIR}"
   VAULT_CHECKOUT_DIR="${VAULT_CHECKOUT_DIR:-$DEFAULT_VAULT_CHECKOUT_DIR}"
-  GRAYHAVEN_ENVIRONMENT="${GRAYHAVEN_ENVIRONMENT:-prod}"
+  require_env VAULT_REPO_URL
+  require_env VAULT_REPO_REF
+  require_env GRAYHAVEN_ENVIRONMENT
+  require_env GRAYHAVEN_HOSTNAME
   export REPO_REF VAULT_REPO_URL VAULT_REPO_REF VAULT_CHECKOUT_DIR
   export GRAYHAVEN_ENVIRONMENT GRAYHAVEN_HOSTNAME GRAYHAVEN_IS_CONTROL_NODE
   export GRAYHAVEN_CERTIFICATE_ENVIRONMENT GRAYHAVEN_TLS_MODE
+  export ANSIBLE_VAULT_BIN
   export ANSIBLE_CONFIG="${CHECKOUT_DIR}/ansible.cfg"
   export HOME="/root"
 
@@ -483,7 +503,7 @@ run_once() {
 
   log "Running full site playbook."
   install -o root -g root -m 0600 /dev/null "$RUNNER_PLAYBOOK_LOG"
-  /usr/local/bin/ansible-playbook \
+  "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/site.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE" \

@@ -20,14 +20,23 @@ Install Ansible runtime and validation dependencies:
 
 ```bash
 sudo dnf install ShellCheck
-python3 -m pip install -r pip3_requirements.txt
-python3 -m pip install ansible-core ansible-lint yamllint
+python3 -m pip install --require-hashes --requirement pip3_requirements.txt
+python3 -m pip install ansible-lint yamllint
 npm install --global markdownlint-cli2
 ansible-galaxy collection install -r galaxy_requirements.yml
 ```
 
-The Python packages in `pip3_requirements.txt` follow the runtime prerequisites
-for the DigitalOcean Ansible collection used by the dynamic inventory.
+The Python packages in `pip3_requirements.txt` are pinned with hashes and cover
+the runtime prerequisites for the DigitalOcean Ansible collection used by the
+dynamic inventory.
+
+When updating runtime Python dependencies, keep the full dependency closure
+pinned in `pip3_requirements.txt` and include hashes for every entry. Validate
+the file with:
+
+```bash
+python3 -m pip install --dry-run --require-hashes --requirement pip3_requirements.txt
+```
 
 [Back to top](#contributing)
 

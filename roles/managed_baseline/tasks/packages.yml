@@ -21,28 +21,58 @@
   register: managed_baseline_pip_upgrade
   changed_when: "'Successfully installed' in managed_baseline_pip_upgrade.stdout"
 
-- name: Check installed Ansible runtime on bastion hosts
+- name: Ensure Ansible runtime directory exists on bastion hosts
+  ansible.builtin.file:
+    path: "{{ managed_baseline_ansible_runtime_venv | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: grayhaven_role == "bastion"
+
+- name: Create Ansible runtime virtual environment on bastion hosts
   ansible.builtin.command:
-    cmd: /usr/local/bin/ansible --version
-  register: managed_baseline_ansible_version
-  changed_when: false
-  failed_when: false
+    cmd: /usr/bin/python3 -m venv "{{ managed_baseline_ansible_runtime_venv }}"
+    creates: "{{ managed_baseline_ansible_runtime_venv }}/bin/python"
+  when: grayhaven_role == "bastion"
+
+- name: Upgrade Ansible runtime virtual environment pip on bastion hosts
+  ansible.builtin.command:
+    cmd: >-
+      {{ managed_baseline_ansible_runtime_venv }}/bin/python
+      -m pip install --upgrade pip
+  register: managed_baseline_ansible_runtime_pip_upgrade
+  changed_when: >-
+    'Successfully installed' in managed_baseline_ansible_runtime_pip_upgrade.stdout
   when: grayhaven_role == "bastion"
 
 - name: Install pinned Ansible runtime on bastion hosts
   ansible.builtin.command:
     cmd: >-
-      /usr/bin/python3 -m pip install --upgrade --ignore-installed
-      --root-user-action=ignore
-      ansible-core=={{ managed_baseline_ansible_core_version }}
+      {{ managed_baseline_ansible_runtime_venv }}/bin/python
+      -m pip install --upgrade
+      --require-hashes
+      --requirement
+      {{ managed_baseline_runner_checkout_dir }}/pip3_requirements.txt
   register: managed_baseline_ansible_install
   changed_when: "'Successfully installed' in managed_baseline_ansible_install.stdout"
-  when:
-    - grayhaven_role == "bastion"
-    - >-
-      managed_baseline_ansible_version.rc != 0 or
-      ("core " ~ managed_baseline_ansible_core_version) not in
-      managed_baseline_ansible_version.stdout | default("")
+  when: grayhaven_role == "bastion"
+
+- name: Link Ansible runtime commands on bastion hosts
+  ansible.builtin.file:
+    src: "{{ managed_baseline_ansible_runtime_venv }}/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+    force: true
+    owner: root
+    group: root
+  loop:
+    - ansible
+    - ansible-galaxy
+    - ansible-inventory
+    - ansible-playbook
+    - ansible-vault
+  when: grayhaven_role == "bastion"
 
 - name: Remove RPM-managed Ansible runtime from non-bastion hosts
   ansible.builtin.dnf:

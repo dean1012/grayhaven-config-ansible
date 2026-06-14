@@ -76,6 +76,37 @@
     managed_baseline_firewall_role_policy: "{{ managed_baseline_firewall_policy.firewalls[grayhaven_role] }}"
   when: managed_baseline_firewall_policy_cache.stat.exists
 
+- name: Initialize load-balancer TLS firewalld inbound policy
+  ansible.builtin.set_fact:
+    managed_baseline_load_balancer_tls_inbound: []
+  when:
+    - managed_baseline_firewall_policy_cache.stat.exists
+    - grayhaven_role == "web"
+    - managed_baseline_tls_mode == "load_balancer"
+
+- name: Keep only web origin ports needed for load-balancer TLS
+  ansible.builtin.set_fact:
+    managed_baseline_load_balancer_tls_inbound: >-
+      {{ managed_baseline_load_balancer_tls_inbound + [item] }}
+  loop: "{{ managed_baseline_firewall_role_policy.inbound | default([]) }}"
+  when:
+    - managed_baseline_firewall_policy_cache.stat.exists
+    - grayhaven_role == "web"
+    - managed_baseline_tls_mode == "load_balancer"
+    - not (item.protocol == "tcp" and item.port_range == "443")
+
+- name: Apply load-balancer TLS firewalld policy
+  ansible.builtin.set_fact:
+    managed_baseline_firewall_role_policy: >-
+      {{
+        managed_baseline_firewall_role_policy
+        | combine({'inbound': managed_baseline_load_balancer_tls_inbound})
+      }}
+  when:
+    - managed_baseline_firewall_policy_cache.stat.exists
+    - grayhaven_role == "web"
+    - managed_baseline_tls_mode == "load_balancer"
+
 - name: Install grayhaven firewalld zone from policy
   ansible.builtin.template:
     src: grayhaven-firewalld-zone.xml.j2

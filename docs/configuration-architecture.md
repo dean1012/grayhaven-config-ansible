@@ -57,7 +57,10 @@ persistent checkouts of:
 - `/home/ansible/grayhaven-config-ansible`
 - `/home/ansible/grayhaven-vault`
 
-The runner installs pinned runtime dependencies, decrypts vault values through
+The runner installs hash-pinned Python runtime dependencies into
+`/opt/grayhaven/ansible-runtime` and installs version-pinned Ansible Galaxy
+collections. Ansible commands from that virtual environment are linked into
+`/usr/local/bin` for operator use. The runner decrypts vault values through
 Ansible Vault, prepares SSH known hosts for remote managed hosts, and runs
 `playbooks/site.yml`.
 
@@ -227,6 +230,11 @@ At this time, Ansible enforces inbound firewalld policy from the
 environment-specific vault firewall policy file. DigitalOcean cloud firewalls
 continue to enforce both inbound and outbound cloud firewall policy.
 
+When web hosts run behind load-balancer TLS, OpenTofu restricts cloud firewall
+origin HTTP access to the DigitalOcean load balancer and removes direct web
+origin HTTPS access. Ansible applies the matching host-side behavior by keeping
+only the local web origin ports needed for backend service.
+
 For SSH from bastion to managed hosts, local firewalld allows the environment
 VPC CIDR as well as known bastion private addresses. This prevents active
 control-node failover from locking the new control bastion out of existing
@@ -238,8 +246,7 @@ bastion source-tag boundary before traffic reaches the host.
 ## Backups
 
 Each managed server creates encrypted local restic backups using settings from
-the private `grayhaven-vault`
-repository's `config.yml` file. The
+`config.yml` in the private `grayhaven-vault` repository. The
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
 repository documents the
 [backup settings schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#configyml).
@@ -254,8 +261,9 @@ By default, backups include:
 - `/var/log`.
 
 When `backup.include` is set in `grayhaven-vault/config.yml`, that explicit
-list is used as the backup include list. Include the configured homedir archive
-path there when you want removed-user archives backed up.
+list is appended after the configured homedir archive path. This keeps
+removed-user archives in the encrypted local backup set even when an environment
+uses a custom include list.
 
 The local restic repository is encrypted. Local backups are not a substitute for
 disaster recovery.

@@ -12,15 +12,6 @@
         | default('/var/backups/deleted-homedir-archives')
       }}
     managed_baseline_backup_keep_daily: "{{ backup.retention.keep_daily | default(7) }}"
-    managed_baseline_backup_include_paths: >-
-      {{
-        backup.include
-        | default([
-            backup.repositories.local.homedir_archive_path | default('/var/backups/deleted-homedir-archives'),
-            '/home',
-            '/var/log'
-          ])
-      }}
     managed_baseline_backup_exclude_paths: >-
       {{
         [
@@ -32,4 +23,21 @@
           '/var/log/yum.log'
         ]
         + (backup.exclude | default([]))
+      }}
+
+- name: Derive local backup include paths
+  ansible.builtin.set_fact:
+    managed_baseline_backup_include_paths: >-
+      {{
+        (
+          [managed_baseline_backup_homedir_archive_path] +
+          (
+            backup.include
+            | default([
+                '/home',
+                '/var/log'
+              ])
+          )
+        )
+        | unique
       }}
