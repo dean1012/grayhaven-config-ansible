@@ -27,7 +27,7 @@ on repository-change poller events, or by manual invocation.
 - Create and secure the `ansible` automation account.
 - Bootstrap only the minimum access needed for ongoing convergence.
 - Pull encrypted operational values from the private
-  [`grayhaven-vault`](https://github.com/dean1012/grayhaven-vault) repository
+  `grayhaven-vault` repository
   on the active control bastion.
 - Run full Ansible convergence from the active control bastion.
 - Manage configured users, SSH access, sudo access, and absent-user homedir

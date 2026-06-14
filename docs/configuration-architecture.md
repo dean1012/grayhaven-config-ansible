@@ -84,7 +84,7 @@ active control bastion.
 
 ## Vault Loading
 
-The private [`grayhaven-vault`](https://github.com/dean1012/grayhaven-vault)
+The private `grayhaven-vault`
 repository supplies runtime selectors and encrypted operational values. Its
 structure follows the
 [file schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md)
@@ -238,7 +238,7 @@ bastion source-tag boundary before traffic reaches the host.
 ## Backups
 
 Each managed server creates encrypted local restic backups using settings from
-the private [`grayhaven-vault`](https://github.com/dean1012/grayhaven-vault)
+the private `grayhaven-vault`
 repository's `config.yml` file. The
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
 repository documents the

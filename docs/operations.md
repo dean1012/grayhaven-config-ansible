@@ -140,7 +140,7 @@ sudo journalctl -u grayhaven-ansible-runner.service
 Rotate the vault deployment SSH keypair with
 `playbooks/rotate-vault-deploy-key.yml`. OpenTofu supplies this keypair during
 first boot so bastions can read the private
-[`grayhaven-vault`](https://github.com/dean1012/grayhaven-vault) repository.
+`grayhaven-vault` repository.
 After full convergence, bastions keep it only for private vault repository
 access at `/home/ansible/.ssh/grayhaven_vault_deploy_key`.
 
