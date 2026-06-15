@@ -26,6 +26,10 @@ The runner refreshes the public configuration checkout and private vault
 checkout, loads vault values, refreshes live DigitalOcean inventory, prepares
 SSH known hosts, and runs `playbooks/site.yml`.
 
+Manual commands that use the DigitalOcean inventory require
+`GRAYHAVEN_ENVIRONMENT` to be set. If it is unset, inventory selection fails
+closed instead of defaulting to an environment.
+
 [Back to top](#operations)
 
 ## Runner And Poller Status

@@ -13,7 +13,7 @@ attributes:
 
 filters:
   - status == "active"
-  - '"env-" ~ lookup("env", "GRAYHAVEN_ENVIRONMENT", default="prod") in do_tags'
+  - '"env-" ~ lookup("env", "GRAYHAVEN_ENVIRONMENT", default="") in do_tags'
 
 compose:
   do_tags: tags
