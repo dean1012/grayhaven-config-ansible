@@ -129,7 +129,7 @@ send_failure_notification() {
   fi
 
   DISCORD_TARGET="$failed_targets"
-  DISCORD_TIMESTAMP="$(TZ="${MANAGED_BASELINE_TIMEZONE:-America/Chicago}" date '+%Y-%m-%d %I:%M %p')"
+  DISCORD_TIMESTAMP="$(TZ="${MANAGED_BASELINE_TIMEZONE:-America/Chicago}" date '+%Y-%m-%d %I:%M %p %Z')"
   export DISCORD_TARGET DISCORD_TIMESTAMP
 
   /usr/bin/python3 - <<'PY' | curl --fail --silent --show-error \
