@@ -127,15 +127,20 @@
   notify: Reload firewalld
   when: managed_baseline_firewall_policy_cache.stat.exists
 
-- name: Enable and start firewalld without blocking SSH convergence
+- name: Enable and start firewalld
   ansible.builtin.systemd_service:
     name: firewalld
     state: started
     enabled: true
-    no_block: true
 
 - name: Reset SSH connection after firewalld starts
   ansible.builtin.meta: reset_connection
+
+- name: Wait for SSH after firewalld starts
+  ansible.builtin.wait_for_connection:
+    delay: 1
+    sleep: 2
+    timeout: 60
 
 - name: Wait for firewalld to become active
   ansible.builtin.command:
@@ -151,3 +156,9 @@
 
 - name: Reset SSH connection after firewalld reloads
   ansible.builtin.meta: reset_connection
+
+- name: Wait for SSH after firewalld reloads
+  ansible.builtin.wait_for_connection:
+    delay: 1
+    sleep: 2
+    timeout: 60
