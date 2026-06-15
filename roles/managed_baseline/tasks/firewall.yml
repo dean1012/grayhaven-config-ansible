@@ -12,10 +12,12 @@
     managed_baseline_vault_firewall_policy_path: >-
       {{ managed_baseline_vault_checkout_dir | default('/home/ansible/grayhaven-vault') }}/firewall.yml
 
-- name: Check vault firewalld policy
+- name: Check vault firewalld policy on the control node
   ansible.builtin.stat:
     path: "{{ managed_baseline_vault_firewall_policy_path }}"
   register: managed_baseline_vault_firewall_policy
+  delegate_to: localhost
+  run_once: true
 
 - name: Cache vault firewalld policy
   ansible.builtin.copy:
@@ -24,7 +26,6 @@
     owner: root
     group: root
     mode: "0644"
-    remote_src: true
   when: managed_baseline_vault_firewall_policy.stat.exists
 
 - name: Check cached firewalld policy
