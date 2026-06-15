@@ -80,7 +80,7 @@ curl \
   "embeds": [
     {
       "title": "Server Rebooted",
-      "description": "manual-test.grayhavensystems.com\n\nEnvironment: test\n2026-06-12 01:00 PM",
+      "description": "manual-test.grayhavensystems.com\n\nEnvironment: test\n2026-06-12 01:00 PM CDT",
       "color": 5811424
     }
   ]
