@@ -13,3 +13,5 @@
   ansible.builtin.service:
     name: firewalld
     state: reloaded
+  vars:
+    ansible_ssh_args: "{{ managed_baseline_firewalld_ssh_args }}"

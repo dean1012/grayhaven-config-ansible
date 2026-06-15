@@ -127,38 +127,42 @@
   notify: Reload firewalld
   when: managed_baseline_firewall_policy_cache.stat.exists
 
-- name: Enable and start firewalld
-  ansible.builtin.systemd_service:
-    name: firewalld
-    state: started
-    enabled: true
-
-- name: Reset SSH connection after firewalld starts
+- name: Reset SSH connection before firewalld starts
   ansible.builtin.meta: reset_connection
 
-- name: Wait for SSH after firewalld starts
-  ansible.builtin.wait_for_connection:
-    delay: 1
-    sleep: 2
-    timeout: 60
+- name: Start and verify firewalld with fresh SSH sessions
+  vars:
+    ansible_ssh_args: "{{ managed_baseline_firewalld_ssh_args }}"
+  block:
+    - name: Enable and start firewalld
+      ansible.builtin.systemd_service:
+        name: firewalld
+        state: started
+        enabled: true
 
-- name: Wait for firewalld to become active
-  ansible.builtin.command:
-    cmd: systemctl is-active firewalld
-  register: managed_baseline_firewalld_active
-  changed_when: false
-  retries: 10
-  delay: 3
-  until: managed_baseline_firewalld_active.stdout == "active"
+    - name: Wait for SSH after firewalld starts
+      ansible.builtin.wait_for_connection:
+        delay: 1
+        sleep: 2
+        timeout: 60
 
-- name: Reload firewalld after zone changes
-  ansible.builtin.meta: flush_handlers
+    - name: Wait for firewalld to become active
+      ansible.builtin.command:
+        cmd: systemctl is-active firewalld
+      register: managed_baseline_firewalld_active
+      changed_when: false
+      retries: 10
+      delay: 3
+      until: managed_baseline_firewalld_active.stdout == "active"
 
-- name: Reset SSH connection after firewalld reloads
+    - name: Reload firewalld after zone changes
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for SSH after firewalld reloads
+      ansible.builtin.wait_for_connection:
+        delay: 1
+        sleep: 2
+        timeout: 60
+
+- name: Reset SSH connection after firewalld settles
   ansible.builtin.meta: reset_connection
-
-- name: Wait for SSH after firewalld reloads
-  ansible.builtin.wait_for_connection:
-    delay: 1
-    sleep: 2
-    timeout: 60

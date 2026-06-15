@@ -5,6 +5,7 @@ managed_baseline_ntp_pool: 2.almalinux.pool.ntp.org
 managed_baseline_swapfile_path: /swapfile
 managed_baseline_swapfile_size: 1G
 managed_baseline_ansible_runtime_venv: /opt/grayhaven/ansible-runtime
+managed_baseline_firewalld_ssh_args: -C -o ControlMaster=no -o ControlPersist=no -o ControlPath=none
 
 managed_baseline_admin_packages:
   - bash-completion
