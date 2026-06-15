@@ -226,9 +226,9 @@ valid policy is available, Ansible sends a warning notification and skips
 firewalld policy changes, preserving the current local firewall state while
 allowing the rest of the playbook to converge.
 
-At this time, Ansible enforces inbound firewalld policy from the
+At this time, Ansible enforces host inbound firewalld policy from the
 environment-specific vault firewall policy file. DigitalOcean cloud firewalls
-continue to enforce both inbound and outbound cloud firewall policy.
+continue to enforce provider-side inbound and outbound policy.
 
 When web hosts run behind load-balancer TLS, OpenTofu restricts cloud firewall
 origin HTTP access to the DigitalOcean load balancer and removes direct web
