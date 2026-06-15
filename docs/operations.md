@@ -148,6 +148,10 @@ first boot so bastions can read the private
 After full convergence, bastions keep it only for private vault repository
 access at `/home/ansible/.ssh/grayhaven_vault_deploy_key`.
 
+The deployment SSH keypair is shared by workspace environments. Run this
+maintenance playbook from the active control bastion in each deployed
+environment that has existing bastions retaining the key.
+
 Place the staged files on bastion hosts before running the playbook:
 
 - `/home/ansible/new_ansible_deploy_key`
