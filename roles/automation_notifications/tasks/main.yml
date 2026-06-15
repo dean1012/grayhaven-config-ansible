@@ -18,7 +18,7 @@
 
 - name: Build local notification timestamp
   ansible.builtin.command:
-    cmd: date '+%Y-%m-%d %I:%M %p'
+    cmd: date '+%Y-%m-%d %I:%M %p %Z'
   environment:
     TZ: "{{ automation_notifications_timezone }}"
   register: automation_notifications_timestamp
