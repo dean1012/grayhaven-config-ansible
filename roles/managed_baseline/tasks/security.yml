@@ -45,9 +45,3 @@
     name: sshd
     state: started
     enabled: true
-
-- name: Enable and start fail2ban
-  ansible.builtin.service:
-    name: fail2ban
-    state: started
-    enabled: true

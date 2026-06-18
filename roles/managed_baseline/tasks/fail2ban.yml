@@ -1,0 +1,53 @@
+---
+- name: Derive fail2ban ignore source list
+  ansible.builtin.set_fact:
+    managed_baseline_fail2ban_ignore_sources: >-
+      {{
+        (
+          [
+            '127.0.0.1/8',
+            '::1'
+          ]
+          + (managed_baseline_bastion_private_sources | default([]))
+        )
+        | unique
+      }}
+    managed_baseline_fail2ban_nginx_http_auth_enabled: >-
+      {{
+        grayhaven_role == 'web'
+        and (managed_baseline_tls_mode | default('host')) == 'host'
+      }}
+
+- name: Install Grayhaven fail2ban jail policy
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.d/grayhaven.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [DEFAULT]
+      ignoreip = {{ managed_baseline_fail2ban_ignore_sources | join(' ') }}
+      bantime = 1h
+      findtime = 10m
+      maxretry = 5
+      banaction = firewallcmd-rich-rules
+      banaction_allports = firewallcmd-rich-rules
+
+      [sshd]
+      enabled = true
+      backend = systemd
+      mode = aggressive
+      port = ssh
+
+      [nginx-http-auth]
+      enabled = {{ managed_baseline_fail2ban_nginx_http_auth_enabled | ternary('true', 'false') }}
+      filter = nginx-http-auth
+      port = http,https
+      logpath = /var/log/nginx/*.error.log
+  notify: Restart fail2ban
+
+- name: Enable and start fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true

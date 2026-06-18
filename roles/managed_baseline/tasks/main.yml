@@ -48,6 +48,9 @@
 - name: Enforce software firewall
   ansible.builtin.import_tasks: firewall.yml
 
+- name: Enforce intrusion prevention jails
+  ansible.builtin.import_tasks: fail2ban.yml
+
 - name: Enforce DigitalOcean agents
   ansible.builtin.import_tasks: digitalocean.yml
 

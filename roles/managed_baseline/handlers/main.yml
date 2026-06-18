@@ -17,3 +17,8 @@
   register: managed_baseline_firewalld_reload
   vars:
     ansible_ssh_args: "{{ managed_baseline_firewalld_ssh_args }}"
+
+- name: Restart fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: restarted

@@ -119,6 +119,7 @@ role-specific configuration. The baseline covers:
 - root password hash and root SSH authorized-key removal;
 - `ansible` automation user, sudo policy, and SSH key state;
 - SSH daemon hardening for public-key-only access and idle-session keepalives;
+- fail2ban SSH intrusion-prevention jails;
 - managed SSH known-host entries on bastion;
 - SELinux enforcing mode;
 - common administration packages and unnecessary service removal;
@@ -196,6 +197,10 @@ Development hostnames require HTTP basic authentication. Each hosted domain
 defines its own `dev.htpasswd_entries` list in `vault/web.yml`, and Ansible
 writes a separate htpasswd file for each domain. If `dev.auth_realm` is
 omitted, the realm defaults to `<domain> Development Environment`.
+
+In host TLS mode, web hosts also enable a fail2ban `nginx-http-auth` jail for
+development basic-auth failures. The jail is disabled in load-balancer TLS mode
+until client IP handling is explicitly configured for that path.
 
 New hosted domains require both
 [environment DNS policy](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/policy.md#environment-dns-policy)
