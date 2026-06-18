@@ -122,6 +122,7 @@ role-specific configuration. The baseline covers:
 - fail2ban SSH intrusion-prevention jails;
 - managed SSH known-host entries on bastion;
 - SELinux enforcing mode;
+- persistent systemd journal storage;
 - common administration packages and unnecessary service removal;
 - the DigitalOcean metrics agent from the managed DigitalOcean package
   repository;
