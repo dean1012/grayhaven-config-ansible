@@ -176,6 +176,11 @@ without archiving it.
 Homedir archives are not encrypted by the archive process. They are included in
 the encrypted local restic backup set by default.
 
+Present managed users with `sudo: true` are enrolled in auditd root-command
+auditing. Generated audit rules target each user's audit login UID and record
+root command execution with the `grayhaven-root-command` audit key without
+broadly auditing Ansible automation or system daemon execution.
+
 [Back to top](#configuration-architecture)
 
 ## Web Hosting
