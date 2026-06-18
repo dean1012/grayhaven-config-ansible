@@ -2,10 +2,83 @@
 # Initial host certificates are issued only in host TLS mode. In load balancer
 # TLS mode, OpenTofu owns the certificate attached to the DigitalOcean load
 # balancer.
-- name: Issue or renew initial Let's Encrypt certificates
+- name: Ensure Certbot environment marker directory exists
+  ansible.builtin.file:
+    path: /etc/grayhaven/certbot
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: web_static_tls_mode == "host"
+
+- name: Check host TLS certificate files
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ item.cert_name }}/fullchain.pem"
+  loop: "{{ web_static_sites }}"
+  loop_control:
+    label: "{{ item.cert_name }}"
+  register: web_static_certificate_file_stats
+  when: web_static_tls_mode == "host"
+
+- name: Check Certbot environment markers
+  ansible.builtin.stat:
+    path: "/etc/grayhaven/certbot/{{ item.cert_name }}.environment"
+  loop: "{{ web_static_sites }}"
+  loop_control:
+    label: "{{ item.cert_name }}"
+  register: web_static_certificate_environment_marker_stats
+  when: web_static_tls_mode == "host"
+
+- name: Read Certbot environment markers
+  ansible.builtin.slurp:
+    src: "/etc/grayhaven/certbot/{{ item.item.cert_name }}.environment"
+  loop: "{{ web_static_certificate_environment_marker_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.cert_name }}"
+  register: web_static_certificate_environment_markers
+  when:
+    - web_static_tls_mode == "host"
+    - item.stat.exists
+
+- name: Build Certbot environment marker map
+  ansible.builtin.set_fact:
+    web_static_certificate_environment_marker_map: >-
+      {{
+        web_static_certificate_environment_marker_map | default({})
+        | combine({
+            item.item.cert_name: item.content | b64decode | trim
+          })
+      }}
+  loop: "{{ web_static_certificate_environment_markers.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.cert_name }}"
+  when:
+    - web_static_tls_mode == "host"
+    - not (item.skipped | default(false))
+
+- name: Derive host TLS certificates requiring issuance
+  ansible.builtin.set_fact:
+    web_static_certificates_requiring_issuance: >-
+      {{
+        web_static_certificates_requiring_issuance | default([])
+        + [item.item]
+      }}
+  loop: "{{ web_static_certificate_file_stats.results }}"
+  loop_control:
+    label: "{{ item.item.cert_name }}"
+  when:
+    - web_static_tls_mode == "host"
+    - >-
+      not item.stat.exists
+      or (
+        web_static_certificate_environment_marker_map
+        | default({})
+      ).get(item.item.cert_name) != web_static_certbot_environment
+
+- name: Issue or renew Let's Encrypt certificates
   ansible.builtin.command:
     argv: "{{ web_static_certbot_command }}"
-    creates: "/etc/letsencrypt/live/{{ item.cert_name }}/fullchain.pem"
+  changed_when: true
   vars:
     web_static_certbot_domains: "{{ [item.domain] + item.aliases + [item.dev_domain] }}"
     web_static_certbot_domain_args: >-
@@ -24,6 +97,7 @@
           '--agree-tos',
           '--email', web_static_certbot_email,
           '--cert-name', item.cert_name,
+          '--force-renewal',
           '--dns-digitalocean',
           '--dns-digitalocean-credentials', web_static_certbot_credentials_file,
           '--dns-digitalocean-propagation-seconds', '30'
@@ -31,11 +105,26 @@
         + (['--test-cert'] if web_static_certbot_environment == 'staging' else [])
         + web_static_certbot_domain_args
       }}
-  loop: "{{ web_static_sites }}"
+  loop: "{{ web_static_certificates_requiring_issuance | default([]) }}"
   loop_control:
     label: "{{ item.cert_name }}"
+  register: web_static_certbot_issuance
   notify: Reload nginx
   when: web_static_tls_mode == "host"
+
+- name: Record Certbot certificate environment markers
+  ansible.builtin.copy:
+    dest: "/etc/grayhaven/certbot/{{ item.item.cert_name }}.environment"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ web_static_certbot_environment }}\n"
+  loop: "{{ web_static_certbot_issuance.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.cert_name }}"
+  when:
+    - web_static_tls_mode == "host"
+    - item.rc == 0
 
 - name: Verify host TLS certificate files exist
   ansible.builtin.stat:
