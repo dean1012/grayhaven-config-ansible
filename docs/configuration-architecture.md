@@ -189,6 +189,12 @@ using the role-specific DigitalOcean DNS token from the vault. Certbot renewals
 are handled by the system timer installed by the Certbot package. A deploy hook
 reloads Nginx after certificate renewal.
 
+Ansible records which certificate environment last issued each host TLS
+certificate. If `certificate_environment` changes, Ansible reissues the
+certificate for the new environment. This should be changed deliberately and
+infrequently because production certificate issuance is rate limited by the
+certificate authority.
+
 Load balancer TLS mode configures web hosts as HTTP backends. Certbot renewal
 is disabled, local host certificate material is removed, and TLS is terminated
 by the DigitalOcean load balancer managed by OpenTofu.
