@@ -1,0 +1,27 @@
+---
+- name: Ensure persistent journald directory exists
+  ansible.builtin.file:
+    path: /var/log/journal
+    state: directory
+    owner: root
+    group: systemd-journal
+    mode: "02755"
+
+- name: Ensure Grayhaven journald configuration directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Persist systemd journal across boots
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/10-grayhaven-persistent.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Journal]
+      Storage=persistent
+  notify: Restart systemd-journald

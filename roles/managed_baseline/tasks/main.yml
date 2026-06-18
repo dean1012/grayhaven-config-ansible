@@ -39,6 +39,9 @@
 - name: Enforce host security controls
   ansible.builtin.import_tasks: security.yml
 
+- name: Enforce persistent system journal
+  ansible.builtin.import_tasks: journald.yml
+
 - name: Enforce DNS resolver configuration
   ansible.builtin.import_tasks: dns.yml
 
