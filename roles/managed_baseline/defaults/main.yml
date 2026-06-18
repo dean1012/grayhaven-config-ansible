@@ -18,6 +18,7 @@ managed_baseline_admin_packages:
   - vim
 
 managed_baseline_required_packages:
+  - audit
   - chrony
   - curl
   - fail2ban

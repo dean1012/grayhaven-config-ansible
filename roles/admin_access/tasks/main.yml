@@ -133,3 +133,6 @@
   loop: "{{ admin_access_absent_users }}"
   loop_control:
     label: "{{ item.username }}"
+
+- name: Enforce managed sudo user audit rules
+  ansible.builtin.import_tasks: audit.yml

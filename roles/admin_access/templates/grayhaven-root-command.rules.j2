@@ -1,0 +1,11 @@
+# Managed by Ansible.
+# Audit root command execution from managed sudo user login sessions.
+
+{% if admin_access_sudo_user_ids.results | length == 0 %}
+# No present managed sudo users are configured.
+{% else %}
+{% for result in admin_access_sudo_user_ids.results | sort(attribute='item.username') %}
+-a always,exit -F arch=b64 -S execve -F euid=0 -F auid={{ result.stdout }} -k grayhaven-root-command
+-a always,exit -F arch=b32 -S execve -F euid=0 -F auid={{ result.stdout }} -k grayhaven-root-command
+{% endfor %}
+{% endif %}

@@ -11,6 +11,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
+- [Root Command Audit Trail](#root-command-audit-trail)
 - [Infrastructure Policy Changes](#infrastructure-policy-changes)
 
 ## Manual Runner Invocation
@@ -192,6 +193,23 @@ ansible-playbook \
 
 After rotation, verify the active control bastion can SSH to managed hosts as
 the `ansible` user and run a full convergence pass.
+
+[Back to top](#operations)
+
+## Root Command Audit Trail
+
+Managed sudo-capable users are enrolled in auditd root-command auditing. This
+captures command execution for `sudo`, `sudo su -`, and `su -` root shell
+sessions without capturing command output.
+
+To inspect the audit trail locally, run:
+
+```bash
+sudo ausearch -k grayhaven-root-command -i
+```
+
+Avoid placing secrets directly on command lines. If a secret is accidentally
+exposed through command arguments, rotate the affected secret.
 
 [Back to top](#operations)
 

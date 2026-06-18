@@ -1,0 +1,37 @@
+---
+- name: Derive present sudo managed users
+  ansible.builtin.set_fact:
+    admin_access_present_sudo_users: >-
+      {{
+        admin_access_present_users
+        | selectattr('sudo', 'defined')
+        | selectattr('sudo')
+        | list
+      }}
+
+- name: Query present sudo managed user IDs
+  ansible.builtin.command:
+    argv:
+      - id
+      - -u
+      - "{{ item.username }}"
+  changed_when: false
+  register: admin_access_sudo_user_ids
+  loop: "{{ admin_access_present_sudo_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+
+- name: Enable and start audit daemon
+  ansible.builtin.service:
+    name: auditd
+    state: started
+    enabled: true
+
+- name: Install managed sudo user root-command audit rules
+  ansible.builtin.template:
+    src: grayhaven-root-command.rules.j2
+    dest: /etc/audit/rules.d/50-grayhaven-root-command.rules
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Load audit rules
