@@ -78,7 +78,11 @@ The log set is intentionally targeted:
 - Certbot logs;
 - systemd journal entries.
 
-Cloud-init logs are excluded.
+Cloud-init logs are excluded. Log lines pass through a defensive redaction
+stage for common secret-like key names before leaving the host, but redaction is
+a safeguard, not a handling procedure. Administrators should still avoid placing
+secrets directly on command lines or in log output. If a secret is exposed,
+rotate it immediately.
 
 [Back to top](#observability-architecture)
 
@@ -93,6 +97,8 @@ Managed alerts cover the same operational checks surfaced by the Grafana
 dashboards where alerting is useful, including host metrics, service state,
 backup freshness, Ansible convergence, and web availability checks. Alert rules
 send to the configured Grafana IRM contact point.
+
+[Back to top](#observability-architecture)
 
 ## Operational Boundaries
 
