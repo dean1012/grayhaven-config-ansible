@@ -87,6 +87,29 @@ class GrafanaClient:
     def alert_rules(self) -> list[dict[str, Any]]:
         return self.request("GET", "/api/v1/provisioning/alert-rules")
 
+    def rule_group(self, folder_uid: str, group: str) -> dict[str, Any]:
+        encoded_folder_uid = urllib.parse.quote(folder_uid, safe="")
+        encoded_group = urllib.parse.quote(group, safe="")
+        return self.request(
+            "GET",
+            f"/api/v1/provisioning/folder/{encoded_folder_uid}/rule-groups/{encoded_group}",
+        )
+
+    def update_rule_group_interval(self, folder_uid: str, group: str, interval_seconds: int) -> bool:
+        current = self.rule_group(folder_uid, group)
+        if int(current.get("interval", 0)) == interval_seconds:
+            return False
+
+        current["interval"] = interval_seconds
+        encoded_folder_uid = urllib.parse.quote(folder_uid, safe="")
+        encoded_group = urllib.parse.quote(group, safe="")
+        self.request(
+            "PUT",
+            f"/api/v1/provisioning/folder/{encoded_folder_uid}/rule-groups/{encoded_group}",
+            current,
+        )
+        return True
+
     def create_rule(self, rule: dict[str, Any]) -> None:
         self.request("POST", "/api/v1/provisioning/alert-rules", rule, expected=(200, 201))
 
@@ -108,6 +131,25 @@ def promql_string(value: str) -> str:
 
 def domain_regex(values: list[str]) -> str:
     return "|".join(re.escape(value) for value in values)
+
+
+def duration_seconds(value: str | int) -> int:
+    if isinstance(value, int):
+        return value
+
+    match = re.fullmatch(r"(\d+)([smhd])", value)
+    if not match:
+        raise GrafanaError(f"unsupported duration: {value!r}")
+
+    amount = int(match.group(1))
+    unit = match.group(2)
+    multipliers = {
+        "s": 1,
+        "m": 60,
+        "h": 3600,
+        "d": 86400,
+    }
+    return amount * multipliers[unit]
 
 
 def query_data(ref_id: str, datasource_uid: str, expression: str) -> dict[str, Any]:
@@ -615,6 +657,11 @@ def sync(config: dict[str, Any]) -> tuple[int, int, int]:
     for uid in sorted(set(existing) - set(desired)):
         client.delete_rule(uid)
         deleted += 1
+
+    if desired:
+        interval_seconds = duration_seconds(config["grafana"]["evaluation_interval"])
+        if client.update_rule_group_interval(folder_uid, config["grafana"]["evaluation_group"], interval_seconds):
+            updated += 1
 
     return created, updated, deleted
 
