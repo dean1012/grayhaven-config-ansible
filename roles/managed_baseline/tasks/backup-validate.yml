@@ -2,10 +2,36 @@
 - name: Validate backup variables
   ansible.builtin.assert:
     that:
-      - restic_password is defined
-      - restic_password is string
-      - restic_password | length > 0
+      - managed_baseline_restic_password_value is string
+      - managed_baseline_restic_password_value | length > 0
       - backup.schedule | default('daily') == 'daily'
-    fail_msg: "Local backups require restic_password and support only a daily schedule."
+      - managed_baseline_backup_remote_provider in ["", "gcs"]
+      - not (managed_baseline_backup_remote_enabled | bool) or managed_baseline_backup_remote_provider == "gcs"
+      - not (managed_baseline_backup_remote_enabled | bool) or backup.repositories.remote.project_id is defined
+      - not (managed_baseline_backup_remote_enabled | bool) or backup.repositories.remote.project_id is string
+      - not (managed_baseline_backup_remote_enabled | bool) or backup.repositories.remote.project_id | length > 0
+      - not (managed_baseline_backup_remote_enabled | bool) or managed_baseline_restic_gcs_credentials_json is string
+      - not (managed_baseline_backup_remote_enabled | bool) or managed_baseline_restic_gcs_credentials_json | length > 0
+      - >-
+        not (managed_baseline_backup_remote_enabled | bool)
+        or managed_baseline_restic_gcs_credentials_json | from_json is mapping
+    fail_msg: >-
+      Backups require a restic encryption password, support only a daily
+      schedule, and only support optional GCS remote repositories.
     quiet: true
+  vars:
+    managed_baseline_restic_config: "{{ restic | default({}) }}"
+    managed_baseline_restic_remotes: "{{ managed_baseline_restic_config.remotes | default({}) }}"
+    managed_baseline_restic_gcs_config: "{{ managed_baseline_restic_remotes.gcs | default({}) }}"
+    managed_baseline_restic_password_value: >-
+      {{
+        managed_baseline_restic_config.encryption_password
+        | default(restic_password | default(''))
+      }}
+    managed_baseline_restic_gcs_credentials_json: >-
+      {{ managed_baseline_restic_gcs_config.credentials_json | default('') }}
+    managed_baseline_backup_remote_config: "{{ backup.repositories.remote | default({}) }}"
+    managed_baseline_backup_remote_provider: >-
+      {{ managed_baseline_backup_remote_config.provider | default('') | lower }}
+    managed_baseline_backup_remote_enabled: "{{ managed_baseline_backup_remote_provider | length > 0 }}"
   no_log: true

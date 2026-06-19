@@ -11,6 +11,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
+- [GCS Restic Bucket Cleanup](#gcs-restic-bucket-cleanup)
 - [Root Command Audit Trail](#root-command-audit-trail)
 - [Operator Tmux Console](#operator-tmux-console)
 - [Grafana Cloud Observability](#grafana-cloud-observability)
@@ -195,6 +196,48 @@ ansible-playbook \
 
 After rotation, verify the active control bastion can SSH to managed hosts as
 the `ansible` user and run a full convergence pass.
+
+[Back to top](#operations)
+
+## GCS Restic Bucket Cleanup
+
+This maintenance playbook compares live DigitalOcean inventory with
+Grayhaven-managed GCS restic buckets, then reports any bucket whose host is no
+longer present in inventory.
+
+The playbook is destructive when `confirm_delete_remote_backup_buckets=true` is
+set. Review the dry-run output carefully before deleting anything.
+
+Run the dry run from the active control bastion:
+
+```bash
+ansible-playbook \
+  --inventory localhost, \
+  playbooks/cleanup-gcs-restic-buckets.yml \
+  --vault-password-file /etc/grayhaven/ansible/secrets/vault-password \
+  --extra-vars @/home/ansible/grayhaven-vault/config.yml \
+  --extra-vars @/home/ansible/grayhaven-vault/vault/common.yml \
+  --extra-vars @/home/ansible/grayhaven-vault/vault/bastion.yml \
+  --extra-vars managed_baseline_environment=prod
+```
+
+If the dry run lists only buckets that should be deleted, rerun with explicit
+confirmation:
+
+```bash
+ansible-playbook \
+  --inventory localhost, \
+  playbooks/cleanup-gcs-restic-buckets.yml \
+  --vault-password-file /etc/grayhaven/ansible/secrets/vault-password \
+  --extra-vars @/home/ansible/grayhaven-vault/config.yml \
+  --extra-vars @/home/ansible/grayhaven-vault/vault/common.yml \
+  --extra-vars @/home/ansible/grayhaven-vault/vault/bastion.yml \
+  --extra-vars managed_baseline_environment=prod \
+  --extra-vars confirm_delete_remote_backup_buckets=true
+```
+
+Only buckets labeled as Ansible-managed restic buckets for the configured
+client and environment are eligible for deletion.
 
 [Back to top](#operations)
 
