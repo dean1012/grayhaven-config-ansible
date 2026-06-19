@@ -1,0 +1,289 @@
+// Managed by Ansible. Local changes will be overwritten.
+
+logging {
+  level = "info"
+}
+
+prometheus.exporter.unix "node" {
+  include_exporter_metrics = true
+  disable_collectors       = ["mdadm"]
+  enable_collectors        = ["systemd"]
+
+  systemd {
+    unit_include = "(sshd|firewalld|fail2ban|nginx|grayhaven-restic-backup|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
+    start_time   = true
+  }
+
+  textfile {
+    directory = {{ observability_textfile_dir | to_json }}
+  }
+}
+
+prometheus.scrape "node" {
+  targets         = prometheus.exporter.unix.node.targets
+  scrape_interval = "60s"
+  forward_to      = [prometheus.relabel.grayhaven.receiver]
+}
+
+prometheus.exporter.blackbox "http" {
+  config = <<EOT
+modules:
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4
+      valid_status_codes:
+        - 200
+  http_401:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4
+      valid_status_codes:
+        - 401
+  http_redirect_https:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4
+      follow_redirects: false
+      valid_status_codes:
+        - 301
+        - 302
+        - 307
+        - 308
+      fail_if_header_not_matches:
+        - header: Location
+          regexp: '^https://'
+EOT
+
+{% for site in observability_web_sites %}
+{% set site_id = site.root_name | regex_replace('[^A-Za-z0-9_]', '_') %}
+  target {
+    name    = {{ (site_id ~ "_apex_200") | to_json }}
+    address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
+    module  = "http_2xx"
+    labels  = {
+      check       = "https_200",
+      client      = {{ observability_client | to_json }},
+      domain      = {{ site.domain | to_json }},
+      environment = {{ managed_baseline_environment | to_json }},
+      host        = {{ inventory_hostname | to_json }},
+      project     = {{ observability_project | to_json }},
+      role        = {{ observability_role | to_json }},
+    }
+  }
+
+  target {
+    name    = {{ (site_id ~ "_www_200") | to_json }}
+    address = {{ ("https://" ~ site.aliases[0] ~ "/") | to_json }}
+    module  = "http_2xx"
+    labels  = {
+      check       = "https_200",
+      client      = {{ observability_client | to_json }},
+      domain      = {{ site.aliases[0] | to_json }},
+      environment = {{ managed_baseline_environment | to_json }},
+      host        = {{ inventory_hostname | to_json }},
+      project     = {{ observability_project | to_json }},
+      role        = {{ observability_role | to_json }},
+    }
+  }
+
+  target {
+    name    = {{ (site_id ~ "_dev_401") | to_json }}
+    address = {{ ("https://" ~ site.dev_domain ~ "/") | to_json }}
+    module  = "http_401"
+    labels  = {
+      check       = "dev_basic_auth_401",
+      client      = {{ observability_client | to_json }},
+      domain      = {{ site.dev_domain | to_json }},
+      environment = {{ managed_baseline_environment | to_json }},
+      host        = {{ inventory_hostname | to_json }},
+      project     = {{ observability_project | to_json }},
+      role        = {{ observability_role | to_json }},
+    }
+  }
+
+  target {
+    name    = {{ (site_id ~ "_cert") | to_json }}
+    address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
+    module  = "http_2xx"
+    labels  = {
+      check       = "ssl_certificate",
+      client      = {{ observability_client | to_json }},
+      domain      = {{ site.domain | to_json }},
+      environment = {{ managed_baseline_environment | to_json }},
+      host        = {{ inventory_hostname | to_json }},
+      project     = {{ observability_project | to_json }},
+      role        = {{ observability_role | to_json }},
+    }
+  }
+
+{% for redirect_domain in [site.domain, site.aliases[0], site.dev_domain] %}
+  target {
+    name    = {{ (site_id ~ "_redirect_" ~ loop.index) | to_json }}
+    address = {{ ("http://" ~ redirect_domain ~ "/") | to_json }}
+    module  = "http_redirect_https"
+    labels  = {
+      check       = "http_https_redirect",
+      client      = {{ observability_client | to_json }},
+      domain      = {{ redirect_domain | to_json }},
+      environment = {{ managed_baseline_environment | to_json }},
+      host        = {{ inventory_hostname | to_json }},
+      project     = {{ observability_project | to_json }},
+      role        = {{ observability_role | to_json }},
+    }
+  }
+
+{% endfor %}
+{% endfor %}
+}
+
+prometheus.scrape "blackbox" {
+  targets         = prometheus.exporter.blackbox.http.targets
+  scrape_interval = "60s"
+  forward_to      = [prometheus.relabel.grayhaven.receiver]
+}
+
+prometheus.relabel "grayhaven" {
+  forward_to = [prometheus.remote_write.grafana.receiver]
+
+  rule {
+    target_label = "client"
+    replacement  = {{ observability_client | to_json }}
+  }
+
+  rule {
+    target_label = "environment"
+    replacement  = {{ managed_baseline_environment | to_json }}
+  }
+
+  rule {
+    target_label = "host"
+    replacement  = {{ inventory_hostname | to_json }}
+  }
+
+  rule {
+    target_label = "project"
+    replacement  = {{ observability_project | to_json }}
+  }
+
+  rule {
+    target_label = "role"
+    replacement  = {{ observability_role | to_json }}
+  }
+
+  rule {
+    target_label = "configured_by"
+    replacement  = "ansible"
+  }
+}
+
+prometheus.remote_write "grafana" {
+  endpoint {
+    url = {{ observability_grafana_credentials.prometheus.remote_write_url | to_json }}
+
+    basic_auth {
+      username      = {{ observability_grafana_credentials.prometheus.username | string | to_json }}
+      password_file = {{ observability_alloy_token_file | to_json }}
+    }
+  }
+}
+
+{% if observability_logs_enabled %}
+{% for site in observability_web_sites %}
+{% set site_id = site.root_name | regex_replace('[^A-Za-z0-9_]', '_') %}
+{% for log_name in ['prod.access', 'prod.error', 'dev.access', 'dev.error'] %}
+local.file_match "nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]', '_') }}" {
+  path_targets = [{
+    "__path__"   = {{ ("/var/log/nginx/" ~ site.root_name ~ "." ~ log_name ~ ".log") | to_json }},
+    "client"     = {{ observability_client | to_json }},
+    "domain"     = {{ site.domain | to_json }},
+    "environment" = {{ managed_baseline_environment | to_json }},
+    "host"       = {{ inventory_hostname | to_json }},
+    "job"        = "nginx_{{ 'access' if 'access' in log_name else 'error' }}",
+    "project"    = {{ observability_project | to_json }},
+    "role"       = {{ observability_role | to_json }},
+    "site"       = "{{ 'dev' if log_name.startswith('dev') else 'prod' }}",
+  }]
+}
+
+loki.source.file "nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]', '_') }}" {
+  targets    = local.file_match.nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]', '_') }}.targets
+  forward_to = [loki.process.grayhaven.receiver]
+}
+
+{% endfor %}
+{% endfor %}
+local.file_match "audit" {
+  path_targets = [{
+    "__path__"   = "/var/log/audit/audit.log",
+    "client"     = {{ observability_client | to_json }},
+    "environment" = {{ managed_baseline_environment | to_json }},
+    "host"       = {{ inventory_hostname | to_json }},
+    "job"        = "audit",
+    "project"    = {{ observability_project | to_json }},
+    "role"       = {{ observability_role | to_json }},
+  }]
+}
+
+loki.source.file "audit" {
+  targets    = local.file_match.audit.targets
+  forward_to = [loki.process.grayhaven.receiver]
+}
+
+local.file_match "certbot" {
+  path_targets = [{
+    "__path__"   = "/var/log/letsencrypt/letsencrypt.log",
+    "client"     = {{ observability_client | to_json }},
+    "environment" = {{ managed_baseline_environment | to_json }},
+    "host"       = {{ inventory_hostname | to_json }},
+    "job"        = "certbot",
+    "project"    = {{ observability_project | to_json }},
+    "role"       = {{ observability_role | to_json }},
+  }]
+}
+
+loki.source.file "certbot" {
+  targets    = local.file_match.certbot.targets
+  forward_to = [loki.process.grayhaven.receiver]
+}
+
+loki.source.journal "system" {
+  max_age    = "24h"
+  labels     = {
+    "client"      = {{ observability_client | to_json }},
+    "environment" = {{ managed_baseline_environment | to_json }},
+    "host"        = {{ inventory_hostname | to_json }},
+    "job"         = "systemd_journal",
+    "project"     = {{ observability_project | to_json }},
+    "role"        = {{ observability_role | to_json }},
+  }
+  forward_to = [loki.process.grayhaven.receiver]
+}
+
+loki.process "grayhaven" {
+  stage.drop {
+    expression = ".*cloud-init.*"
+  }
+
+  stage.replace {
+    expression = "(?i)(?:password|passwd|token|secret|private_key)\\s*[:=]\\s*(\\S+)"
+    replace    = "<redacted>"
+  }
+
+  forward_to = [loki.write.grafana.receiver]
+}
+
+loki.write "grafana" {
+  endpoint {
+    url = {{ observability_grafana_credentials.loki.push_url | to_json }}
+
+    basic_auth {
+      username      = {{ observability_grafana_credentials.loki.username | string | to_json }}
+      password_file = {{ observability_alloy_token_file | to_json }}
+    }
+  }
+}
+{% endif %}

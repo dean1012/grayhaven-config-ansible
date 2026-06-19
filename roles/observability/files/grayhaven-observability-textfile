@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Generate Grayhaven-specific Prometheus textfile metrics."""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import tempfile
+from typing import Any
+
+CONFIG_PATH = pathlib.Path("/etc/grayhaven/observability/textfile-metrics.json")
+TEXTFILE_DIR = pathlib.Path("/var/lib/grayhaven/observability/textfile")
+OUTPUT_PATH = TEXTFILE_DIR / "grayhaven.prom"
+
+
+def label_value(value: object) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def labels(values: dict[str, object]) -> str:
+    rendered = ",".join(f'{key}="{label_value(value)}"' for key, value in sorted(values.items()))
+    return f"{{{rendered}}}"
+
+
+def line(name: str, metric_labels: dict[str, object], value: object) -> str:
+    return f"{name}{labels(metric_labels)} {value}"
+
+
+def host_labels(host: dict[str, Any]) -> dict[str, object]:
+    return {
+        "client": host["client"],
+        "environment": host["environment"],
+        "host": host["fqdn"],
+        "project": host["project"],
+        "role": host["role"],
+    }
+
+
+def render(config: dict[str, Any]) -> str:
+    current_host = config["host"]
+    output = [
+        "# HELP grayhaven_host_info Grayhaven managed host inventory metadata.",
+        "# TYPE grayhaven_host_info gauge",
+    ]
+
+    if current_host.get("control_node"):
+        for host in config.get("hosts", []):
+            metric_labels = host_labels(host)
+            metric_labels["control_node"] = str(bool(host.get("control_node"))).lower()
+            metric_labels["short_hostname"] = host["short_hostname"]
+            output.append(line("grayhaven_host_info", metric_labels, 1))
+
+    output.extend(
+        [
+            "# HELP grayhaven_control_node_info Grayhaven active Ansible control node marker.",
+            "# TYPE grayhaven_control_node_info gauge",
+        ]
+    )
+
+    if current_host.get("control_node"):
+        metric_labels = host_labels(
+            {
+                "client": current_host["client"],
+                "environment": current_host["environment"],
+                "fqdn": current_host["fqdn"],
+                "project": current_host["project"],
+                "role": current_host["role"],
+            }
+        )
+        metric_labels["short_hostname"] = current_host["short_hostname"]
+        output.append(line("grayhaven_control_node_info", metric_labels, 1))
+
+    return "\n".join(output) + "\n"
+
+
+def atomic_write(path: pathlib.Path, content: str) -> None:
+    TEXTFILE_DIR.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            tmp_file.write(content)
+        os.chmod(tmp_name, 0o644)
+        os.replace(tmp_name, path)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+
+
+def main() -> int:
+    with CONFIG_PATH.open(encoding="utf-8") as config_file:
+        config = json.load(config_file)
+
+    atomic_write(OUTPUT_PATH, render(config))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

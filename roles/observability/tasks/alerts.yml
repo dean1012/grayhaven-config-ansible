@@ -1,0 +1,77 @@
+---
+- name: Install Grafana Cloud alert sync helper
+  ansible.builtin.copy:
+    src: grayhaven-grafana-alert-sync
+    dest: /usr/local/sbin/grayhaven-grafana-alert-sync
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node
+
+- name: Store Grafana Cloud alert sync configuration
+  ansible.builtin.copy:
+    dest: "{{ observability_alert_sync_config_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    content: "{{ observability_alert_sync_config | to_nice_json }}\n"
+  vars:
+    observability_alerting_config: "{{ observability_grafana_credentials.alerting | default({}) }}"
+    observability_alert_sync_config:
+      grafana:
+        stack_url: "{{ observability_grafana_credentials.stack_url }}"
+        api_token: "{{ observability_alerting_config.api_token }}"
+        folder: >-
+          {{
+            observability_alerting_config.folder
+            | default(observability_grafana_default_folder)
+          }}
+        evaluation_group: >-
+          {{
+            observability_alerting_config.evaluation_group
+            | default(observability_grafana_default_evaluation_group)
+          }}
+        evaluation_interval: >-
+          {{
+            observability_alerting_config.evaluation_interval
+            | default(observability_grafana_default_evaluation_interval)
+          }}
+        contact_point: >-
+          {{
+            observability_alerting_config.contact_point
+            | default(observability_grafana_default_contact_point)
+          }}
+        prometheus_datasource_name: "{{ observability_grafana_credentials.prometheus.datasource_name }}"
+      labels:
+        client: "{{ observability_client }}"
+        environment: "{{ managed_baseline_environment }}"
+      thresholds:
+        cpu_percent: "{{ observability_cpu_warning_percent }}"
+        memory_percent: "{{ observability_memory_warning_percent }}"
+        filesystem_percent: "{{ observability_filesystem_warning_percent }}"
+        swap_percent: "{{ observability_swap_warning_percent }}"
+        restic_stale_seconds: "{{ observability_restic_stale_seconds }}"
+      tls_mode: "{{ managed_baseline_tls_mode }}"
+      hosts: "{{ observability_hosts }}"
+      sites: "{{ observability_web_sites }}"
+      service_units:
+        common: "{{ observability_service_units_common }}"
+        web: "{{ observability_service_units_web }}"
+        control_node: "{{ observability_service_units_control_node }}"
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node
+  no_log: true
+
+- name: Sync Grafana Cloud managed alert rules
+  ansible.builtin.command:
+    cmd: >-
+      /usr/local/sbin/grayhaven-grafana-alert-sync
+      --config {{ observability_alert_sync_config_file | quote }}
+  register: observability_alert_sync
+  changed_when: "'changed=true' in observability_alert_sync.stdout"
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node

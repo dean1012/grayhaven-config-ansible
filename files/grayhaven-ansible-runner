@@ -8,6 +8,7 @@ VAULT_PASSWORD_FILE="/etc/grayhaven/ansible/secrets/vault-password"
 RUNNER_VARS="/run/grayhaven-ansible-runner-vars.yml"
 RUNNER_SECRET_ENV="/run/grayhaven-ansible-runner-secrets.env"
 RUNNER_PLAYBOOK_LOG="/run/grayhaven-ansible-runner-playbook.log"
+OBSERVABILITY_TEXTFILE_DIR="/var/lib/grayhaven/observability/textfile"
 ANSIBLE_HOME="/home/ansible"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
@@ -69,6 +70,32 @@ require_env() {
 
 cleanup_runtime_files() {
   rm -f "$RUNNER_SECRET_ENV" "$RUNNER_VARS"
+}
+
+write_convergence_metric() {
+  local success_value="$1"
+  local host="${GRAYHAVEN_HOSTNAME:-$(hostname -f)}"
+  local environment="${GRAYHAVEN_ENVIRONMENT:-unknown}"
+  local tmp_file
+
+  install -d -o root -g root -m 0755 "$OBSERVABILITY_TEXTFILE_DIR"
+  tmp_file="$(mktemp "${OBSERVABILITY_TEXTFILE_DIR}/ansible-convergence.XXXXXX")"
+  {
+    printf '# HELP grayhaven_ansible_convergence_last_success Last Grayhaven Ansible convergence success status.\n'
+    printf '# TYPE grayhaven_ansible_convergence_last_success gauge\n'
+    printf 'grayhaven_ansible_convergence_last_success{host="%s",environment="%s"} %s\n' \
+      "$host" \
+      "$environment" \
+      "$success_value"
+    printf '# HELP grayhaven_ansible_convergence_last_timestamp_seconds Last Grayhaven Ansible convergence completion timestamp.\n'
+    printf '# TYPE grayhaven_ansible_convergence_last_timestamp_seconds gauge\n'
+    printf 'grayhaven_ansible_convergence_last_timestamp_seconds{host="%s",environment="%s"} %s\n' \
+      "$host" \
+      "$environment" \
+      "$(date +%s)"
+  } > "$tmp_file"
+  chmod 0644 "$tmp_file"
+  mv "$tmp_file" "${OBSERVABILITY_TEXTFILE_DIR}/ansible-convergence.prom"
 }
 
 ###############################################################################
@@ -168,6 +195,7 @@ on_error() {
   local status="$?"
 
   set +e
+  write_convergence_metric 0 || log "Convergence failure metric could not be written."
   send_failure_notification "$status"
   exit "$status"
 }
@@ -528,6 +556,7 @@ main() {
   while true; do
     rm -f "$PENDING_FILE"
     run_once
+    write_convergence_metric 1 || log "Convergence success metric could not be written."
 
     if [[ ! -f "$PENDING_FILE" ]]; then
       break

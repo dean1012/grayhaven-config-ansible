@@ -41,6 +41,8 @@ or malformed. These checks cover areas such as:
 - host TLS DigitalOcean DNS token availability;
 - backup schedule and restic password availability;
 - Discord notification webhook values;
+- Grafana Cloud production-only enablement, required host tags, and required
+  credentials;
 - maintenance playbook inputs.
 
 These checks are intentionally close to the tasks that rely on the values so
@@ -56,6 +58,10 @@ Role and environment conditionals keep changes scoped to the right hosts:
 - runner and poller timers are enabled only on the active control bastion;
 - web hosting tasks run only on web hosts;
 - load-balancer TLS mode removes local web HTTPS origin exposure;
+- Grafana Cloud observability tasks run only on hosts carrying the expected
+  production observability tags;
+- Grafana Cloud alert sync manages only alert rules labeled
+  `configured_by=ansible`;
 - manual DigitalOcean inventory use fails closed if `GRAYHAVEN_ENVIRONMENT` is
   unset.
 

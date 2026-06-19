@@ -1,0 +1,107 @@
+---
+- name: Derive current host observability labels
+  ansible.builtin.set_fact:
+    observability_client: "{{ observability_client_tag | regex_replace('^client-', '') }}"
+    observability_project: "{{ observability_project_tag | regex_replace('^project-', '') }}"
+    observability_role: "{{ grayhaven_role }}"
+    observability_short_hostname: "{{ inventory_hostname.split('.')[0] }}"
+  vars:
+    observability_client_tag: >-
+      {{
+        observability_host_tags
+        | select('match', '^client-')
+        | first
+        | default('client-grayhaven')
+      }}
+    observability_project_tag: >-
+      {{
+        observability_host_tags
+        | select('match', '^project-')
+        | first
+        | default('project-unknown')
+      }}
+
+- name: Initialize observability host metadata
+  ansible.builtin.set_fact:
+    observability_hosts: []
+
+- name: Build observability host metadata
+  ansible.builtin.set_fact:
+    observability_hosts: "{{ observability_hosts + [observability_host_entry] }}"
+  loop: "{{ ansible_play_hosts_all }}"
+  vars:
+    observability_loop_tags: "{{ hostvars[item].do_tags | default([]) }}"
+    observability_loop_client_tag: >-
+      {{
+        observability_loop_tags
+        | select('match', '^client-')
+        | first
+        | default('client-grayhaven')
+      }}
+    observability_loop_project_tag: >-
+      {{
+        observability_loop_tags
+        | select('match', '^project-')
+        | first
+        | default('project-unknown')
+      }}
+    observability_loop_role: >-
+      {{
+        'bastion'
+        if 'role-bastion' in observability_loop_tags
+        else 'web'
+        if 'role-web' in observability_loop_tags
+        else 'unknown'
+      }}
+    observability_host_entry:
+      fqdn: "{{ hostvars[item].inventory_hostname | default(item) }}"
+      short_hostname: "{{ (hostvars[item].inventory_hostname | default(item)).split('.')[0] }}"
+      role: "{{ observability_loop_role }}"
+      project: "{{ observability_loop_project_tag | regex_replace('^project-', '') }}"
+      client: "{{ observability_loop_client_tag | regex_replace('^client-', '') }}"
+      environment: "{{ managed_baseline_environment }}"
+      control_node: "{{ 'control-node' in observability_loop_tags }}"
+  when: observability_loop_role != "unknown"
+
+- name: Initialize observability site metadata
+  ansible.builtin.set_fact:
+    observability_web_sites: []
+
+- name: Build observability site metadata
+  ansible.builtin.set_fact:
+    observability_web_sites: "{{ observability_web_sites + [observability_site_entry] }}"
+  loop: "{{ hosted_domains | default([]) }}"
+  loop_control:
+    label: "{{ item.domain | default('undefined-domain') }}"
+  vars:
+    observability_root_domain: "{{ item.domain | trim }}"
+    observability_site_domain: >-
+      {{
+        observability_root_domain
+        if managed_baseline_environment == 'prod'
+        else 'staging.' ~ observability_root_domain
+      }}
+    observability_site_www_domain: >-
+      {{
+        'www.' ~ observability_root_domain
+        if managed_baseline_environment == 'prod'
+        else 'www.staging.' ~ observability_root_domain
+      }}
+    observability_site_dev_domain: >-
+      {{
+        'dev.' ~ observability_root_domain
+        if managed_baseline_environment == 'prod'
+        else 'dev.staging.' ~ observability_root_domain
+      }}
+    observability_site_entry:
+      root_name: "{{ observability_root_domain }}"
+      domain: "{{ observability_site_domain }}"
+      aliases:
+        - "{{ observability_site_www_domain }}"
+      dev_domain: "{{ observability_site_dev_domain }}"
+      cert_name: >-
+        {{
+          observability_root_domain
+          if managed_baseline_environment == 'prod'
+          else 'staging.' ~ observability_root_domain
+        }}

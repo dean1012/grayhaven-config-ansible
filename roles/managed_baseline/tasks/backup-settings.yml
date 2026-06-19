@@ -17,6 +17,7 @@
         [
           '/home/ansible/grayhaven-config-ansible/.git',
           '/home/ansible/grayhaven-vault/.git',
+          '/var/lib/grayhaven/observability',
           '/var/log/journal',
           '/var/log/audit',
           '/var/log/dnf*',

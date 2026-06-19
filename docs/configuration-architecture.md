@@ -14,6 +14,7 @@ full-playbook convergence.
 - [Web Hosting](#web-hosting)
 - [Firewalld Policy](#firewalld-policy)
 - [Backups](#backups)
+- [Observability](#observability)
 - [Access Model](#access-model)
 
 ## Bootstrap Phase
@@ -311,6 +312,23 @@ disaster recovery.
 Operational backup procedures should include regular offsite transfer of local
 backup data and regular restore testing. Remote backup automation is not
 implemented in this repository at this time.
+
+[Back to top](#configuration-architecture)
+
+## Observability
+
+Production hosts can optionally publish metrics, selected logs, and managed
+Grafana Cloud alert rules. Observability is tag-driven and configured through
+vault values so Ansible can combine live inventory, host role data, and runtime
+service state during convergence.
+
+Grafana Cloud integration is supported only for the `prod` environment. If it
+is enabled elsewhere, convergence fails before installing or syncing
+observability components.
+
+The [observability architecture](observability-architecture.md) documentation
+describes the metrics, logs, alert ownership boundary, and production-only
+behavior.
 
 [Back to top](#configuration-architecture)
 

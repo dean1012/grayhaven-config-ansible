@@ -37,6 +37,8 @@ on repository-change poller events, or by manual invocation.
   aliases.
 - Send operational Discord notifications for convergence events and server
   reboots.
+- Optionally publish production metrics, selected logs, and managed alert rules
+  to Grafana Cloud.
 - Serve configured static placeholders for hosted domains while dedicated
   website repositories are being prepared.
 - Manage Nginx, host TLS certificates, load-balancer backend behavior, dev
@@ -90,6 +92,7 @@ for prerequisites, commands, and validation steps.
 ## Documentation
 
 - [Configuration Architecture](docs/configuration-architecture.md)
+- [Observability Architecture](docs/observability-architecture.md)
 - [Operator Tmux Architecture](docs/operator-tmux-architecture.md)
 - [Operations](docs/operations.md)
 - [Validation & Safety Checks](docs/validation-safety.md)
