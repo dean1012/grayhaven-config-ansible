@@ -25,6 +25,7 @@ prometheus.scrape "node" {
   forward_to      = [prometheus.relabel.grayhaven.receiver]
 }
 
+{% if grayhaven_role == "web" and observability_web_sites | length > 0 %}
 prometheus.exporter.blackbox "http" {
   config = <<EOT
 modules:
@@ -145,6 +146,7 @@ prometheus.scrape "blackbox" {
   scrape_interval = "60s"
   forward_to      = [prometheus.relabel.grayhaven.receiver]
 }
+{% endif %}
 
 prometheus.relabel "grayhaven" {
   forward_to = [prometheus.remote_write.grafana.receiver]
