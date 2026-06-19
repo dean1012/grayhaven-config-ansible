@@ -26,7 +26,7 @@ then start the runner:
 sudo systemctl start grayhaven-ansible-runner.service
 ```
 
-The runner refreshes the public configuration checkout and private vault
+The runner refreshes the public configuration checkout and `grayhaven-vault`
 checkout, loads vault values, refreshes live DigitalOcean inventory, prepares
 SSH known hosts, and runs `playbooks/site.yml`.
 
@@ -100,7 +100,7 @@ Discord returns HTTP `204` when the webhook accepts the notification.
 
 Vault password rotation has three coordinated parts:
 
-1. Rekey the encrypted files in the private vault repository for the target
+1. Rekey the encrypted files in `grayhaven-vault` for the target
    environment branch by following the
    [vault password rotation documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#vault-password-rotation)
    in the
@@ -147,9 +147,8 @@ sudo journalctl -u grayhaven-ansible-runner.service
 
 Rotate the vault deployment SSH keypair with
 `playbooks/rotate-vault-deploy-key.yml`. OpenTofu supplies this keypair during
-first boot so bastions can read the private
-`grayhaven-vault` repository.
-After full convergence, bastions keep it only for private vault repository
+first boot so bastions can read `grayhaven-vault`.
+After full convergence, bastions keep it only for `grayhaven-vault` repository
 access at `/home/ansible/.ssh/grayhaven_vault_deploy_key`.
 
 The deployment SSH keypair is shared by workspace environments. Run this
@@ -171,7 +170,7 @@ ansible-playbook --inventory inventory playbooks/rotate-vault-deploy-key.yml
 ```
 
 After the playbook completes, verify the runner can refresh the public
-configuration repository and private vault repository, then run a full
+configuration repository and `grayhaven-vault`, then run a full
 convergence pass. This playbook does not change the Ansible control key used
 for managed-host SSH. The playbook removes the staged key files from bastions.
 
@@ -181,7 +180,8 @@ for managed-host SSH. The playbook removes the staged key files from bastions.
 
 Normal convergence enforces the vault-defined Ansible control key. After
 updating `ansible_control_public_key` and `ansible_control_private_key` in the
-private vault, run the normal runner service from the active control bastion.
+encrypted `grayhaven-vault` data, run the normal runner service from the active
+control bastion.
 
 The maintenance playbook remains available when you need to rotate the control
 key directly from encrypted vault values:
@@ -254,7 +254,7 @@ sudo ausearch -k grayhaven-root-command -i
 ```
 
 Avoid placing secrets directly on command lines. If a secret is accidentally
-exposed through command arguments, rotate the affected secret.
+exposed through command arguments, rotate the affected secret immediately.
 
 [Back to top](#operations)
 
@@ -275,7 +275,9 @@ from a normal shell outside tmux:
 gtmux --reset
 ```
 
-If tmux auto-attach causes login trouble, bypass it for one SSH session:
+If tmux auto-attach is enabled for a user, logging in to that bastion user over
+interactive SSH runs `gtmux` automatically. If that causes login trouble,
+bypass it for one SSH session:
 
 ```bash
 GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1 ssh <user>@bastion.grayhavensystems.com
@@ -285,8 +287,9 @@ The
 [operator tmux architecture](operator-tmux-architecture.md)
 documentation explains how workspace files are built and loaded. The public
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
-repository documents the managed user schema for enabling auto-attach and
-selecting workspace files.
+repository documents the
+[managed user schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#managed-user-entries)
+for enabling auto-attach and selecting workspace files.
 
 [Back to top](#operations)
 

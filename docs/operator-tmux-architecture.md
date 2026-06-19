@@ -33,7 +33,7 @@ stable inside tmux and also helps users who maintain their own tmux sessions.
 
 ## Workspace Files
 
-Per-user workspace files live in the private vault repository under
+Per-user workspace files live in `grayhaven-vault` under
 `files/tmux-workspaces/`. The public
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
 repository includes a sanitized example.
