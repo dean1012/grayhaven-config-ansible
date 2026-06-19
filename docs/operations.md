@@ -12,6 +12,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
 - [Root Command Audit Trail](#root-command-audit-trail)
+- [Operator Tmux Console](#operator-tmux-console)
 - [Infrastructure Policy Changes](#infrastructure-policy-changes)
 
 ## Manual Runner Invocation
@@ -210,6 +211,38 @@ sudo ausearch -k grayhaven-root-command -i
 
 Avoid placing secrets directly on command lines. If a secret is accidentally
 exposed through command arguments, rotate the affected secret.
+
+[Back to top](#operations)
+
+## Operator Tmux Console
+
+On bastions, sudo-capable managed users receive the shared tmux configuration
+and `gtmux` launcher. Run this command to attach to the standard operator
+session, creating it first if needed:
+
+```bash
+gtmux
+```
+
+To reset and recreate the session from the configured workspace file, run this
+from a normal shell outside tmux:
+
+```bash
+gtmux --reset
+```
+
+If tmux auto-attach causes login trouble, bypass it for one SSH session:
+
+```bash
+GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1 ssh <user>@bastion.grayhavensystems.com
+```
+
+The
+[operator tmux architecture](operator-tmux-architecture.md)
+documentation explains how workspace files are built and loaded. The public
+[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+repository documents the managed user schema for enabling auto-attach and
+selecting workspace files.
 
 [Back to top](#operations)
 

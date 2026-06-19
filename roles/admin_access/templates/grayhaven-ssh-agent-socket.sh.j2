@@ -1,0 +1,13 @@
+# Managed by Ansible.
+
+if [[ $- == *i* ]] && [ -n "${SSH_AUTH_SOCK:-}" ]; then
+    stable_ssh_auth_sock="$HOME/.ssh/ssh_auth_sock"
+
+    if [ "$SSH_AUTH_SOCK" != "$stable_ssh_auth_sock" ]; then
+        mkdir -p "$HOME/.ssh"
+        ln -sfn "$SSH_AUTH_SOCK" "$stable_ssh_auth_sock"
+        export SSH_AUTH_SOCK="$stable_ssh_auth_sock"
+    fi
+
+    unset stable_ssh_auth_sock
+fi

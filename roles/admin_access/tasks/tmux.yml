@@ -1,0 +1,121 @@
+---
+- name: Ensure managed user shell include directories exist
+  ansible.builtin.file:
+    path: "/home/{{ item.username }}/.bashrc.d"
+    state: directory
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: "0750"
+  loop: "{{ admin_access_present_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+
+- name: Install managed user stable SSH agent socket helper
+  ansible.builtin.template:
+    src: grayhaven-ssh-agent-socket.sh.j2
+    dest: "/home/{{ item.username }}/.bashrc.d/10-grayhaven-ssh-agent-socket.sh"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: "0644"
+  loop: "{{ admin_access_present_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+
+- name: Install Grayhaven tmux launcher on bastions
+  ansible.builtin.copy:
+    src: gtmux
+    dest: /usr/local/bin/gtmux
+    owner: root
+    group: root
+    mode: "0755"
+  when: grayhaven_role == "bastion"
+
+- name: Ensure sudo managed user tmux directories exist on bastions
+  ansible.builtin.file:
+    path: "/home/{{ item.username }}/.tmux"
+    state: directory
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: "0750"
+  loop: "{{ admin_access_present_sudo_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when: grayhaven_role == "bastion"
+
+- name: Install sudo managed user tmux configuration on bastions
+  ansible.builtin.template:
+    src: tmux.conf.j2
+    dest: "/home/{{ item.username }}/.tmux.conf"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: "0644"
+  loop: "{{ admin_access_present_sudo_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when: grayhaven_role == "bastion"
+
+- name: Install sudo managed user tmux theme on bastions
+  ansible.builtin.template:
+    src: grayhaven.tmux.j2
+    dest: "/home/{{ item.username }}/.tmux/grayhaven.tmux"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: "0644"
+  loop: "{{ admin_access_present_sudo_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when: grayhaven_role == "bastion"
+
+- name: Install configured operator tmux workspaces on bastions
+  ansible.builtin.copy:
+    src: "{{ admin_access_tmux_workspace_dir }}/{{ item.tmux_workspace }}"
+    dest: "/home/{{ item.username }}/.tmux/grayhaven-workspace.tmux"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: "0750"
+  loop: "{{ admin_access_present_sudo_users | selectattr('tmux_workspace', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.username }}:{{ item.tmux_workspace }}"
+  when: grayhaven_role == "bastion"
+
+- name: Remove stale operator tmux workspaces from users without workspace configuration
+  ansible.builtin.file:
+    path: "/home/{{ item.username }}/.tmux/grayhaven-workspace.tmux"
+    state: absent
+  loop: "{{ admin_access_present_sudo_users | rejectattr('tmux_workspace', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when: grayhaven_role == "bastion"
+
+- name: Derive sudo managed users with tmux auto-attach enabled
+  ansible.builtin.set_fact:
+    admin_access_tmux_auto_attach_users: >-
+      {{
+        admin_access_present_sudo_users
+        | selectattr('tmux_auto_attach', 'defined')
+        | selectattr('tmux_auto_attach')
+        | list
+      }}
+
+- name: Install tmux auto-attach helper for opted-in sudo managed users on bastions
+  ansible.builtin.template:
+    src: grayhaven-tmux-auto-attach.sh.j2
+    dest: "/home/{{ item.username }}/.bashrc.d/20-grayhaven-tmux-auto-attach.sh"
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: "0644"
+  loop: "{{ admin_access_tmux_auto_attach_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when: grayhaven_role == "bastion"
+
+- name: Remove tmux auto-attach helper for sudo managed users without opt-in on bastions
+  ansible.builtin.file:
+    path: "/home/{{ item.username }}/.bashrc.d/20-grayhaven-tmux-auto-attach.sh"
+    state: absent
+  loop: "{{ admin_access_present_sudo_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when:
+    - grayhaven_role == "bastion"
+    - not (item.tmux_auto_attach | default(false) | bool)
