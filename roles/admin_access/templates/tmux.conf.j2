@@ -1,0 +1,47 @@
+# Managed by Ansible.
+# Grayhaven Systems LLC Standard Tmux Configuration
+
+# -- Basic Settings ------------------------------------------
+set -g prefix C-b
+set -g escape-time 500
+set -g history-limit 50000
+set -g default-terminal "tmux-256color"
+set -as terminal-features ",xterm-256color:RGB"
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+set -g mouse off
+set -g visual-activity off
+setw -g clock-mode-style 12
+setw -g mode-keys vi
+setw -g monitor-activity on
+
+# -- Window And Pane Navigation ------------------------------
+bind-key -n C-Left previous-window
+bind-key -n C-Right next-window
+bind-key -n C-Up select-pane -U
+bind-key -n C-Down select-pane -D
+bind-key -n M-Left previous-window
+bind-key -n M-Right next-window
+bind-key -n M-Up select-pane -U
+bind-key -n M-Down select-pane -D
+bind-key -n M-u copy-mode \; send-keys -X page-up
+bind-key -n M-d if-shell -F "#{pane_in_mode}" "send-keys -X page-down" "copy-mode -e"
+bind-key -n C-n new-window
+bind-key -n C-r command-prompt -I "#W" "rename-window '%%'"
+bind-key -n M-n new-window
+bind-key -n M-r command-prompt -I "#W" "rename-window '%%'"
+bind-key -n M-1 select-window -t :=1
+bind-key -n M-2 select-window -t :=2
+bind-key -n M-3 select-window -t :=3
+bind-key -n M-4 select-window -t :=4
+bind-key -n M-5 select-window -t :=5
+bind-key -n M-6 select-window -t :=6
+bind-key -n M-7 select-window -t :=7
+bind-key -n M-8 select-window -t :=8
+bind-key -n M-9 select-window -t :=9
+
+# -- Theme ---------------------------------------------------
+run-shell "bash ~/.tmux/grayhaven.tmux"
+set-hook -g after-new-session 'if-shell -F "#{==:#{session_name},0}" "run-shell \"tmux rename-session -t #{session_name} \\\"Grayhaven Systems LLC\\\"\""'
+if-shell -F '#{==:#{session_name},0}' 'run-shell "tmux rename-session -t 0 \"Grayhaven Systems LLC\""'

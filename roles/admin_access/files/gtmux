@@ -1,0 +1,69 @@
+#!/bin/bash
+set -euo pipefail
+
+session_name="${GRAYHAVEN_TMUX_SESSION_NAME:-Grayhaven Systems LLC}"
+workspace_file="$HOME/.tmux/grayhaven-workspace.tmux"
+default_window="${GRAYHAVEN_TMUX_DEFAULT_WINDOW:-shell}"
+reset_session=false
+stable_ssh_auth_sock="$HOME/.ssh/ssh_auth_sock"
+
+usage() {
+   printf 'Usage: gtmux [--reset]\n' >&2
+}
+
+if [ "$#" -gt 1 ]; then
+   usage
+   exit 2
+fi
+
+if [ "$#" -eq 1 ]; then
+   if [ "$1" != "--reset" ]; then
+      usage
+      exit 2
+   fi
+
+   reset_session=true
+fi
+
+if [ "$reset_session" = true ] && [ -n "${TMUX:-}" ]; then
+   printf 'Detach from tmux or bypass auto-attach before running gtmux --reset.\n' >&2
+   exit 1
+fi
+
+if [ -n "${SSH_AUTH_SOCK:-}" ] && [ "$SSH_AUTH_SOCK" != "$stable_ssh_auth_sock" ]; then
+   mkdir -p "$HOME/.ssh"
+   ln -sfn "$SSH_AUTH_SOCK" "$stable_ssh_auth_sock"
+   export SSH_AUTH_SOCK="$stable_ssh_auth_sock"
+fi
+
+if tmux has-session -t "$session_name" 2>/dev/null; then
+   if [ "$reset_session" = false ]; then
+      tmux attach-session -t "$session_name"
+      exit 0
+   fi
+
+   tmux kill-session -t "$session_name"
+fi
+
+export GRAYHAVEN_TMUX_SESSION_NAME="$session_name"
+export GRAYHAVEN_TMUX_HOST_FQDN
+export GRAYHAVEN_TMUX_HOST_SHORT
+GRAYHAVEN_TMUX_HOST_FQDN="$(hostname -f)"
+GRAYHAVEN_TMUX_HOST_SHORT="${GRAYHAVEN_TMUX_HOST_FQDN%%.*}"
+
+if [ -f "$workspace_file" ]; then
+   bash "$workspace_file"
+else
+   tmux new-session -d -s "$session_name" -n "$default_window" -c "$HOME" "bash -l"
+fi
+
+if ! tmux has-session -t "$session_name" 2>/dev/null; then
+   printf 'tmux session was not created: %s\n' "$session_name" >&2
+   exit 1
+fi
+
+if [ -n "${SSH_AUTH_SOCK:-}" ]; then
+   tmux set-environment -t "$session_name" SSH_AUTH_SOCK "$SSH_AUTH_SOCK"
+fi
+
+tmux attach-session -t "$session_name"

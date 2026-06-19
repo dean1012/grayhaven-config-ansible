@@ -31,6 +31,16 @@
       - item.username | trim | length > 0
       - item.state | default('present') in ['present', 'absent']
       - item.home_mode | default('archive') in ['archive', 'delete']
+      - item.tmux_auto_attach is not defined or item.tmux_auto_attach is boolean
+      - item.tmux_workspace is not defined or item.tmux_workspace is string
+      - item.tmux_workspace is not defined or item.tmux_workspace | trim | length > 0
+      - item.tmux_workspace is not defined or item.tmux_workspace is match('^[A-Za-z0-9._-]+\\.tmux$')
+      - >
+        (
+          item.tmux_auto_attach is not defined
+          and item.tmux_workspace is not defined
+        )
+        or (item.sudo | default(false) | bool)
       - >
         item.state | default('present') == 'absent'
         or (
@@ -58,6 +68,16 @@
         users
         | selectattr('state', 'defined')
         | selectattr('state', 'equalto', 'absent')
+        | list
+      }}
+
+- name: Derive present sudo managed users
+  ansible.builtin.set_fact:
+    admin_access_present_sudo_users: >-
+      {{
+        admin_access_present_users
+        | selectattr('sudo', 'defined')
+        | selectattr('sudo')
         | list
       }}
 
@@ -136,3 +156,6 @@
 
 - name: Enforce managed sudo user audit rules
   ansible.builtin.import_tasks: audit.yml
+
+- name: Enforce managed user tmux and shell helpers
+  ansible.builtin.import_tasks: tmux.yml

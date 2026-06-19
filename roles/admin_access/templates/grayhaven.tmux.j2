@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# Managed by Ansible.
+#
+# Grayhaven Systems LLC Standard Tmux Theme
+#
+# Adapted from tmux-onedark-theme, originally released under the MIT license
+# reproduced below.
+# The original tmux-onedark-theme is available at
+# https://github.com/odedlaz/tmux-onedark-theme
+# Thanks to Oded Lazar for his work on tmux-onedark-theme.
+#
+# The MIT License (MIT)
+#
+#    Copyright (c) 2017 Oded Lazar
+#
+#    Permission is hereby granted, free of charge, to any person obtaining a copy
+#    of this software and associated documentation files (the "Software"), to deal
+#    in the Software without restriction, including without limitation the rights
+#    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#    copies of the Software, and to permit persons to whom the Software is
+#    furnished to do so, subject to the following conditions:
+#
+#    The above copyright notice and this permission notice shall be included in
+#    all copies or substantial portions of the Software.
+#
+#    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+#    SOFTWARE.
+#
+
+grayhaven_deep_graphite="#1c1f24"
+grayhaven_gunmetal="#2a2f36"
+grayhaven_slate_grey="#353b44"
+grayhaven_soft_white="#e6eaf0"
+grayhaven_cool_grey="#aab2bf"
+grayhaven_primary_accent="#58ace0"
+grayhaven_elevated_hover="#74c3ec"
+grayhaven_pale_steel="#bbc7d3"
+grayhaven_charcoal_border="#444c56"
+grayhaven_warning="{{ '#b88a36' if managed_baseline_environment == 'prod' else '#6fb7b7' }}"
+grayhaven_environment="{{ 'Production' if managed_baseline_environment == 'prod' else managed_baseline_environment | title }}"
+
+set() {
+   local option=$1
+   local value=$2
+   tmux set-option -gq "$option" "$value"
+}
+
+setw() {
+   local option=$1
+   local value=$2
+   tmux set-window-option -gq "$option" "$value"
+}
+
+set "status" "on"
+set "status-justify" "left"
+
+set "status-left-length" "100"
+set "status-right-length" "100"
+
+set "message-style" "fg=$grayhaven_soft_white,bg=$grayhaven_deep_graphite"
+set "message-command-style" "fg=$grayhaven_soft_white,bg=$grayhaven_gunmetal"
+
+setw "window-status-activity-style" "none"
+setw "window-status-separator" ""
+
+set "window-style" "fg=$grayhaven_cool_grey"
+set "window-active-style" "fg=$grayhaven_soft_white"
+
+set "pane-border-style" "fg=$grayhaven_charcoal_border,bg=$grayhaven_deep_graphite"
+set "pane-active-border-style" "fg=$grayhaven_primary_accent,bg=$grayhaven_deep_graphite"
+
+set "display-panes-active-colour" "$grayhaven_elevated_hover"
+set "display-panes-colour" "$grayhaven_primary_accent"
+
+set "status-style" "fg=$grayhaven_soft_white,bg=$grayhaven_deep_graphite"
+
+set "@prefix_highlight_fg" "$grayhaven_deep_graphite"
+set "@prefix_highlight_bg" "$grayhaven_primary_accent"
+set "@prefix_highlight_copy_mode_attr" "fg=$grayhaven_deep_graphite,bg=$grayhaven_primary_accent"
+set "@prefix_highlight_output_prefix" "  "
+
+set "status-right" "#[fg=$grayhaven_slate_grey,bg=$grayhaven_deep_graphite]#[fg=$grayhaven_elevated_hover,bg=$grayhaven_slate_grey,bold] #h #[fg=$grayhaven_primary_accent,bg=$grayhaven_slate_grey,nobold]#[fg=$grayhaven_soft_white,bg=$grayhaven_slate_grey] %Y-%m-%d #[fg=$grayhaven_primary_accent,bg=$grayhaven_slate_grey]#[fg=$grayhaven_pale_steel,bg=$grayhaven_slate_grey,nobold] %I:%M %p %Z "
+set "status-left" "#[fg=$grayhaven_deep_graphite,bg=$grayhaven_primary_accent,bold] #S #{prefix_highlight}#[fg=$grayhaven_primary_accent,bg=$grayhaven_gunmetal,nobold,nounderscore,noitalics]#[fg=$grayhaven_warning,bg=$grayhaven_gunmetal,bold] ${grayhaven_environment}  #[fg=$grayhaven_gunmetal,bg=$grayhaven_deep_graphite,nobold,nounderscore,noitalics]"
+
+set "window-status-format" "#[fg=$grayhaven_deep_graphite,bg=$grayhaven_slate_grey,nobold,nounderscore,noitalics]#[fg=$grayhaven_pale_steel,bg=$grayhaven_slate_grey,bold] #I #[fg=$grayhaven_slate_grey,bg=$grayhaven_deep_graphite,nobold,nounderscore,noitalics]#[fg=#{?window_activity_flag,$grayhaven_elevated_hover,$grayhaven_cool_grey},bg=$grayhaven_deep_graphite,#{?window_activity_flag,bold,nobold}] #W #[fg=$grayhaven_deep_graphite,bg=$grayhaven_deep_graphite,nobold,nounderscore,noitalics]"
+set "window-status-current-format" "#[fg=$grayhaven_deep_graphite,bg=$grayhaven_primary_accent,nobold,nounderscore,noitalics]#[fg=$grayhaven_deep_graphite,bg=$grayhaven_primary_accent,bold] #I #[fg=$grayhaven_primary_accent,bg=$grayhaven_gunmetal,nobold,nounderscore,noitalics]#[fg=$grayhaven_soft_white,bg=$grayhaven_gunmetal,nobold] #W #[fg=$grayhaven_gunmetal,bg=$grayhaven_deep_graphite,nobold,nounderscore,noitalics]"

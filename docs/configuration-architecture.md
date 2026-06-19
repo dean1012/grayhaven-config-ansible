@@ -10,6 +10,7 @@ full-playbook convergence.
 - [Vault Loading](#vault-loading)
 - [Managed Baseline](#managed-baseline)
 - [Managed Users](#managed-users)
+- [Operator Tmux Console](#operator-tmux-console)
 - [Web Hosting](#web-hosting)
 - [Firewalld Policy](#firewalld-policy)
 - [Backups](#backups)
@@ -180,6 +181,24 @@ Present managed users with `sudo: true` are enrolled in auditd root-command
 auditing. Generated audit rules target each user's audit login UID and record
 root command execution with the `grayhaven-root-command` audit key without
 broadly auditing Ansible automation or system daemon execution.
+
+[Back to top](#configuration-architecture)
+
+## Operator Tmux Console
+
+Sudo-capable managed users on bastions receive the standard Grayhaven Systems
+LLC tmux configuration, theme, and `gtmux` launcher. `gtmux` attaches to the
+standard `Grayhaven Systems LLC` tmux session, creating it first when needed.
+
+Per-user tmux workspaces are optional and are stored in the private vault under
+`files/tmux-workspaces/`. Auto-attach is also optional and must be enabled per
+user in the vault. The
+[operator tmux architecture](operator-tmux-architecture.md)
+documentation describes workspace behavior and capture guidance.
+
+All present managed users receive a stable forwarded-agent socket helper at
+`~/.ssh/ssh_auth_sock` so SSH agent forwarding remains usable inside tmux and
+inside user-managed shell workflows.
 
 [Back to top](#configuration-architecture)
 

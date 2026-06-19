@@ -79,7 +79,7 @@ git ls-files '*.yml' '*.yaml' | xargs -r yamllint
 ansible-lint .
 find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
   | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
-shellcheck files/grayhaven-ansible-runner files/grayhaven-ansible-poller
+shellcheck files/grayhaven-ansible-runner files/grayhaven-ansible-poller roles/admin_access/files/gtmux
 python3 -m py_compile files/grayhaven-reboot-notify files/grayhaven-refresh-motd
 git ls-files '*.md' | xargs -r markdownlint-cli2
 ```

@@ -1,14 +1,4 @@
 ---
-- name: Derive present sudo managed users
-  ansible.builtin.set_fact:
-    admin_access_present_sudo_users: >-
-      {{
-        admin_access_present_users
-        | selectattr('sudo', 'defined')
-        | selectattr('sudo')
-        | list
-      }}
-
 - name: Query present sudo managed user IDs
   ansible.builtin.command:
     argv:

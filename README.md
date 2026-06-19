@@ -90,6 +90,7 @@ for prerequisites, commands, and validation steps.
 ## Documentation
 
 - [Configuration Architecture](docs/configuration-architecture.md)
+- [Operator Tmux Architecture](docs/operator-tmux-architecture.md)
 - [Operations](docs/operations.md)
 - [Validation & Safety Checks](docs/validation-safety.md)
 
