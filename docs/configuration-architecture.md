@@ -66,10 +66,10 @@ environment are linked into `/usr/local/bin` for operator use. The runner
 decrypts vault values through Ansible Vault, prepares SSH known hosts for remote
 managed hosts, and runs `playbooks/site.yml`.
 
-Private vault repository SSH access uses the vault deployment SSH key stored at
-`/home/ansible/.ssh/grayhaven_vault_deploy_key` on bastion hosts. Repository
-SSH access uses pinned GitHub host keys published by GitHub instead of
-accepting host keys dynamically at runtime.
+`grayhaven-vault` SSH access uses the vault deployment SSH key stored at
+`/home/ansible/.ssh/grayhaven_vault_deploy_key` on bastion hosts. Repository SSH
+access uses pinned GitHub host keys published by GitHub instead of accepting
+host keys dynamically at runtime.
 
 Before each playbook run, the runner refreshes live DigitalOcean inventory data.
 The current control-node status and TLS mode are derived from environment
