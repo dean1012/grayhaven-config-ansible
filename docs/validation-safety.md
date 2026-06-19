@@ -39,7 +39,8 @@ or malformed. These checks cover areas such as:
 - managed baseline vault values and Ansible control key material;
 - web TLS mode and hosted domain structure;
 - host TLS DigitalOcean DNS token availability;
-- backup schedule and restic password availability;
+- backup schedule, restic password availability, and optional GCS remote backup
+  settings;
 - Discord notification webhook values;
 - Grafana Cloud production-only enablement, required host tags, and required
   credentials;

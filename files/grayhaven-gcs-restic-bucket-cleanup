@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Delete stale Grayhaven-managed GCS restic buckets."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any
+
+from google.auth.transport.requests import Request
+from google.oauth2 import service_account
+
+GCS_SCOPE = "https://www.googleapis.com/auth/devstorage.full_control"
+
+
+class CleanupError(RuntimeError):
+    """Raised when GCS cleanup cannot continue safely."""
+
+
+def credentials_token(credentials_file: str) -> str:
+    credentials = service_account.Credentials.from_service_account_file(
+        credentials_file,
+        scopes=[GCS_SCOPE],
+    )
+    credentials.refresh(Request())
+    if not credentials.token:
+        raise CleanupError("Google Cloud credentials did not return an access token")
+    return credentials.token
+
+
+def request(
+    method: str,
+    path: str,
+    token: str,
+    payload: dict[str, Any] | None = None,
+    expected: tuple[int, ...] = (200,),
+) -> Any:
+    body = None
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    url = f"https://storage.googleapis.com/storage/v1{path}"
+    for attempt in range(5):
+        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                status = response.getcode()
+                response_body = response.read().decode("utf-8")
+        except urllib.error.HTTPError as error:
+            if error.code == 429 or 500 <= error.code <= 599:
+                retry_after = error.headers.get("Retry-After")
+                delay = int(retry_after) if retry_after and retry_after.isdigit() else min(2**attempt, 30)
+                time.sleep(delay)
+                continue
+
+            message = error.read().decode("utf-8", errors="replace")
+            raise CleanupError(f"{method} {path} failed with HTTP {error.code}: {message}") from error
+
+        if status not in expected:
+            raise CleanupError(f"{method} {path} returned unexpected HTTP status {status}")
+
+        return json.loads(response_body) if response_body else None
+
+    raise CleanupError(f"{method} {path} exceeded retry budget")
+
+
+def list_buckets(project_id: str, token: str) -> list[dict[str, Any]]:
+    buckets: list[dict[str, Any]] = []
+    query = {"project": project_id, "maxResults": "1000"}
+    while True:
+        response = request("GET", f"/b?{urllib.parse.urlencode(query)}", token)
+        buckets.extend(response.get("items", []))
+        next_page = response.get("nextPageToken")
+        if not next_page:
+            return buckets
+        query["pageToken"] = next_page
+
+
+def list_objects(bucket: str, token: str) -> list[dict[str, Any]]:
+    objects: list[dict[str, Any]] = []
+    query = {"versions": "true", "maxResults": "1000"}
+    encoded_bucket = urllib.parse.quote(bucket, safe="")
+    while True:
+        response = request("GET", f"/b/{encoded_bucket}/o?{urllib.parse.urlencode(query)}", token)
+        objects.extend(response.get("items", []))
+        next_page = response.get("nextPageToken")
+        if not next_page:
+            return objects
+        query["pageToken"] = next_page
+
+
+def delete_bucket(bucket: str, token: str) -> None:
+    encoded_bucket = urllib.parse.quote(bucket, safe="")
+    for obj in list_objects(bucket, token):
+        encoded_object = urllib.parse.quote(obj["name"], safe="")
+        generation = urllib.parse.quote(str(obj["generation"]), safe="")
+        request("DELETE", f"/b/{encoded_bucket}/o/{encoded_object}?generation={generation}", token, expected=(204,))
+    request("DELETE", f"/b/{encoded_bucket}", token, expected=(204,))
+
+
+def bucket_is_managed(bucket: dict[str, Any], labels: dict[str, str]) -> bool:
+    bucket_labels = bucket.get("labels", {})
+    return all(bucket_labels.get(key) == value for key, value in labels.items())
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--credentials-file", required=True)
+    parser.add_argument("--project-id", required=True)
+    parser.add_argument("--client", required=True)
+    parser.add_argument("--environment", required=True)
+    parser.add_argument("--expected-buckets-file", required=True)
+    parser.add_argument("--execute", action="store_true")
+    args = parser.parse_args()
+
+    with open(args.expected_buckets_file, encoding="utf-8") as expected_file:
+        expected_buckets = set(json.load(expected_file))
+
+    required_labels = {
+        "managed_by": "ansible",
+        "client": args.client,
+        "env": args.environment,
+        "purpose": "restic",
+    }
+
+    token = credentials_token(args.credentials_file)
+    managed_buckets = [
+        bucket
+        for bucket in list_buckets(args.project_id, token)
+        if bucket_is_managed(bucket, required_labels)
+    ]
+    stale_buckets = sorted(
+        bucket["name"]
+        for bucket in managed_buckets
+        if bucket["name"] not in expected_buckets
+    )
+
+    for bucket in stale_buckets:
+        if args.execute:
+            delete_bucket(bucket, token)
+            print(f"deleted={bucket}")
+        else:
+            print(f"would_delete={bucket}")
+
+    print(f"stale_count={len(stale_buckets)} execute={str(args.execute).lower()}")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except CleanupError as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(1)

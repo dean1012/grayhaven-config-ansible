@@ -40,6 +40,7 @@ jobs:
       - name: Run Python syntax checks
         run: >-
           python -m py_compile
+          files/grayhaven-gcs-restic-bucket-cleanup
           files/grayhaven-reboot-notify
           files/grayhaven-refresh-motd
           roles/observability/files/grayhaven-grafana-alert-sync

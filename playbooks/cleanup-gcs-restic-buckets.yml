@@ -1,0 +1,104 @@
+---
+- name: Clean up decommissioned GCS restic buckets
+  hosts: localhost
+  gather_facts: false
+  vars:
+    confirm_delete_remote_backup_buckets: false
+
+  tasks:
+    - name: Validate GCS cleanup inputs
+      ansible.builtin.assert:
+        that:
+          - backup.repositories.remote.provider | default('') | lower == 'gcs'
+          - backup.repositories.remote.project_id is defined
+          - backup.repositories.remote.project_id is string
+          - backup.repositories.remote.project_id | length > 0
+          - restic.remotes.gcs.credentials_json is defined
+          - restic.remotes.gcs.credentials_json is string
+          - restic.remotes.gcs.credentials_json | length > 0
+          - managed_baseline_environment is defined
+          - managed_baseline_environment is string
+          - managed_baseline_environment | length > 0
+          - digitalocean_inventory_api_token is defined
+          - digitalocean_inventory_api_token is string
+          - digitalocean_inventory_api_token | length > 0
+        fail_msg: "GCS restic bucket cleanup requires configured remote GCS backup settings."
+        quiet: true
+      no_log: true
+
+    - name: Load live DigitalOcean inventory for expected buckets
+      ansible.builtin.command:
+        cmd: ansible-inventory --inventory inventory --list
+      environment:
+        DO_API_TOKEN: "{{ digitalocean_inventory_api_token }}"
+        GRAYHAVEN_ENVIRONMENT: "{{ managed_baseline_environment }}"
+        GRAYHAVEN_HOSTNAME: ""
+      register: gcs_cleanup_inventory
+      changed_when: false
+      no_log: true
+
+    - name: Install GCS restic bucket cleanup helper
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/grayhaven-gcs-restic-bucket-cleanup"
+        dest: /tmp/grayhaven-gcs-restic-bucket-cleanup
+        mode: "0700"
+
+    - name: Create temporary cleanup directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: grayhaven-gcs-cleanup
+      register: gcs_cleanup_tempdir
+
+    - name: Store temporary GCS credentials
+      ansible.builtin.copy:
+        dest: "{{ gcs_cleanup_tempdir.path }}/credentials.json"
+        mode: "0600"
+        content: "{{ restic.remotes.gcs.credentials_json }}"
+      no_log: true
+
+    - name: Store expected GCS restic bucket names
+      ansible.builtin.copy:
+        dest: "{{ gcs_cleanup_tempdir.path }}/expected-buckets.json"
+        mode: "0600"
+        content: "{{ gcs_cleanup_expected_buckets | to_nice_json }}\n"
+      vars:
+        gcs_cleanup_expected_buckets: >-
+          {{
+            (gcs_cleanup_inventory.stdout | from_json)['_meta']['hostvars'].keys()
+            | reject('equalto', 'localhost')
+            | map('regex_replace', '^([^.]+).*$', '\1-restic')
+            | unique
+            | sort
+          }}
+
+    - name: Review or delete stale GCS restic buckets
+      ansible.builtin.command:
+        cmd: >-
+          /tmp/grayhaven-gcs-restic-bucket-cleanup
+          --credentials-file {{ (gcs_cleanup_tempdir.path ~ '/credentials.json') | quote }}
+          --project-id {{ backup.repositories.remote.project_id | quote }}
+          --client {{ backup.repositories.remote.client | default('grayhaven') | quote }}
+          --environment {{ managed_baseline_environment | quote }}
+          --expected-buckets-file {{ (gcs_cleanup_tempdir.path ~ '/expected-buckets.json') | quote }}
+          {{ '--execute' if confirm_delete_remote_backup_buckets else '' }}
+      register: gcs_cleanup_result
+      changed_when:
+        - confirm_delete_remote_backup_buckets | bool
+        - "'deleted=' in gcs_cleanup_result.stdout"
+      no_log: "{{ confirm_delete_remote_backup_buckets | bool }}"
+
+    - name: Show GCS restic bucket cleanup result
+      ansible.builtin.debug:
+        msg: "{{ gcs_cleanup_result.stdout_lines }}"
+      when: not confirm_delete_remote_backup_buckets | bool
+
+    - name: Remove temporary cleanup directory
+      ansible.builtin.file:
+        path: "{{ gcs_cleanup_tempdir.path }}"
+        state: absent
+      when: gcs_cleanup_tempdir.path is defined
+
+    - name: Remove staged GCS restic bucket cleanup helper
+      ansible.builtin.file:
+        path: /tmp/grayhaven-gcs-restic-bucket-cleanup
+        state: absent

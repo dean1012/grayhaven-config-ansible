@@ -282,7 +282,7 @@ bastion source-tag boundary before traffic reaches the host.
 
 ## Backups
 
-Each managed server creates encrypted local restic backups using settings from
+Each managed server creates encrypted restic backups using settings from
 `config.yml` in the private `grayhaven-vault` repository. The
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
 repository documents the
@@ -309,9 +309,19 @@ deliberately opts removed-user archives out of backup.
 The local restic repository is encrypted. Local backups are not a substitute for
 disaster recovery.
 
-Operational backup procedures should include regular offsite transfer of local
-backup data and regular restore testing. Remote backup automation is not
-implemented in this repository at this time.
+Remote GCS repositories are optional. When enabled, Ansible creates one GCS
+bucket per managed host before restic is initialized, labels the bucket with
+Grayhaven Systems LLC resource metadata, disables bucket versioning, and points
+restic at `gs:<short-hostname>-restic:/`.
+
+The remote repository uses the same restic encryption password as the local
+repository. Remote backup credentials come from the private vault and are stored
+on managed hosts only in the root-readable backup configuration needed by
+restic.
+
+Operational backup procedures should include regular restore testing. The
+destructive cleanup procedure for stale remote buckets is documented in
+[Operations](operations.md#gcs-restic-bucket-cleanup).
 
 [Back to top](#configuration-architecture)
 

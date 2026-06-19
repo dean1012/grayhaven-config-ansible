@@ -12,6 +12,8 @@
         | default('/var/backups/deleted-homedir-archives')
       }}
     managed_baseline_backup_keep_daily: "{{ backup.retention.keep_daily | default(7) }}"
+    managed_baseline_restic_config: "{{ restic | default({}) }}"
+    managed_baseline_backup_remote_config: "{{ backup.repositories.remote | default({}) }}"
     managed_baseline_backup_exclude_paths: >-
       {{
         [
@@ -25,6 +27,16 @@
         ]
         + (backup.exclude | default([]))
       }}
+
+- name: Derive restic credential settings
+  ansible.builtin.set_fact:
+    managed_baseline_restic_password: >-
+      {{
+        managed_baseline_restic_config.encryption_password
+        | default(restic_password | default(''))
+      }}
+    managed_baseline_restic_remotes: "{{ managed_baseline_restic_config.remotes | default({}) }}"
+  no_log: true
 
 - name: Derive local backup include paths
   ansible.builtin.set_fact:
@@ -41,4 +53,60 @@
           )
         )
         | unique
+      }}
+
+- name: Derive optional remote backup settings
+  ansible.builtin.set_fact:
+    managed_baseline_backup_remote_provider: >-
+      {{ managed_baseline_backup_remote_config.provider | default('') | lower }}
+    managed_baseline_backup_remote_enabled: >-
+      {{ (managed_baseline_backup_remote_config.provider | default('') | length) > 0 }}
+    managed_baseline_restic_gcs_config: "{{ managed_baseline_restic_remotes.gcs | default({}) }}"
+  no_log: true
+
+- name: Derive optional GCS backup settings
+  ansible.builtin.set_fact:
+    managed_baseline_backup_remote_gcs_enabled: "{{ managed_baseline_backup_remote_provider == 'gcs' }}"
+    managed_baseline_backup_remote_gcs_project_id: >-
+      {{ managed_baseline_backup_remote_config.project_id | default('') }}
+    managed_baseline_backup_remote_gcs_location: "{{ managed_baseline_backup_remote_config.location | default('US') }}"
+    managed_baseline_backup_remote_gcs_storage_class: >-
+      {{ managed_baseline_backup_remote_config.storage_class | default('STANDARD') }}
+    managed_baseline_backup_remote_gcs_credentials_json: >-
+      {{ managed_baseline_restic_gcs_config.credentials_json | default('') }}
+    managed_baseline_backup_remote_gcs_bucket_name: "{{ inventory_hostname.split('.')[0] }}-restic"
+    managed_baseline_backup_remote_gcs_repository: "gs:{{ inventory_hostname.split('.')[0] }}-restic:/"
+  no_log: true
+
+- name: Derive optional GCS bucket labels
+  ansible.builtin.set_fact:
+    managed_baseline_backup_remote_gcs_labels:
+      managed_by: ansible
+      client: "{{ managed_baseline_backup_label_client }}"
+      env: "{{ managed_baseline_environment }}"
+      project: "{{ managed_baseline_backup_label_project }}"
+      role: "{{ grayhaven_role }}"
+      purpose: restic
+      host: "{{ inventory_hostname.split('.')[0] }}"
+  vars:
+    managed_baseline_backup_label_tags: "{{ hostvars[inventory_hostname].do_tags | default([]) }}"
+    managed_baseline_backup_label_client: >-
+      {{
+        (
+          managed_baseline_backup_label_tags
+          | select('match', '^client-')
+          | first
+          | default('client-grayhaven')
+        )
+        | regex_replace('^client-', '')
+      }}
+    managed_baseline_backup_label_project: >-
+      {{
+        (
+          managed_baseline_backup_label_tags
+          | select('match', '^project-')
+          | first
+          | default('project-unknown')
+        )
+        | regex_replace('^project-', '')
       }}

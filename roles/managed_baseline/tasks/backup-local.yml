@@ -17,7 +17,17 @@
     owner: root
     group: root
     mode: "0600"
-    content: "{{ restic_password }}"
+    content: "{{ managed_baseline_restic_password }}"
+  no_log: true
+
+- name: Store GCS restic credential file
+  ansible.builtin.copy:
+    dest: /etc/grayhaven/backup/gcs-credentials.json
+    owner: root
+    group: root
+    mode: "0600"
+    content: "{{ managed_baseline_backup_remote_gcs_credentials_json }}"
+  when: managed_baseline_backup_remote_gcs_enabled | bool
   no_log: true
 
 - name: Store restic include list
@@ -46,6 +56,35 @@
     creates: "{{ managed_baseline_backup_repository_path }}/config"
   no_log: true
 
+- name: Initialize remote GCS restic repository
+  ansible.builtin.shell: |
+    set -Eeuo pipefail
+    if ! restic \
+        --repo "$REMOTE_REPOSITORY" \
+        --password-file "$PASSWORD_FILE" \
+        cat config >/dev/null 2>&1; then
+      restic \
+        --repo "$REMOTE_REPOSITORY" \
+        --password-file "$PASSWORD_FILE" \
+        init
+    fi
+  args:
+    executable: /usr/bin/bash
+  environment:
+    GOOGLE_PROJECT_ID: "{{ managed_baseline_backup_remote_gcs_project_id }}"
+    GOOGLE_APPLICATION_CREDENTIALS: /etc/grayhaven/backup/gcs-credentials.json
+    REMOTE_REPOSITORY: "{{ managed_baseline_backup_remote_gcs_repository }}"
+    PASSWORD_FILE: /etc/grayhaven/backup/restic-password
+  register: managed_baseline_remote_restic_init
+  changed_when: >-
+    'created restic repository' in
+    (
+      managed_baseline_remote_restic_init.stdout
+      ~ managed_baseline_remote_restic_init.stderr
+    )
+  when: managed_baseline_backup_remote_gcs_enabled | bool
+  no_log: true
+
 - name: Install local restic backup script
   ansible.builtin.copy:
     dest: /usr/local/sbin/grayhaven-restic-backup
@@ -56,37 +95,67 @@
       #!/usr/bin/env bash
       set -Eeuo pipefail
 
-      REPOSITORY={{ managed_baseline_backup_repository_path | quote }}
+      LOCAL_REPOSITORY={{ managed_baseline_backup_repository_path | quote }}
+      REMOTE_ENABLED={{ 'true' if managed_baseline_backup_remote_gcs_enabled else 'false' }}
+      REMOTE_REPOSITORY={{ managed_baseline_backup_remote_gcs_repository | default('') | quote }}
       PASSWORD_FILE=/etc/grayhaven/backup/restic-password
       INCLUDE_FILE=/etc/grayhaven/backup/include
       EXCLUDE_FILE=/etc/grayhaven/backup/exclude
       KEEP_DAILY={{ managed_baseline_backup_keep_daily | quote }}
       TEXTFILE_DIR=/var/lib/grayhaven/observability/textfile
+      GCS_CREDENTIALS_FILE=/etc/grayhaven/backup/gcs-credentials.json
+      GCS_PROJECT_ID={{ managed_baseline_backup_remote_gcs_project_id | default('') | quote }}
 
-      restic \
-        --repo "$REPOSITORY" \
-        --password-file "$PASSWORD_FILE" \
-        backup \
-        --files-from "$INCLUDE_FILE" \
-        --exclude-file "$EXCLUDE_FILE" \
-        --tag grayhaven-local \
-        --host "$(hostname -f)"
+      successful_repositories=()
 
-      restic \
-        --repo "$REPOSITORY" \
-        --password-file "$PASSWORD_FILE" \
-        forget \
-        --keep-daily "$KEEP_DAILY" \
-        --prune
+      backup_repository() {
+        local repository=$1
+        local label=$2
+
+        restic \
+          --repo "$repository" \
+          --password-file "$PASSWORD_FILE" \
+          backup \
+          --files-from "$INCLUDE_FILE" \
+          --exclude-file "$EXCLUDE_FILE" \
+          --tag "grayhaven-${label}" \
+          --host "$(hostname -f)"
+
+        restic \
+          --repo "$repository" \
+          --password-file "$PASSWORD_FILE" \
+          forget \
+          --keep-daily "$KEEP_DAILY" \
+          --prune
+
+        successful_repositories+=("$label")
+      }
+
+      backup_repository "$LOCAL_REPOSITORY" local
+
+      if [[ "$REMOTE_ENABLED" == "true" ]]; then
+        export GOOGLE_PROJECT_ID="$GCS_PROJECT_ID"
+        export GOOGLE_APPLICATION_CREDENTIALS="$GCS_CREDENTIALS_FILE"
+        backup_repository "$REMOTE_REPOSITORY" remote
+      fi
 
       if [[ -d "$TEXTFILE_DIR" ]]; then
         tmp_file="$(mktemp "${TEXTFILE_DIR}/restic.XXXXXX")"
+        backup_timestamp="$(date +%s)"
         {
           printf '# HELP grayhaven_restic_backup_last_success_timestamp_seconds Last successful backup time.\n'
           printf '# TYPE grayhaven_restic_backup_last_success_timestamp_seconds gauge\n'
           printf 'grayhaven_restic_backup_last_success_timestamp_seconds{host="%s"} %s\n' \
             "$(hostname -f)" \
-            "$(date +%s)"
+            "$backup_timestamp"
+          printf '# HELP grayhaven_restic_repository_last_success_timestamp_seconds Last restic backup by repository.\n'
+          printf '# TYPE grayhaven_restic_repository_last_success_timestamp_seconds gauge\n'
+          for repository_label in "${successful_repositories[@]}"; do
+            printf 'grayhaven_restic_repository_last_success_timestamp_seconds{host="%s",repository="%s"} %s\n' \
+              "$(hostname -f)" \
+              "$repository_label" \
+              "$backup_timestamp"
+          done
         } > "$tmp_file"
         chmod 0644 "$tmp_file"
         mv "$tmp_file" "${TEXTFILE_DIR}/restic.prom"

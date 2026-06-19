@@ -81,10 +81,12 @@ Maintenance playbooks are manual change-control tools intended to be run from
 the active control bastion by an authorized administrator.
 
 Supported maintenance playbooks rotate the persisted Ansible Vault password,
-the vault deployment SSH keypair, and the Ansible control key used for
-managed-host SSH. See [vault password rotation](docs/operations.md#vault-password-rotation),
-[deploy key rotation](docs/operations.md#deploy-key-rotation), and
-[Ansible control key rotation](docs/operations.md#ansible-control-key-rotation)
+the vault deployment SSH keypair, the Ansible control key used for managed-host
+SSH, and clean up stale remote restic buckets. See
+[vault password rotation](docs/operations.md#vault-password-rotation),
+[deploy key rotation](docs/operations.md#deploy-key-rotation),
+[Ansible control key rotation](docs/operations.md#ansible-control-key-rotation),
+and [GCS restic bucket cleanup](docs/operations.md#gcs-restic-bucket-cleanup)
 for prerequisites, commands, and validation steps.
 
 [Back to top](#grayhaven-systems-llc-configuration-ansible)
