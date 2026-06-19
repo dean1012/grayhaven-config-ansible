@@ -76,8 +76,8 @@ The current control-node status and TLS mode are derived from environment
 droplet tags so OpenTofu policy changes can be applied without relying on stale
 first-boot bootstrap values.
 
-The poller checks the public configuration repository and private vault
-repository for changes every five minutes. If either tracked ref changes, it
+The poller checks the public configuration repository and `grayhaven-vault` for
+changes every five minutes. If either tracked ref changes, it
 starts the normal runner service. The daily runner timer remains in place as a
 convergence safety net.
 
@@ -89,9 +89,8 @@ active control bastion.
 
 ## Vault Loading
 
-The private `grayhaven-vault`
-repository supplies runtime selectors and encrypted operational values. Its
-structure follows the
+`grayhaven-vault` supplies runtime selectors and encrypted operational values.
+Its structure follows the
 [file schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md)
 documented in the
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
@@ -191,11 +190,15 @@ Sudo-capable managed users on bastions receive the standard Grayhaven Systems
 LLC tmux configuration, theme, and `gtmux` launcher. `gtmux` attaches to the
 standard `Grayhaven Systems LLC` tmux session, creating it first when needed.
 
-Per-user tmux workspaces are optional and are stored in the private vault under
-`files/tmux-workspaces/`. Auto-attach is also optional and must be enabled per
-user in the vault. The
+Per-user tmux workspaces are optional and are stored in `grayhaven-vault` under
+`files/tmux-workspaces/`. If auto-attach is enabled for a user in
+`grayhaven-vault`, logging in to that bastion user over interactive SSH runs
+`gtmux` automatically. The
 [operator tmux architecture](operator-tmux-architecture.md)
-documentation describes workspace behavior and capture guidance.
+documentation describes workspace behavior and capture guidance. See the
+[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+[managed user schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#managed-user-entries)
+for the public example shape.
 
 All present managed users receive a stable forwarded-agent socket helper at
 `~/.ssh/ssh_auth_sock` so SSH agent forwarding remains usable inside tmux and
@@ -238,7 +241,7 @@ New hosted domains require both
 [environment DNS policy](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/policy.md#environment-dns-policy)
 in
 [grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
-and matching `hosted_domains` data in the private vault. See the
+and matching `hosted_domains` data in `grayhaven-vault`. See the
 [DNS architecture documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/dns-architecture.md)
 in the `grayhaven-infra-opentofu` repository and the
 [hosted domain DNS coordination documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#hosted-domain-dns-coordination)
@@ -251,7 +254,7 @@ repository.
 ## Firewalld Policy
 
 The managed baseline reads the environment firewall policy from `firewall.yml`
-in the checked-out private vault repository and caches it locally under
+in the checked-out `grayhaven-vault` repository and caches it locally under
 `/etc/grayhaven/firewall/policy.yml`. The
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
 repository documents the
@@ -283,7 +286,7 @@ bastion source-tag boundary before traffic reaches the host.
 ## Backups
 
 Each managed server creates encrypted restic backups using settings from
-`config.yml` in the private `grayhaven-vault` repository. The
+`grayhaven-vault/config.yml`. The
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
 repository documents the
 [backup settings schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#configyml).
@@ -315,9 +318,17 @@ Grayhaven Systems LLC resource metadata, disables bucket versioning, and points
 restic at `gs:<short-hostname>-restic:/`.
 
 The remote repository uses the same restic encryption password as the local
-repository. Remote backup credentials come from the private vault and are stored
-on managed hosts only in the root-readable backup configuration needed by
-restic.
+repository. Remote backup credentials come from `grayhaven-vault` and are
+stored on managed hosts only in the root-readable backup configuration needed
+by restic.
+
+Remote backups can be enabled or disabled during normal convergence. Enabling
+remote backups creates any missing buckets and updates restic configuration.
+Disabling remote backups removes the remote repository from the managed restic
+configuration but leaves existing buckets in place. The cleanup playbook is
+required to delete stale remote buckets; when remote backups are disabled for
+the environment, all labeled Ansible-managed restic buckets for that
+environment are considered stale.
 
 Operational backup procedures should include regular restore testing. The
 destructive cleanup procedure for stale remote buckets is documented in
@@ -329,8 +340,8 @@ destructive cleanup procedure for stale remote buckets is documented in
 
 Production hosts can optionally publish metrics, selected logs, and managed
 Grafana Cloud alert rules. Observability is tag-driven and configured through
-vault values so Ansible can combine live inventory, host role data, and runtime
-service state during convergence.
+`grayhaven-vault` values so Ansible can combine live inventory, host role data,
+and runtime service state during convergence.
 
 Grafana Cloud integration is supported only for the `prod` environment. If it
 is enabled elsewhere, convergence fails before installing or syncing
@@ -350,9 +361,9 @@ Human administrators use personal accounts and local SSH agent forwarding.
 Personal private keys are not stored on Grayhaven Systems LLC servers.
 
 The `ansible` account is automation-only. OpenTofu supplies bootstrap
-deployment key material for first-boot automation and private vault repository
-access. On bastions, that key is retained separately as the vault deployment
-SSH key used for private vault repository access.
+deployment key material for first-boot automation and `grayhaven-vault`
+repository access. On bastions, that key is retained separately as the vault
+deployment SSH key used for `grayhaven-vault` repository access.
 
 Full convergence replaces the temporary first-boot `id_ed25519` automation key
 with the vault-defined Ansible control key and enforces the matching public key

@@ -31,7 +31,7 @@ enabled, but Grafana Cloud is the primary alerting path when enabled.
 
 ## Enablement
 
-The private vault supplies the Grafana Cloud endpoint and credential values.
+`grayhaven-vault` supplies the Grafana Cloud endpoint and credential values.
 The public
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
 repository documents the expected
@@ -78,9 +78,7 @@ The log set is intentionally targeted:
 - Certbot logs;
 - systemd journal entries.
 
-Cloud-init logs are excluded, and log lines pass through a defensive redaction
-stage for common secret-like key names before leaving the host. Administrators
-should still avoid placing secrets directly on command lines or in log output.
+Cloud-init logs are excluded.
 
 [Back to top](#observability-architecture)
 
@@ -95,11 +93,6 @@ Managed alerts cover the same operational checks surfaced by the Grafana
 dashboards where alerting is useful, including host metrics, service state,
 backup freshness, Ansible convergence, and web availability checks. Alert rules
 send to the configured Grafana IRM contact point.
-
-No log-based alerts are managed by Ansible. Logs are optional, so alerting uses
-metrics and probes.
-
-[Back to top](#observability-architecture)
 
 ## Operational Boundaries
 

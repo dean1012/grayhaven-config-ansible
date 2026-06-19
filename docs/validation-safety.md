@@ -61,7 +61,7 @@ Role and environment conditionals keep changes scoped to the right hosts:
 - load-balancer TLS mode removes local web HTTPS origin exposure;
 - Grafana Cloud observability tasks run only on hosts carrying the expected
   production observability tags;
-- Grafana Cloud alert sync manages only alert rules labeled
+- Grafana Cloud alert sync only manages alert rules labeled
   `configured_by=ansible`;
 - manual DigitalOcean inventory use fails closed if `GRAYHAVEN_ENVIRONMENT` is
   unset.
