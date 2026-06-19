@@ -61,6 +61,7 @@
       INCLUDE_FILE=/etc/grayhaven/backup/include
       EXCLUDE_FILE=/etc/grayhaven/backup/exclude
       KEEP_DAILY={{ managed_baseline_backup_keep_daily | quote }}
+      TEXTFILE_DIR=/var/lib/grayhaven/observability/textfile
 
       restic \
         --repo "$REPOSITORY" \
@@ -77,6 +78,19 @@
         forget \
         --keep-daily "$KEEP_DAILY" \
         --prune
+
+      if [[ -d "$TEXTFILE_DIR" ]]; then
+        tmp_file="$(mktemp "${TEXTFILE_DIR}/restic.XXXXXX")"
+        {
+          printf '# HELP grayhaven_restic_backup_last_success_timestamp_seconds Last successful backup time.\n'
+          printf '# TYPE grayhaven_restic_backup_last_success_timestamp_seconds gauge\n'
+          printf 'grayhaven_restic_backup_last_success_timestamp_seconds{host="%s"} %s\n' \
+            "$(hostname -f)" \
+            "$(date +%s)"
+        } > "$tmp_file"
+        chmod 0644 "$tmp_file"
+        mv "$tmp_file" "${TEXTFILE_DIR}/restic.prom"
+      fi
 
 - name: Install local restic backup service
   ansible.builtin.copy:

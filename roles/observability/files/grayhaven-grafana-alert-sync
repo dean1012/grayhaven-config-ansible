@@ -1,0 +1,641 @@
+#!/usr/bin/env python3
+"""Synchronize Grayhaven-managed Grafana Cloud alert rules."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any
+
+MANAGED_LABEL = "configured_by"
+MANAGED_VALUE = "ansible"
+
+
+class GrafanaError(RuntimeError):
+    """Raised when the Grafana API returns an unrecoverable response."""
+
+
+class GrafanaClient:
+    def __init__(self, stack_url: str, api_token: str) -> None:
+        self.stack_url = stack_url.rstrip("/")
+        self.api_token = api_token
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        expected: tuple[int, ...] = (200,),
+    ) -> Any:
+        body = None
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.api_token}",
+        }
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+
+        url = f"{self.stack_url}{path}"
+        for attempt in range(5):
+            request = urllib.request.Request(url, data=body, headers=headers, method=method)
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    status = response.getcode()
+                    response_body = response.read().decode("utf-8")
+            except urllib.error.HTTPError as error:
+                if error.code == 429 or 500 <= error.code <= 599:
+                    retry_after = error.headers.get("Retry-After")
+                    delay = int(retry_after) if retry_after and retry_after.isdigit() else min(2**attempt, 30)
+                    time.sleep(delay)
+                    continue
+
+                message = error.read().decode("utf-8", errors="replace")
+                raise GrafanaError(f"{method} {path} failed with HTTP {error.code}: {message}") from error
+
+            if status not in expected:
+                raise GrafanaError(f"{method} {path} returned unexpected HTTP status {status}")
+
+            if not response_body:
+                return None
+
+            return json.loads(response_body)
+
+        raise GrafanaError(f"{method} {path} exceeded retry budget")
+
+    def datasource_uid(self, name: str) -> str:
+        encoded_name = urllib.parse.quote(name, safe="")
+        datasource = self.request("GET", f"/api/datasources/name/{encoded_name}")
+        return datasource["uid"]
+
+    def folder_uid(self, title: str) -> str:
+        encoded_query = urllib.parse.urlencode({"query": title})
+        folders = self.request("GET", f"/api/folders?{encoded_query}")
+        for folder in folders:
+            if folder.get("title") == title:
+                return folder["uid"]
+
+        raise GrafanaError(f"Grafana folder {title!r} was not found")
+
+    def alert_rules(self) -> list[dict[str, Any]]:
+        return self.request("GET", "/api/v1/provisioning/alert-rules")
+
+    def create_rule(self, rule: dict[str, Any]) -> None:
+        self.request("POST", "/api/v1/provisioning/alert-rules", rule, expected=(200, 201))
+
+    def update_rule(self, uid: str, rule: dict[str, Any]) -> None:
+        self.request("PUT", f"/api/v1/provisioning/alert-rules/{uid}", rule)
+
+    def delete_rule(self, uid: str) -> None:
+        self.request("DELETE", f"/api/v1/provisioning/alert-rules/{uid}", expected=(200, 202, 204))
+
+
+def stable_uid(title: str) -> str:
+    digest = hashlib.sha1(title.encode("utf-8")).hexdigest()[:24]
+    return f"gh-{digest}"
+
+
+def promql_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def domain_regex(values: list[str]) -> str:
+    return "|".join(re.escape(value) for value in values)
+
+
+def query_data(ref_id: str, datasource_uid: str, expression: str) -> dict[str, Any]:
+    return {
+        "refId": ref_id,
+        "queryType": "",
+        "relativeTimeRange": {"from": 600, "to": 0},
+        "datasourceUid": datasource_uid,
+        "model": {
+            "datasource": {"type": "prometheus", "uid": datasource_uid},
+            "editorMode": "code",
+            "expr": expression,
+            "instant": True,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": False,
+            "refId": ref_id,
+        },
+    }
+
+
+def threshold_data(evaluator_type: str, threshold: float) -> dict[str, Any]:
+    return {
+        "refId": "C",
+        "queryType": "",
+        "relativeTimeRange": {"from": 0, "to": 0},
+        "datasourceUid": "__expr__",
+        "model": {
+            "conditions": [
+                {
+                    "evaluator": {"params": [threshold], "type": evaluator_type},
+                    "operator": {"type": "and"},
+                    "query": {"params": ["C"]},
+                    "reducer": {"params": [], "type": "last"},
+                    "type": "query",
+                }
+            ],
+            "datasource": {"type": "__expr__", "uid": "__expr__"},
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold",
+        },
+    }
+
+
+def alert_rule(
+    *,
+    title: str,
+    folder_uid: str,
+    rule_group: str,
+    datasource_uid: str,
+    expression: str,
+    evaluator_type: str,
+    threshold: float,
+    labels: dict[str, str],
+    annotations: dict[str, str],
+    contact_point: str,
+    duration: str = "0s",
+    no_data_state: str = "Alerting",
+) -> dict[str, Any]:
+    return {
+        "uid": stable_uid(title),
+        "title": title,
+        "folderUID": folder_uid,
+        "ruleGroup": rule_group,
+        "condition": "C",
+        "data": [
+            query_data("A", datasource_uid, expression),
+            threshold_data(evaluator_type, threshold),
+        ],
+        "noDataState": no_data_state,
+        "execErrState": "Error",
+        "for": duration,
+        "annotations": annotations,
+        "labels": {**labels, MANAGED_LABEL: MANAGED_VALUE},
+        "isPaused": False,
+        "notification_settings": {"receiver": contact_point},
+    }
+
+
+def base_labels(config: dict[str, Any], extra: dict[str, str]) -> dict[str, str]:
+    labels = {
+        "client": config["labels"]["client"],
+        "environment": config["labels"]["environment"],
+    }
+    labels.update(extra)
+    return labels
+
+
+def host_labels(config: dict[str, Any], host: dict[str, Any], check: str) -> dict[str, str]:
+    return base_labels(
+        config,
+        {
+            "check": check,
+            "host": host["fqdn"],
+            "project": host["project"],
+            "role": host["role"],
+        },
+    )
+
+
+def host_selector(host: str) -> str:
+    return f'host="{promql_string(host)}"'
+
+
+def service_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> list[dict[str, Any]]:
+    rules = []
+    service_config = config["service_units"]
+    for host in config["hosts"]:
+        units = list(service_config["common"])
+        if host["role"] == "web":
+            units.extend(service_config["web"])
+        if host.get("control_node"):
+            units.extend(service_config["control_node"])
+
+        for unit in units:
+            title = f"{host['short_hostname']} {unit['summary'].replace(' is down', '')}"
+            expression = (
+                "max by (host, environment, role, project, client) "
+                f'(node_systemd_unit_state{{{host_selector(host["fqdn"])},'
+                f'name="{promql_string(unit["name"])}",state="active"}})'
+            )
+            rules.append(
+                alert_rule(
+                    title=title,
+                    folder_uid=folder_uid,
+                    rule_group=config["grafana"]["evaluation_group"],
+                    datasource_uid=datasource_uid,
+                    expression=expression,
+                    evaluator_type="lt",
+                    threshold=1,
+                    labels=host_labels(config, host, unit["check"]),
+                    annotations={
+                        "summary": unit["summary"],
+                        "description": f"{host['fqdn']} {unit['name']} is not active.",
+                    },
+                    contact_point=config["grafana"]["contact_point"],
+                )
+            )
+
+    return rules
+
+
+def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> list[dict[str, Any]]:
+    rules = []
+    thresholds = config["thresholds"]
+    for host in config["hosts"]:
+        common = {
+            "folder_uid": folder_uid,
+            "rule_group": config["grafana"]["evaluation_group"],
+            "datasource_uid": datasource_uid,
+            "contact_point": config["grafana"]["contact_point"],
+        }
+
+        rules.append(
+            alert_rule(
+                title=f"{host['short_hostname']} metrics data",
+                expression=(
+                    "max by (host, environment, role, project, client) "
+                    f'(up{{{host_selector(host["fqdn"])},job="integrations/unix"}})'
+                ),
+                evaluator_type="lt",
+                threshold=1,
+                labels=host_labels(config, host, "metrics_data"),
+                annotations={
+                    "summary": "Metrics data is missing",
+                    "description": f"{host['fqdn']} is not sending Grafana Cloud metrics.",
+                },
+                **common,
+            )
+        )
+
+        rules.append(
+            alert_rule(
+                title=f"{host['short_hostname']} CPU utilization",
+                expression=(
+                    "100 * (1 - avg by (host, environment, role, project, client) "
+                    f'(rate(node_cpu_seconds_total{{{host_selector(host["fqdn"])},mode="idle"}}[1m])))'
+                ),
+                evaluator_type="gt",
+                threshold=float(thresholds["cpu_percent"]),
+                duration="2m",
+                labels=host_labels(config, host, "cpu_utilization"),
+                annotations={
+                    "summary": "CPU utilization is high",
+                    "description": (
+                        f"{host['fqdn']} CPU utilization is >= {thresholds['cpu_percent']}% "
+                        "for >= 2 minutes."
+                    ),
+                    "check_value": "{{ humanize $values.A.Value }}%",
+                },
+                **common,
+            )
+        )
+
+        rules.append(
+            alert_rule(
+                title=f"{host['short_hostname']} memory utilization",
+                expression=(
+                    "100 * (1 - max by (host, environment, role, project, client) "
+                    f'(node_memory_MemAvailable_bytes{{{host_selector(host["fqdn"])}}}) '
+                    "/ max by (host, environment, role, project, client) "
+                    f'(node_memory_MemTotal_bytes{{{host_selector(host["fqdn"])}}}))'
+                ),
+                evaluator_type="gt",
+                threshold=float(thresholds["memory_percent"]),
+                duration="2m",
+                labels=host_labels(config, host, "memory_utilization"),
+                annotations={
+                    "summary": "Memory utilization is high",
+                    "description": (
+                        f"{host['fqdn']} memory utilization is >= {thresholds['memory_percent']}% "
+                        "for >= 2 minutes."
+                    ),
+                    "check_value": "{{ humanize $values.A.Value }}%",
+                },
+                **common,
+            )
+        )
+
+        rules.append(
+            alert_rule(
+                title=f"{host['short_hostname']} filesystem space",
+                expression=(
+                    "100 * (1 - max by (host, environment, role, project, client, mountpoint) "
+                    f'(node_filesystem_avail_bytes{{{host_selector(host["fqdn"])},mountpoint="/",'
+                    'fstype!~"tmpfs|overlay"}}) / max by (host, environment, role, project, client, mountpoint) '
+                    f'(node_filesystem_size_bytes{{{host_selector(host["fqdn"])},mountpoint="/",'
+                    'fstype!~"tmpfs|overlay"}}))'
+                ),
+                evaluator_type="gt",
+                threshold=float(thresholds["filesystem_percent"]),
+                labels=host_labels(config, host, "filesystem_space"),
+                annotations={
+                    "summary": "Filesystem space utilization is high",
+                    "description": (
+                        f"{host['fqdn']} filesystem / space utilization is >= "
+                        f"{thresholds['filesystem_percent']}%."
+                    ),
+                    "check_value": "{{ humanize $values.A.Value }}%",
+                    "mount_point": "/",
+                },
+                **common,
+            )
+        )
+
+        rules.append(
+            alert_rule(
+                title=f"{host['short_hostname']} swap utilization",
+                expression=(
+                    "100 * (1 - max by (host, environment, role, project, client) "
+                    f'(node_memory_SwapFree_bytes{{{host_selector(host["fqdn"])}}}) '
+                    "/ max by (host, environment, role, project, client) "
+                    f'(node_memory_SwapTotal_bytes{{{host_selector(host["fqdn"])}}}))'
+                ),
+                evaluator_type="gt",
+                threshold=float(thresholds["swap_percent"]),
+                duration="2m",
+                labels=host_labels(config, host, "swap_utilization"),
+                annotations={
+                    "summary": "Swap utilization is high",
+                    "description": f"{host['fqdn']} swap utilization is >= {thresholds['swap_percent']}%.",
+                    "check_value": "{{ humanize $values.A.Value }}%",
+                },
+                **common,
+            )
+        )
+
+        rules.append(
+            alert_rule(
+                title=f"{host['short_hostname']} restic backup stale",
+                expression=(
+                    "time() - max by (host, environment, role, project, client) "
+                    f'(grayhaven_restic_backup_last_success_timestamp_seconds{{{host_selector(host["fqdn"])}}})'
+                ),
+                evaluator_type="gt",
+                threshold=float(thresholds["restic_stale_seconds"]),
+                labels=host_labels(config, host, "restic_stale_backup"),
+                annotations={
+                    "summary": "Restic backup is stale",
+                    "description": (
+                        f"{host['fqdn']} restic backup has not completed successfully "
+                        "within the expected window."
+                    ),
+                },
+                **common,
+            )
+        )
+
+        if host.get("control_node"):
+            rules.append(
+                alert_rule(
+                    title=f"{host['short_hostname']} Ansible convergence",
+                    expression=(
+                        "max by (host, environment) "
+                        f'(grayhaven_ansible_convergence_last_success{{{host_selector(host["fqdn"])}}})'
+                    ),
+                    evaluator_type="lt",
+                    threshold=1,
+                    labels=host_labels(config, host, "ansible_convergence"),
+                    annotations={
+                        "summary": "Last Ansible convergence failed",
+                        "description": f"{host['fqdn']} last Ansible convergence did not complete successfully.",
+                    },
+                    **common,
+                )
+            )
+
+    return rules
+
+
+def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> list[dict[str, Any]]:
+    rules = []
+    if not config["sites"]:
+        return rules
+
+    web_host = next((host for host in config["hosts"] if host["role"] == "web"), None)
+    if web_host is None:
+        return rules
+
+    common = {
+        "folder_uid": folder_uid,
+        "rule_group": config["grafana"]["evaluation_group"],
+        "datasource_uid": datasource_uid,
+        "contact_point": config["grafana"]["contact_point"],
+    }
+
+    for site in config["sites"]:
+        for target_domain in [site["domain"], *site["aliases"]]:
+            rules.append(
+                alert_rule(
+                    title=f"{target_domain} HTTPS availability",
+                    expression=(
+                        "max by (domain, environment, role, project, client) "
+                        f'(probe_success{{domain="{promql_string(target_domain)}",check="https_200"}})'
+                    ),
+                    evaluator_type="lt",
+                    threshold=1,
+                    labels=base_labels(
+                        config,
+                        {
+                            "check": "https_200",
+                            "domain": target_domain,
+                            "project": web_host["project"],
+                            "role": "web",
+                        },
+                    ),
+                    annotations={
+                        "summary": "HTTPS availability check failed",
+                        "description": f"{target_domain} HTTPS check did not return 200 OK.",
+                    },
+                    **common,
+                )
+            )
+
+        rules.append(
+            alert_rule(
+                title=f"{site['dev_domain']} basic auth",
+                expression=(
+                    "max by (domain, environment, role, project, client) "
+                    f'(probe_success{{domain="{promql_string(site["dev_domain"])}",'
+                    'check="dev_basic_auth_401"}})'
+                ),
+                evaluator_type="lt",
+                threshold=1,
+                labels=base_labels(
+                    config,
+                    {
+                        "check": "dev_basic_auth_401",
+                        "domain": site["dev_domain"],
+                        "project": web_host["project"],
+                        "role": "web",
+                    },
+                ),
+                annotations={
+                    "summary": "Development basic auth check failed",
+                    "description": f"{site['dev_domain']} did not return 401 Unauthorized without credentials.",
+                },
+                **common,
+            )
+        )
+
+        redirect_domains = [site["domain"], *site["aliases"], site["dev_domain"]]
+        rules.append(
+            alert_rule(
+                title=f"{site['domain']} HTTP to HTTPS redirects",
+                expression=(
+                    "min by (domain, environment, role, project, client) "
+                    f'(probe_success{{domain=~"{domain_regex(redirect_domains)}",'
+                    'check="http_https_redirect"}})'
+                ),
+                evaluator_type="lt",
+                threshold=1,
+                labels=base_labels(
+                    config,
+                    {
+                        "check": "http_https_redirect",
+                        "domain": site["domain"],
+                        "project": web_host["project"],
+                        "role": "web",
+                    },
+                ),
+                annotations={
+                    "summary": "HTTP to HTTPS redirect check failed",
+                    "description": (
+                        f"{site['domain']} HTTP to HTTPS redirect checks did not all return "
+                        "a valid HTTPS redirect."
+                    ),
+                },
+                **common,
+            )
+        )
+
+        if config.get("tls_mode") == "host":
+            rules.append(
+                alert_rule(
+                    title=f"{site['domain']} SSL certificate expired",
+                    expression=(
+                        "max by (domain, environment, role, project, client) "
+                        f'(probe_ssl_earliest_cert_expiry{{domain="{promql_string(site["domain"])}",'
+                        'check="ssl_certificate"}} - time())'
+                    ),
+                    evaluator_type="lt",
+                    threshold=0,
+                    labels=base_labels(
+                        config,
+                        {
+                            "check": "ssl_certificate_expired",
+                            "domain": site["domain"],
+                            "project": web_host["project"],
+                            "role": "web",
+                        },
+                    ),
+                    annotations={
+                        "summary": "SSL certificate is expired",
+                        "description": f"{site['domain']} SSL certificate is expired.",
+                    },
+                    **common,
+                )
+            )
+
+    return rules
+
+
+def desired_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> dict[str, dict[str, Any]]:
+    rules = []
+    rules.extend(host_metric_rules(config, folder_uid, datasource_uid))
+    rules.extend(service_rules(config, folder_uid, datasource_uid))
+    rules.extend(site_rules(config, folder_uid, datasource_uid))
+    return {rule["uid"]: rule for rule in rules}
+
+
+def comparable(rule: dict[str, Any]) -> dict[str, Any]:
+    keys = [
+        "uid",
+        "title",
+        "folderUID",
+        "ruleGroup",
+        "condition",
+        "data",
+        "noDataState",
+        "execErrState",
+        "for",
+        "annotations",
+        "labels",
+        "isPaused",
+        "notification_settings",
+    ]
+    return {key: rule.get(key) for key in keys}
+
+
+def is_managed(rule: dict[str, Any], client: str) -> bool:
+    labels = rule.get("labels", {})
+    return labels.get(MANAGED_LABEL) == MANAGED_VALUE and labels.get("client") == client
+
+
+def sync(config: dict[str, Any]) -> tuple[int, int, int]:
+    client = GrafanaClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
+    datasource_uid = client.datasource_uid(config["grafana"]["prometheus_datasource_name"])
+    folder_uid = client.folder_uid(config["grafana"]["folder"])
+    desired = desired_rules(config, folder_uid, datasource_uid)
+    existing = {
+        rule["uid"]: rule
+        for rule in client.alert_rules()
+        if is_managed(rule, config["labels"]["client"])
+    }
+
+    created = 0
+    updated = 0
+    deleted = 0
+
+    for uid, rule in desired.items():
+        if uid not in existing:
+            client.create_rule(rule)
+            created += 1
+            continue
+
+        if comparable(existing[uid]) != comparable(rule):
+            client.update_rule(uid, rule)
+            updated += 1
+
+    for uid in sorted(set(existing) - set(desired)):
+        client.delete_rule(uid)
+        deleted += 1
+
+    return created, updated, deleted
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", required=True, help="Path to Grafana alert sync JSON configuration")
+    args = parser.parse_args()
+
+    with open(args.config, encoding="utf-8") as config_file:
+        config = json.load(config_file)
+
+    created, updated, deleted = sync(config)
+    changed = created + updated + deleted > 0
+    print(f"changed={str(changed).lower()} created={created} updated={updated} deleted={deleted}")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except GrafanaError as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(1)

@@ -52,6 +52,7 @@
     - managed_baseline
     - admin_access
     - web_static
+    - observability
 
   post_tasks:
     - name: Refresh reboot status after convergence

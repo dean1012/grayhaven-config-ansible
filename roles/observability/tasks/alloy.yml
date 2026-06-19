@@ -1,0 +1,188 @@
+---
+- name: Gather service facts for optional Alloy cleanup
+  ansible.builtin.service_facts:
+
+- name: Stop Alloy when Grafana Cloud metrics are disabled
+  ansible.builtin.systemd_service:
+    name: alloy.service
+    enabled: false
+    state: stopped
+  when:
+    - not observability_metrics_enabled
+    - "'alloy.service' in ansible_facts.services"
+
+- name: Trust Grafana RPM signing key
+  ansible.builtin.rpm_key:
+    key: "{{ observability_alloy_repo_gpgkey }}"
+    state: present
+  when: observability_metrics_enabled
+
+- name: Configure Grafana DNF repository
+  ansible.builtin.yum_repository:
+    name: "{{ observability_alloy_repo_name }}"
+    description: Grafana stable packages
+    baseurl: "{{ observability_alloy_repo_baseurl }}"
+    enabled: true
+    gpgcheck: true
+    repo_gpgcheck: true
+    gpgkey: "{{ observability_alloy_repo_gpgkey }}"
+    sslverify: true
+    sslcacert: /etc/pki/tls/certs/ca-bundle.crt
+  when: observability_metrics_enabled
+
+- name: Install Grafana Alloy
+  ansible.builtin.dnf:
+    name: "{{ observability_alloy_package }}"
+    state: present
+  when: observability_metrics_enabled
+
+- name: Ensure observability directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ observability_config_dir }}"
+      mode: "0750"
+    - path: /var/lib/grayhaven/observability
+      mode: "0755"
+    - path: "{{ observability_textfile_dir }}"
+      mode: "0755"
+  when: observability_metrics_enabled
+
+- name: Allow Alloy to read managed log sources
+  ansible.builtin.user:
+    name: alloy
+    groups:
+      - adm
+      - systemd-journal
+    append: true
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+  notify: Restart Alloy
+
+- name: Store Grafana Alloy API key
+  ansible.builtin.copy:
+    dest: "{{ observability_alloy_token_file }}"
+    owner: root
+    group: alloy
+    mode: "0640"
+    content: "{{ observability_grafana_credentials.alloy_api_key }}"
+  when: observability_metrics_enabled
+  notify: Restart Alloy
+  no_log: true
+
+- name: Install Grayhaven observability textfile helper
+  ansible.builtin.copy:
+    src: grayhaven-observability-textfile
+    dest: /usr/local/sbin/grayhaven-observability-textfile
+    owner: root
+    group: root
+    mode: "0755"
+  when: observability_metrics_enabled
+
+- name: Store Grayhaven textfile metric configuration
+  ansible.builtin.copy:
+    dest: "{{ observability_textfile_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ observability_textfile_config | to_nice_json }}\n"
+  vars:
+    observability_textfile_config:
+      host:
+        fqdn: "{{ inventory_hostname }}"
+        short_hostname: "{{ observability_short_hostname }}"
+        role: "{{ observability_role }}"
+        project: "{{ observability_project }}"
+        client: "{{ observability_client }}"
+        environment: "{{ managed_baseline_environment }}"
+        control_node: "{{ observability_host_is_control_node }}"
+      hosts: "{{ observability_hosts }}"
+  when: observability_metrics_enabled
+
+- name: Install Grayhaven observability textfile service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-observability-textfile.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Grayhaven Systems LLC observability textfile metrics
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/grayhaven-observability-textfile
+  when: observability_metrics_enabled
+  notify: Reload systemd
+
+- name: Install Grayhaven observability textfile timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-observability-textfile.timer
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Refresh Grayhaven Systems LLC observability textfile metrics
+
+      [Timer]
+      OnBootSec=1m
+      OnUnitActiveSec=1m
+      AccuracySec=15s
+      Persistent=true
+      Unit=grayhaven-observability-textfile.service
+
+      [Install]
+      WantedBy=timers.target
+  when: observability_metrics_enabled
+  notify: Reload systemd
+
+- name: Seed restic success metric during observability rollout
+  ansible.builtin.copy:
+    dest: "{{ observability_textfile_dir }}/restic.prom"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+    content: "{{ observability_restic_seed_metric }}"
+  when: observability_metrics_enabled
+  vars:
+    observability_now_epoch: "{{ ansible_date_time.epoch }}"
+    observability_restic_seed_metric_line: >-
+      grayhaven_restic_backup_last_success_timestamp_seconds{host="{{ inventory_hostname }}"}
+      {{ observability_now_epoch }}
+    observability_restic_seed_metric: |
+      # HELP grayhaven_restic_backup_last_success_timestamp_seconds Last successful backup time.
+      # TYPE grayhaven_restic_backup_last_success_timestamp_seconds gauge
+      {{ observability_restic_seed_metric_line }}
+
+- name: Enable Grayhaven observability textfile timer
+  ansible.builtin.systemd_service:
+    name: grayhaven-observability-textfile.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: observability_metrics_enabled
+
+- name: Render Grafana Alloy configuration
+  ansible.builtin.template:
+    src: config.alloy.j2
+    dest: /etc/alloy/config.alloy
+    owner: root
+    group: alloy
+    mode: "0640"
+  when: observability_metrics_enabled
+  notify: Restart Alloy
+
+- name: Enable Grafana Alloy
+  ansible.builtin.systemd_service:
+    name: alloy.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: observability_metrics_enabled

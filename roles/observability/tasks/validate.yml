@@ -1,0 +1,94 @@
+---
+- name: Normalize observability configuration
+  ansible.builtin.set_fact:
+    observability_config: "{{ observability | default({}) }}"
+    observability_grafana_config: "{{ (observability | default({})).grafana_cloud | default({}) }}"
+    observability_grafana_credentials: "{{ grafana_cloud | default({}) }}"
+
+- name: Derive observability enablement flags
+  ansible.builtin.set_fact:
+    observability_grafana_enabled: "{{ observability_grafana_config.enabled | default(false) | bool }}"
+    observability_grafana_logs_enabled: "{{ observability_grafana_config.logs_enabled | default(false) | bool }}"
+    observability_host_tags: "{{ do_tags | default([]) }}"
+
+- name: Derive host observability tag state
+  ansible.builtin.set_fact:
+    observability_metrics_enabled: >-
+      {{
+        observability_grafana_enabled
+        and 'alerts-in-grafana-cloud' in observability_host_tags
+      }}
+    observability_logs_enabled: >-
+      {{
+        observability_grafana_logs_enabled
+        and 'logs-to-grafana-cloud' in observability_host_tags
+      }}
+    observability_host_is_control_node: "{{ 'control-node' in observability_host_tags }}"
+
+- name: Fail if Grafana Cloud log shipping is enabled without metrics
+  ansible.builtin.assert:
+    that:
+      - not observability_grafana_logs_enabled or observability_grafana_enabled
+    fail_msg: "Grafana Cloud log shipping requires Grafana Cloud observability to be enabled."
+    quiet: true
+
+- name: Fail if Grafana Cloud is enabled outside production
+  ansible.builtin.assert:
+    that:
+      - not observability_grafana_enabled or managed_baseline_environment == "prod"
+    fail_msg: "Grafana Cloud observability is currently supported only in the prod environment."
+    quiet: true
+
+- name: Fail if Grafana Cloud production tags are missing
+  ansible.builtin.assert:
+    that:
+      - not observability_grafana_enabled or 'alerts-in-grafana-cloud' in observability_host_tags
+      - not observability_grafana_logs_enabled or 'logs-to-grafana-cloud' in observability_host_tags
+    fail_msg: "Grafana Cloud observability is enabled, but required DigitalOcean tags are missing."
+    quiet: true
+
+- name: Validate Grafana Cloud metric shipping secrets
+  ansible.builtin.assert:
+    that:
+      - observability_grafana_credentials.alloy_api_key is defined
+      - observability_grafana_credentials.alloy_api_key is string
+      - observability_grafana_credentials.alloy_api_key | trim | length > 0
+      - observability_grafana_credentials.prometheus is defined
+      - observability_grafana_credentials.prometheus.remote_write_url is string
+      - observability_grafana_credentials.prometheus.remote_write_url | trim | length > 0
+      - observability_grafana_credentials.prometheus.username is string
+      - observability_grafana_credentials.prometheus.username | trim | length > 0
+    fail_msg: "Grafana Cloud metric shipping credentials are incomplete."
+    quiet: true
+  when: observability_metrics_enabled
+  no_log: true
+
+- name: Validate Grafana Cloud log shipping secrets
+  ansible.builtin.assert:
+    that:
+      - observability_grafana_credentials.loki is defined
+      - observability_grafana_credentials.loki.push_url is string
+      - observability_grafana_credentials.loki.push_url | trim | length > 0
+      - observability_grafana_credentials.loki.username is string
+      - observability_grafana_credentials.loki.username | trim | length > 0
+    fail_msg: "Grafana Cloud log shipping credentials are incomplete."
+    quiet: true
+  when: observability_logs_enabled
+  no_log: true
+
+- name: Validate Grafana Cloud alert sync configuration
+  ansible.builtin.assert:
+    that:
+      - observability_grafana_credentials.stack_url is string
+      - observability_grafana_credentials.stack_url | trim | length > 0
+      - observability_grafana_credentials.alerting is defined
+      - observability_grafana_credentials.alerting.api_token is string
+      - observability_grafana_credentials.alerting.api_token | trim | length > 0
+      - observability_grafana_credentials.prometheus.datasource_name is string
+      - observability_grafana_credentials.prometheus.datasource_name | trim | length > 0
+    fail_msg: "Grafana Cloud alert sync configuration is incomplete."
+    quiet: true
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node
+  no_log: true

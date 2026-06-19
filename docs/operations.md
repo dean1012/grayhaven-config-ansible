@@ -13,6 +13,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
 - [Root Command Audit Trail](#root-command-audit-trail)
 - [Operator Tmux Console](#operator-tmux-console)
+- [Grafana Cloud Observability](#grafana-cloud-observability)
 - [Infrastructure Policy Changes](#infrastructure-policy-changes)
 
 ## Manual Runner Invocation
@@ -243,6 +244,35 @@ documentation explains how workspace files are built and loaded. The public
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
 repository documents the managed user schema for enabling auto-attach and
 selecting workspace files.
+
+[Back to top](#operations)
+
+## Grafana Cloud Observability
+
+Grafana Cloud observability is configured by normal convergence when enabled
+for production. To apply observability changes, run the normal manual runner
+from the active control bastion:
+
+```bash
+sudo systemctl start grayhaven-ansible-runner.service
+```
+
+Useful local status commands:
+
+```bash
+sudo systemctl status alloy.service
+sudo systemctl status grayhaven-observability-textfile.timer
+sudo journalctl -u alloy.service
+sudo journalctl -u grayhaven-ansible-runner.service
+```
+
+Ansible-managed Grafana alert rules are labeled `configured_by=ansible`.
+Manual Grafana Cloud alert rules should not use that label because Ansible uses
+it to identify rules it owns.
+
+Grafana Cloud integration is supported only for the `prod` environment. The
+[observability architecture](observability-architecture.md) documentation
+describes what Ansible manages and what remains manual in Grafana Cloud.
 
 [Back to top](#operations)
 
