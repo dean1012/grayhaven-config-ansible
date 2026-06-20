@@ -17,6 +17,14 @@
     state: started
     enabled: true
 
+- name: Ensure audit rules directory exists
+  ansible.builtin.file:
+    path: /etc/audit/rules.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
 - name: Install managed sudo user root-command audit rules
   ansible.builtin.template:
     src: grayhaven-root-command.rules.j2
