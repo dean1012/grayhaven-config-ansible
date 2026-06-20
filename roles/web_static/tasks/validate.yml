@@ -38,6 +38,10 @@
   ansible.builtin.set_fact:
     web_static_sites: []
 
+- name: Initialize static certificate definitions
+  ansible.builtin.set_fact:
+    web_static_certificate_sites: []
+
 - name: Build static site definitions from hosted domains
   ansible.builtin.set_fact:
     web_static_sites: "{{ web_static_sites + [web_static_site] }}"
@@ -79,4 +83,21 @@
           ~ '.htpasswd'
         }}
       htpasswd_entries: "{{ item.dev.htpasswd_entries }}"
+  no_log: true
+
+- name: Build static certificate definitions
+  ansible.builtin.set_fact:
+    web_static_certificate_sites: >-
+      {{
+        web_static_certificate_sites
+        + [{
+          "domain": item.domain,
+          "aliases": item.aliases,
+          "dev_domain": item.dev_domain,
+          "cert_name": item.cert_name
+        }]
+      }}
+  loop: "{{ web_static_sites }}"
+  loop_control:
+    label: "{{ item.cert_name }}"
   no_log: true
