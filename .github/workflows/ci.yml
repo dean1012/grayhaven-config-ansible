@@ -45,12 +45,28 @@ jobs:
           files/grayhaven-refresh-motd
           roles/observability/files/grayhaven-grafana-alert-sync
           roles/observability/files/grayhaven-observability-textfile
+          scripts/validate-rendered-alloy-config
+
+      - name: Install Alloy validation tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes apt-transport-https gpg wget
+          sudo mkdir -p /etc/apt/keyrings
+          sudo wget -O /etc/apt/keyrings/grafana.asc https://apt.grafana.com/gpg-full.key
+          sudo chmod 644 /etc/apt/keyrings/grafana.asc
+          echo "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://apt.grafana.com stable main" \
+          | sudo tee /etc/apt/sources.list.d/grafana.list
+          sudo apt-get update
+          sudo apt-get install --yes alloy
 
       - name: Install Ansible validation tools
         run: |
           python -m pip install --upgrade pip
           python -m pip install --require-hashes --requirement pip3_requirements.txt
           python -m pip install ansible-lint
+
+      - name: Validate rendered Alloy config
+        run: scripts/validate-rendered-alloy-config
 
       - name: Install Ansible Galaxy collections
         run: scripts/install-galaxy-collections

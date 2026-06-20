@@ -27,7 +27,7 @@ prometheus.scrape "node" {
 
 {% if grayhaven_role == "web" and observability_web_sites | length > 0 %}
 prometheus.exporter.blackbox "http" {
-  config = <<EOT
+  config = `
 modules:
   http_2xx:
     prober: http
@@ -57,7 +57,7 @@ modules:
       fail_if_header_not_matches:
         - header: Location
           regexp: '^https://'
-EOT
+`
 
 {% for site in observability_web_sites %}
 {% set site_id = site.root_name | regex_replace('[^A-Za-z0-9_]', '_') %}
@@ -268,6 +268,14 @@ loki.source.journal "system" {
 loki.process "grayhaven" {
   stage.drop {
     expression = ".*cloud-init.*"
+  }
+
+  stage.drop {
+    expression = ".*sudo\\[[0-9]+\\]:\\s+ansible\\s+:.*"
+  }
+
+  stage.drop {
+    expression = ".*pam_unix\\(sudo:session\\): session (opened|closed).*"
   }
 
   stage.replace {

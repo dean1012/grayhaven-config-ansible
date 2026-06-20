@@ -85,6 +85,11 @@ a safeguard, not a handling procedure. Administrators should still avoid placing
 secrets directly on command lines or in log output. If a secret is exposed,
 rotate it immediately.
 
+Sudo session-open/session-close noise and Ansible automation sudo command lines
+are filtered from shipped logs so the audit stream stays focused on human
+operator activity. Ansible runner service logs are still shipped when log
+shipping is enabled.
+
 [Back to top](#observability-architecture)
 
 ## Managed Alerts
