@@ -1,3 +1,22 @@
+{% if web_static_tls_mode == "host" %}
+# Host TLS catch-all servers reject hostnames that are not explicitly
+# configured below. This prevents unknown hostnames from falling through to the
+# first configured vhost.
+server {
+    listen 80 default_server;
+    server_name _;
+
+    return 444;
+}
+
+server {
+    listen 443 ssl default_server;
+    server_name _;
+
+    ssl_reject_handshake on;
+}
+{% endif %}
+
 {% for site in web_static_sites %}
 {% if web_static_tls_mode == "host" %}
 # Host TLS mode: nginx redirects HTTP to HTTPS and serves local Certbot
