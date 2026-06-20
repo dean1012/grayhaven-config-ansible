@@ -243,14 +243,23 @@ client and environment are eligible for deletion.
 
 ## Root Command Audit Trail
 
-Managed sudo-capable users are enrolled in auditd root-command auditing. This
-captures command execution for `sudo`, `sudo su -`, and `su -` root shell
-sessions without capturing command output.
+Managed sudo-capable users are covered by sudo journal logging and interactive
+root-shell command logging. This records one-shot `sudo` commands and commands
+typed in interactive root Bash shells reached through `sudo su -` or `su -`.
+Command output is not captured.
 
-To inspect the audit trail locally, run:
+The primary review path is Grafana Cloud Loki when log shipping is enabled.
+Useful starting queries:
+
+```logql
+{job="systemd_journal"} |= "COMMAND="
+{job="systemd_journal"} |= "grayhaven-root-command"
+```
+
+For a local fallback on a managed host, run:
 
 ```bash
-sudo ausearch -k grayhaven-root-command -i
+sudo journalctl --since today -t sudo -t grayhaven-root-command
 ```
 
 Avoid placing secrets directly on command lines. If a secret is accidentally

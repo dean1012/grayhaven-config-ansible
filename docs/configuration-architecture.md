@@ -177,10 +177,12 @@ without archiving it.
 Homedir archives are not encrypted by the archive process. They are included in
 the encrypted local restic backup set by default.
 
-Present managed users with `sudo: true` are enrolled in auditd root-command
-auditing. Generated audit rules target each user's audit login UID and record
-root command execution with the `grayhaven-root-command` audit key without
-broadly auditing Ansible automation or system daemon execution.
+Present managed users with `sudo: true` are covered by sudo journal logging and
+interactive root-shell command logging. One-shot `sudo` commands remain visible
+through normal sudo logs. Interactive root Bash shells emit concise
+`grayhaven-root-command` journal entries with the command text, origin user and
+UID when known, TTY, working directory, and exit status. Command output is not
+captured.
 
 [Back to top](#configuration-architecture)
 
