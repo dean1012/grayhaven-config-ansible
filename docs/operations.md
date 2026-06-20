@@ -253,14 +253,16 @@ The primary review path is Grafana Cloud Loki when log shipping is enabled.
 Useful starting queries:
 
 ```logql
-{job="systemd_journal"} |= "COMMAND="
+{job="systemd_journal"} |= "COMMAND=" != " ansible :"
 {job="systemd_journal"} |= "grayhaven-root-command"
 ```
 
 For a local fallback on a managed host, run:
 
 ```bash
-sudo journalctl --since today -t sudo -t grayhaven-root-command
+sudo journalctl --since today -t sudo -t grayhaven-root-command --no-pager \
+  | grep -E 'COMMAND=|grayhaven-root-command' \
+  | grep -v ' ansible :'
 ```
 
 Avoid placing secrets directly on command lines. If a secret is accidentally

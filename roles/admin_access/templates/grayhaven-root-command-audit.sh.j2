@@ -91,7 +91,7 @@ __grayhaven_root_command_audit() {
 __GRAYHAVEN_ROOT_COMMAND_LAST_HISTORY_ID="$(__grayhaven_root_command_current_history_id)"
 
 # shellcheck disable=SC2128,SC2178
-if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare \-[^ ]*a[^ ]* PROMPT_COMMAND='; then
+if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare -[^ ]*a[^ ]* PROMPT_COMMAND='; then
     PROMPT_COMMAND+=(__grayhaven_root_command_audit)
 else
     case ";${PROMPT_COMMAND:-};" in
