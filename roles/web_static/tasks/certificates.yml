@@ -14,7 +14,7 @@
 - name: Check host TLS certificate files
   ansible.builtin.stat:
     path: "/etc/letsencrypt/live/{{ item.cert_name }}/fullchain.pem"
-  loop: "{{ web_static_sites }}"
+  loop: "{{ web_static_certificate_sites }}"
   loop_control:
     label: "{{ item.cert_name }}"
   register: web_static_certificate_file_stats
@@ -23,7 +23,7 @@
 - name: Check Certbot environment markers
   ansible.builtin.stat:
     path: "/etc/grayhaven/certbot/{{ item.cert_name }}.environment"
-  loop: "{{ web_static_sites }}"
+  loop: "{{ web_static_certificate_sites }}"
   loop_control:
     label: "{{ item.cert_name }}"
   register: web_static_certificate_environment_marker_stats
@@ -32,13 +32,17 @@
 - name: Read Certbot environment markers
   ansible.builtin.slurp:
     src: "/etc/grayhaven/certbot/{{ item.item.cert_name }}.environment"
-  loop: "{{ web_static_certificate_environment_marker_stats.results | default([]) }}"
+  loop: >-
+    {{
+      web_static_certificate_environment_marker_stats.results
+      | default([])
+      | selectattr('stat.exists')
+      | list
+    }}
   loop_control:
     label: "{{ item.item.cert_name }}"
   register: web_static_certificate_environment_markers
-  when:
-    - web_static_tls_mode == "host"
-    - item.stat.exists
+  when: web_static_tls_mode == "host"
 
 - name: Build Certbot environment marker map
   ansible.builtin.set_fact:
@@ -52,9 +56,7 @@
   loop: "{{ web_static_certificate_environment_markers.results | default([]) }}"
   loop_control:
     label: "{{ item.item.cert_name }}"
-  when:
-    - web_static_tls_mode == "host"
-    - not (item.skipped | default(false))
+  when: web_static_tls_mode == "host"
 
 - name: Derive host TLS certificates requiring issuance
   ansible.builtin.set_fact:
@@ -129,7 +131,7 @@
 - name: Verify host TLS certificate files exist
   ansible.builtin.stat:
     path: "/etc/letsencrypt/live/{{ item.cert_name }}/fullchain.pem"
-  loop: "{{ web_static_sites }}"
+  loop: "{{ web_static_certificate_sites }}"
   loop_control:
     label: "{{ item.cert_name }}"
   register: web_static_certificate_stats
