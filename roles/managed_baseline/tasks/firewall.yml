@@ -155,11 +155,11 @@
       when: managed_baseline_firewalld_enabled.rc != 0
 
     - name: Start firewalld outside the active SSH session
-      ansible.builtin.command:
-        cmd: systemctl start firewalld
-      async: 45
-      poll: 0
-      changed_when: true
+      ansible.builtin.raw: |
+        nohup systemctl start firewalld >/dev/null 2>&1 </dev/null &
+        echo starting
+      changed_when: "'starting' in managed_baseline_firewalld_start.stdout_lines"
+      register: managed_baseline_firewalld_start
       when: managed_baseline_firewalld_running.rc != 0
 
     - name: Wait for SSH after firewalld starts
