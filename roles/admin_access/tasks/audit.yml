@@ -39,4 +39,15 @@
     owner: root
     group: root
     mode: "0600"
+
+- name: Check audit rule load state
+  ansible.builtin.command:
+    cmd: /usr/sbin/augenrules --check
+  changed_when: >-
+    'Rules have changed' in
+    (
+      admin_access_augenrules_check.stdout
+      ~ admin_access_augenrules_check.stderr
+    )
+  register: admin_access_augenrules_check
   notify: Load audit rules
