@@ -74,9 +74,10 @@ selected logs to Grafana Cloud Loki.
 The log set is intentionally targeted:
 
 - Nginx access and error logs for configured domains;
-- audit logs, including sudo and root-command audit events;
+- audit logs;
 - Certbot logs;
-- systemd journal entries.
+- systemd journal entries, including sudo and `grayhaven-root-command` command
+  audit entries.
 
 Cloud-init logs are excluded. Log lines pass through a defensive redaction
 stage for common secret-like key names before leaving the host, but redaction is

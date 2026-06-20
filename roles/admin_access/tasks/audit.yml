@@ -1,16 +1,4 @@
 ---
-- name: Query present sudo managed user IDs
-  ansible.builtin.command:
-    argv:
-      - id
-      - -u
-      - "{{ item.username }}"
-  changed_when: false
-  register: admin_access_sudo_user_ids
-  loop: "{{ admin_access_present_sudo_users }}"
-  loop_control:
-    label: "{{ item.username }}"
-
 - name: Install audit rule utilities
   ansible.builtin.dnf:
     name:
@@ -32,13 +20,21 @@
     group: root
     mode: "0700"
 
-- name: Install managed sudo user root-command audit rules
+- name: Retire legacy root-command exec audit rules
   ansible.builtin.template:
     src: grayhaven-root-command.rules.j2
     dest: /etc/audit/rules.d/50-grayhaven-root-command.rules
     owner: root
     group: root
     mode: "0600"
+
+- name: Install interactive root command journal logger
+  ansible.builtin.template:
+    src: grayhaven-root-command-audit.sh.j2
+    dest: /etc/profile.d/grayhaven-root-command-audit.sh
+    owner: root
+    group: root
+    mode: "0644"
 
 - name: Check audit rule load state
   ansible.builtin.command:

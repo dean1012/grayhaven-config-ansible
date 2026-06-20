@@ -1,0 +1,104 @@
+# Managed by Ansible.
+# Emit concise journal entries for commands typed in interactive root Bash shells.
+
+# shellcheck shell=bash
+
+if [ -z "${BASH_VERSION:-}" ]; then
+    # shellcheck disable=SC2317
+    return 0 2>/dev/null || exit 0
+fi
+
+# shellcheck disable=SC2317
+case "$-" in
+    *i*) ;;
+    *) return 0 2>/dev/null || exit 0 ;;
+esac
+
+if [ "${EUID}" -ne 0 ]; then
+    # shellcheck disable=SC2317
+    return 0 2>/dev/null || exit 0
+fi
+
+__grayhaven_root_command_current_history_id() {
+    local history_entry
+
+    history_entry="$(HISTTIMEFORMAT='' history 1 2>/dev/null || true)"
+    history_entry="${history_entry#"${history_entry%%[![:space:]]*}"}"
+    printf '%s' "${history_entry%%[[:space:]]*}"
+}
+
+__grayhaven_root_command_escape() {
+    local value
+
+    value="${1//$'\n'/ }"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    printf '%s' "$value"
+}
+
+__grayhaven_root_command_origin() {
+    local login_uid origin_user
+
+    login_uid="$(cat /proc/self/loginuid 2>/dev/null || true)"
+    if [[ "$login_uid" =~ ^[0-9]+$ ]] && [ "$login_uid" != "4294967295" ]; then
+        origin_user="$(getent passwd "$login_uid" | cut -d: -f1)"
+    fi
+
+    if [ -z "${origin_user:-}" ] && [ -n "${SUDO_USER:-}" ]; then
+        origin_user="${SUDO_USER}"
+    fi
+
+    if [ -z "${origin_user:-}" ]; then
+        origin_user="$(logname 2>/dev/null || true)"
+    fi
+
+    printf '%s:%s' "${origin_user:-unknown}" "${login_uid:-unknown}"
+}
+
+__grayhaven_root_command_audit() {
+    local previous_status history_entry history_id command origin origin_user origin_uid
+    local tty_name cwd_log command_log
+
+    previous_status=$?
+    history_entry="$(HISTTIMEFORMAT='' history 1 2>/dev/null || true)"
+    history_entry="${history_entry#"${history_entry%%[![:space:]]*}"}"
+    history_id="${history_entry%%[[:space:]]*}"
+    command="${history_entry#"$history_id"}"
+    command="${command#"${command%%[![:space:]]*}"}"
+
+    if [ -z "$history_id" ] || [ -z "$command" ]; then
+        return "$previous_status"
+    fi
+
+    if [ "$history_id" = "${__GRAYHAVEN_ROOT_COMMAND_LAST_HISTORY_ID:-}" ]; then
+        return "$previous_status"
+    fi
+
+    __GRAYHAVEN_ROOT_COMMAND_LAST_HISTORY_ID="$history_id"
+    origin="$(__grayhaven_root_command_origin)"
+    origin_user="${origin%%:*}"
+    origin_uid="${origin#*:}"
+    tty_name="$(tty 2>/dev/null || printf 'unknown')"
+    cwd_log="$(__grayhaven_root_command_escape "$PWD")"
+    command_log="$(__grayhaven_root_command_escape "$command")"
+
+    logger \
+        --priority authpriv.notice \
+        --tag grayhaven-root-command \
+        -- \
+        "grayhaven-root-command user=\"${origin_user}\" uid=\"${origin_uid}\" tty=\"${tty_name}\" cwd=\"${cwd_log}\" exit=\"${previous_status}\" command=\"${command_log}\""
+
+    return "$previous_status"
+}
+
+__GRAYHAVEN_ROOT_COMMAND_LAST_HISTORY_ID="$(__grayhaven_root_command_current_history_id)"
+
+# shellcheck disable=SC2128,SC2178
+if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare \-[^ ]*a[^ ]* PROMPT_COMMAND='; then
+    PROMPT_COMMAND+=(__grayhaven_root_command_audit)
+else
+    case ";${PROMPT_COMMAND:-};" in
+        *";__grayhaven_root_command_audit;"*) ;;
+        *) PROMPT_COMMAND="__grayhaven_root_command_audit${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
+    esac
+fi
