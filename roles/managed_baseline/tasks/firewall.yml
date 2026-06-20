@@ -134,19 +134,33 @@
   vars:
     ansible_ssh_args: "{{ managed_baseline_firewalld_ssh_args }}"
   block:
-    - name: Enable firewalld and start it outside the active SSH session
-      ansible.builtin.raw: |
-        set -eu
+    - name: Check whether firewalld is enabled
+      ansible.builtin.command:
+        cmd: systemctl is-enabled --quiet firewalld
+      register: managed_baseline_firewalld_enabled
+      changed_when: false
+      failed_when: false
 
-        if systemctl is-enabled --quiet firewalld && systemctl is-active --quiet firewalld; then
-          echo unchanged
-        else
-          systemctl enable firewalld
-          nohup systemctl start firewalld >/dev/null 2>&1 </dev/null &
-          echo changed
-        fi
-      register: managed_baseline_firewalld_start
-      changed_when: "'changed' in managed_baseline_firewalld_start.stdout_lines"
+    - name: Check whether firewalld is active
+      ansible.builtin.command:
+        cmd: systemctl is-active --quiet firewalld
+      register: managed_baseline_firewalld_running
+      changed_when: false
+      failed_when: false
+
+    - name: Enable firewalld
+      ansible.builtin.systemd_service:
+        name: firewalld
+        enabled: true
+      when: managed_baseline_firewalld_enabled.rc != 0
+
+    - name: Start firewalld outside the active SSH session
+      ansible.builtin.command:
+        cmd: systemctl start firewalld
+      async: 45
+      poll: 0
+      changed_when: true
+      when: managed_baseline_firewalld_running.rc != 0
 
     - name: Wait for SSH after firewalld starts
       ansible.builtin.wait_for_connection:
