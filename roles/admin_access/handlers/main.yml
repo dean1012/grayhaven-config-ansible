@@ -1,5 +1,5 @@
 ---
 - name: Load audit rules
   ansible.builtin.command:
-    cmd: augenrules --load
+    cmd: /usr/sbin/augenrules --load
   changed_when: true

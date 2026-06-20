@@ -11,6 +11,13 @@
   loop_control:
     label: "{{ item.username }}"
 
+- name: Install audit rule utilities
+  ansible.builtin.dnf:
+    name:
+      - audit
+      - audit-rules
+    state: present
+
 - name: Enable and start audit daemon
   ansible.builtin.service:
     name: auditd
