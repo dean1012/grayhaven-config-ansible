@@ -50,12 +50,12 @@
       {{
         web_static_certificate_environment_marker_map | default({})
         | combine({
-            item.item.cert_name: item.content | b64decode | trim
+            item.item.item.cert_name: item.content | b64decode | trim
           })
       }}
   loop: "{{ web_static_certificate_environment_markers.results | default([]) }}"
   loop_control:
-    label: "{{ item.item.cert_name }}"
+    label: "{{ item.item.item.cert_name }}"
   when: web_static_tls_mode == "host"
 
 - name: Derive host TLS certificates requiring issuance
