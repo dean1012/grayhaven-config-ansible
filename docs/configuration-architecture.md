@@ -219,6 +219,9 @@ using the role-specific DigitalOcean DNS token from the vault. Certbot renewals
 are handled by the system timer installed by the Certbot package. A deploy hook
 reloads Nginx after certificate renewal.
 
+In host TLS mode, Nginx rejects hostnames that are not explicitly configured so
+unknown hostnames do not fall through to a managed web site.
+
 Ansible records which certificate environment last issued each host TLS
 certificate. If `certificate_environment` changes, Ansible reissues the
 certificate for the new environment. This should be changed deliberately and
