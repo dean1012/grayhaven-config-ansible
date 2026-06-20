@@ -81,6 +81,9 @@
   ansible.builtin.command:
     argv: "{{ web_static_certbot_command }}"
   changed_when: true
+  until: web_static_certbot_issuance.rc == 0
+  retries: 3
+  delay: 20
   vars:
     web_static_certbot_domains: "{{ [item.domain] + item.aliases + [item.dev_domain] }}"
     web_static_certbot_domain_args: >-
