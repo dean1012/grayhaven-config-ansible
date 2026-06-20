@@ -180,9 +180,8 @@ the encrypted local restic backup set by default.
 Present managed users with `sudo: true` are covered by sudo journal logging and
 interactive root-shell command logging. One-shot `sudo` commands remain visible
 through normal sudo logs. Interactive root Bash shells emit concise
-`grayhaven-root-command` journal entries with the command text, origin user and
-UID when known, TTY, working directory, and exit status. Command output is not
-captured.
+`grayhaven-root-command` journal entries with the command text and origin user
+when known. Command output is not captured.
 
 [Back to top](#configuration-architecture)
 

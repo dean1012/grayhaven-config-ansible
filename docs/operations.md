@@ -246,7 +246,8 @@ client and environment are eligible for deletion.
 Managed sudo-capable users are covered by sudo journal logging and interactive
 root-shell command logging. This records one-shot `sudo` commands and commands
 typed in interactive root Bash shells reached through `sudo su -` or `su -`.
-Command output is not captured.
+Command output is not captured. Use the Loki or journal timestamp as the event
+timestamp.
 
 The primary review path is Grafana Cloud Loki when log shipping is enabled.
 Useful starting queries:
