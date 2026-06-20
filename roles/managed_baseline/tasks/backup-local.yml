@@ -10,6 +10,7 @@
     - "{{ managed_baseline_backup_repository_path }}"
     - "{{ managed_baseline_backup_homedir_archive_path }}"
     - /etc/grayhaven/backup
+    - /var/cache/restic
 
 - name: Store restic password file
   ansible.builtin.copy:
@@ -103,8 +104,11 @@
       EXCLUDE_FILE=/etc/grayhaven/backup/exclude
       KEEP_DAILY={{ managed_baseline_backup_keep_daily | quote }}
       TEXTFILE_DIR=/var/lib/grayhaven/observability/textfile
+      RESTIC_CACHE_DIR=/var/cache/restic
       GCS_CREDENTIALS_FILE=/etc/grayhaven/backup/gcs-credentials.json
       GCS_PROJECT_ID={{ managed_baseline_backup_remote_gcs_project_id | default('') | quote }}
+
+      export RESTIC_CACHE_DIR
 
       successful_repositories=()
 
