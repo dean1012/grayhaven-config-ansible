@@ -11,8 +11,13 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
-- [Backup And Restore Validation](#backup-and-restore-validation)
-- [GCS Restic Bucket Cleanup](#gcs-restic-bucket-cleanup)
+- [Triggering a Manual Backup](#triggering-a-manual-backup)
+- [Verifying Local Backups](#verifying-local-backups)
+- [Verifying Remote Backups](#verifying-remote-backups)
+- [Listing the Contents of a Local Backup](#listing-the-contents-of-a-local-backup)
+- [Listing the Contents of a Remote Backup](#listing-the-contents-of-a-remote-backup)
+- [Restoring a Local Backup](#restoring-a-local-backup)
+- [Restoring a Remote Backup](#restoring-a-remote-backup)
 - [Root Command Audit Trail](#root-command-audit-trail)
 - [Operator Tmux Console](#operator-tmux-console)
 - [Grafana Cloud Observability](#grafana-cloud-observability)
@@ -200,33 +205,30 @@ the `ansible` user and run a full convergence pass.
 
 [Back to top](#operations)
 
-## Backup And Restore Validation
+## Triggering a Manual Backup
 
-Use this procedure on a managed host to verify that the configured restic
-backup path can be backed up and restored. It creates a temporary test file,
-runs the managed backup service, restores the file from the local repository,
-then restores the same file from the optional GCS remote repository.
-
-Restore into a temporary directory first. Do not restore directly over live
-paths during validation.
-
-Create a test file under a path included by the host backup policy:
-
-```bash
-TEST_FILE="$HOME/tempfile"
-printf 'Grayhaven backup restore test: %s\n' "$(date -Is)" > "$TEST_FILE"
-cat "$TEST_FILE"
-```
-
-Trigger an on-demand backup and review the service output:
+Run the managed restic backup service on the host whose backup should be
+created:
 
 ```bash
 sudo systemctl start grayhaven-restic-backup.service
+```
+
+Review the service result and recent backup log output:
+
+```bash
 sudo systemctl status grayhaven-restic-backup.service --no-pager
 sudo journalctl -u grayhaven-restic-backup.service -n 100 --no-pager
 ```
 
-Confirm that the local repository has a recent snapshot:
+When remote GCS backups are enabled, the same managed service writes to the
+local restic repository first and then to the remote restic repository.
+
+[Back to top](#operations)
+
+## Verifying Local Backups
+
+List local restic snapshots on the managed host:
 
 ```bash
 sudo restic \
@@ -235,32 +237,34 @@ sudo restic \
   snapshots --latest 1
 ```
 
-Delete the test file, restore it from the local repository into a temporary
-restore directory, then copy only the test file back:
+To see more snapshot history, omit `--latest 1`:
 
 ```bash
-LOCAL_RESTORE_DIR=/tmp/grayhaven-restore-local
-rm -f "$TEST_FILE"
-sudo rm -rf "$LOCAL_RESTORE_DIR"
-
 sudo restic \
   --repo /var/backups/restic \
   --password-file /etc/grayhaven/backup/restic-password \
-  restore latest \
-  --target "$LOCAL_RESTORE_DIR" \
-  --path "$TEST_FILE"
-
-sudo cp -a "$LOCAL_RESTORE_DIR$TEST_FILE" "$TEST_FILE"
-cat "$TEST_FILE"
+  snapshots
 ```
 
-If GCS remote backups are enabled, confirm that the remote repository has a
-recent snapshot. Set `GCS_PROJECT_ID` to the Google Cloud project ID configured
-for the environment. The command uses the managed root-readable credential file
-without printing its contents.
+For a repository health check, run:
 
 ```bash
-GCS_PROJECT_ID="<google-cloud-project-id>"
+sudo restic \
+  --repo /var/backups/restic \
+  --password-file /etc/grayhaven/backup/restic-password \
+  check
+```
+
+[Back to top](#operations)
+
+## Verifying Remote Backups
+
+Remote backup verification requires GCS remote backups to be enabled for the
+host. The commands use the managed root-readable GCS credential file without
+printing its contents.
+
+```bash
+GCS_PROJECT_ID="grayhaven"
 REMOTE_REPOSITORY="gs:$(hostname -s)-restic:/"
 
 sudo env \
@@ -272,12 +276,148 @@ sudo env \
     snapshots --latest 1
 ```
 
-Delete the test file again, restore it from the remote repository into a
-separate temporary restore directory, then copy only the test file back:
+To see more remote snapshot history, omit `--latest 1`:
 
 ```bash
+GCS_PROJECT_ID="grayhaven"
+REMOTE_REPOSITORY="gs:$(hostname -s)-restic:/"
+
+sudo env \
+  GOOGLE_PROJECT_ID="$GCS_PROJECT_ID" \
+  GOOGLE_APPLICATION_CREDENTIALS=/etc/grayhaven/backup/gcs-credentials.json \
+  restic \
+    --repo "$REMOTE_REPOSITORY" \
+    --password-file /etc/grayhaven/backup/restic-password \
+    snapshots
+```
+
+For a remote repository health check, run:
+
+```bash
+GCS_PROJECT_ID="grayhaven"
+REMOTE_REPOSITORY="gs:$(hostname -s)-restic:/"
+
+sudo env \
+  GOOGLE_PROJECT_ID="$GCS_PROJECT_ID" \
+  GOOGLE_APPLICATION_CREDENTIALS=/etc/grayhaven/backup/gcs-credentials.json \
+  restic \
+    --repo "$REMOTE_REPOSITORY" \
+    --password-file /etc/grayhaven/backup/restic-password \
+    check
+```
+
+[Back to top](#operations)
+
+## Listing the Contents of a Local Backup
+
+List the contents of the latest local snapshot:
+
+```bash
+sudo restic \
+  --repo /var/backups/restic \
+  --password-file /etc/grayhaven/backup/restic-password \
+  ls latest
+```
+
+To inspect a specific snapshot, replace `<snapshot-id>` with an ID shown by
+[Verifying Local Backups](#verifying-local-backups):
+
+```bash
+sudo restic \
+  --repo /var/backups/restic \
+  --password-file /etc/grayhaven/backup/restic-password \
+  ls <snapshot-id>
+```
+
+[Back to top](#operations)
+
+## Listing the Contents of a Remote Backup
+
+List the contents of the latest remote snapshot:
+
+```bash
+GCS_PROJECT_ID="grayhaven"
+REMOTE_REPOSITORY="gs:$(hostname -s)-restic:/"
+
+sudo env \
+  GOOGLE_PROJECT_ID="$GCS_PROJECT_ID" \
+  GOOGLE_APPLICATION_CREDENTIALS=/etc/grayhaven/backup/gcs-credentials.json \
+  restic \
+    --repo "$REMOTE_REPOSITORY" \
+    --password-file /etc/grayhaven/backup/restic-password \
+    ls latest
+```
+
+To inspect a specific snapshot, replace `<snapshot-id>` with an ID shown by
+[Verifying Remote Backups](#verifying-remote-backups):
+
+```bash
+GCS_PROJECT_ID="grayhaven"
+REMOTE_REPOSITORY="gs:$(hostname -s)-restic:/"
+
+sudo env \
+  GOOGLE_PROJECT_ID="$GCS_PROJECT_ID" \
+  GOOGLE_APPLICATION_CREDENTIALS=/etc/grayhaven/backup/gcs-credentials.json \
+  restic \
+    --repo "$REMOTE_REPOSITORY" \
+    --password-file /etc/grayhaven/backup/restic-password \
+    ls <snapshot-id>
+```
+
+[Back to top](#operations)
+
+## Restoring a Local Backup
+
+Restore into a temporary directory first. Do not restore directly over live
+paths during validation or routine recovery.
+
+Set `RESTORE_PATH` to the absolute path that should be restored:
+
+```bash
+RESTORE_PATH="/absolute/path/to/restore"
+LOCAL_RESTORE_DIR=/tmp/grayhaven-restore-local
+sudo rm -rf "$LOCAL_RESTORE_DIR"
+
+sudo restic \
+  --repo /var/backups/restic \
+  --password-file /etc/grayhaven/backup/restic-password \
+  restore latest \
+  --target "$LOCAL_RESTORE_DIR" \
+  --include "$RESTORE_PATH"
+```
+
+Review the restored data under `$LOCAL_RESTORE_DIR`, then copy back only the
+intended path:
+
+```bash
+sudo cp -a "$LOCAL_RESTORE_DIR$RESTORE_PATH" "$(dirname "$RESTORE_PATH")/"
+```
+
+After validation or recovery is complete, remove the temporary restore
+directory:
+
+```bash
+sudo rm -rf "$LOCAL_RESTORE_DIR"
+```
+
+If the restore fails, keep the backup service logs and restore directory state
+intact until the failure is understood.
+
+[Back to top](#operations)
+
+## Restoring a Remote Backup
+
+Remote restores require GCS remote backups to be enabled for the host. Restore
+into a temporary directory first. Do not restore directly over live paths during
+validation or routine recovery.
+
+Set `RESTORE_PATH` to the absolute path that should be restored:
+
+```bash
+GCS_PROJECT_ID="grayhaven"
+REMOTE_REPOSITORY="gs:$(hostname -s)-restic:/"
+RESTORE_PATH="/absolute/path/to/restore"
 REMOTE_RESTORE_DIR=/tmp/grayhaven-restore-remote
-rm -f "$TEST_FILE"
 sudo rm -rf "$REMOTE_RESTORE_DIR"
 
 sudo env \
@@ -288,63 +428,25 @@ sudo env \
     --password-file /etc/grayhaven/backup/restic-password \
     restore latest \
     --target "$REMOTE_RESTORE_DIR" \
-    --path "$TEST_FILE"
-
-sudo cp -a "$REMOTE_RESTORE_DIR$TEST_FILE" "$TEST_FILE"
-cat "$TEST_FILE"
+    --include "$RESTORE_PATH"
 ```
 
-Clean up the temporary restore directories when validation is complete:
+Review the restored data under `$REMOTE_RESTORE_DIR`, then copy back only the
+intended path:
 
 ```bash
-sudo rm -rf /tmp/grayhaven-restore-local /tmp/grayhaven-restore-remote
-rm -f "$TEST_FILE"
+sudo cp -a "$REMOTE_RESTORE_DIR$RESTORE_PATH" "$(dirname "$RESTORE_PATH")/"
 ```
 
-If either restore fails, keep the backup service logs and the restore directory
-state intact until the failure is understood.
-
-[Back to top](#operations)
-
-## GCS Restic Bucket Cleanup
-
-This maintenance playbook compares live DigitalOcean inventory with
-Grayhaven-managed GCS restic buckets, then reports any bucket whose host is no
-longer present in inventory.
-
-The playbook is destructive when `confirm_delete_remote_backup_buckets=true` is
-set. Review the dry-run output carefully before deleting anything.
-
-Run the dry run from the active control bastion:
+After validation or recovery is complete, remove the temporary restore
+directory:
 
 ```bash
-ansible-playbook \
-  --inventory localhost, \
-  playbooks/cleanup-gcs-restic-buckets.yml \
-  --vault-password-file /etc/grayhaven/ansible/secrets/vault-password \
-  --extra-vars @/home/ansible/grayhaven-vault/config.yml \
-  --extra-vars @/home/ansible/grayhaven-vault/vault/common.yml \
-  --extra-vars @/home/ansible/grayhaven-vault/vault/bastion.yml \
-  --extra-vars managed_baseline_environment=prod
+sudo rm -rf "$REMOTE_RESTORE_DIR"
 ```
 
-If the dry run lists only buckets that should be deleted, rerun with explicit
-confirmation:
-
-```bash
-ansible-playbook \
-  --inventory localhost, \
-  playbooks/cleanup-gcs-restic-buckets.yml \
-  --vault-password-file /etc/grayhaven/ansible/secrets/vault-password \
-  --extra-vars @/home/ansible/grayhaven-vault/config.yml \
-  --extra-vars @/home/ansible/grayhaven-vault/vault/common.yml \
-  --extra-vars @/home/ansible/grayhaven-vault/vault/bastion.yml \
-  --extra-vars managed_baseline_environment=prod \
-  --extra-vars confirm_delete_remote_backup_buckets=true
-```
-
-Only buckets labeled as Ansible-managed restic buckets for the configured
-client and environment are eligible for deletion.
+If the restore fails, keep the backup service logs and restore directory state
+intact until the failure is understood.
 
 [Back to top](#operations)
 

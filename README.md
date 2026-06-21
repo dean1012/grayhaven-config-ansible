@@ -83,11 +83,11 @@ the active control bastion by an authorized administrator.
 Supported maintenance playbooks rotate the persisted Ansible Vault password,
 the vault deployment SSH keypair, the Ansible control key used for managed-host
 SSH, and clean up stale remote restic buckets. The operations guide also
-documents manual backup and restore validation. See
+documents manual backup and restore procedures. See
 [vault password rotation](docs/operations.md#vault-password-rotation),
 [deploy key rotation](docs/operations.md#deploy-key-rotation),
 [Ansible control key rotation](docs/operations.md#ansible-control-key-rotation),
-[backup and restore validation](docs/operations.md#backup-and-restore-validation),
+[triggering a manual backup](docs/operations.md#triggering-a-manual-backup),
 and [GCS restic bucket cleanup](docs/operations.md#gcs-restic-bucket-cleanup)
 for prerequisites, commands, and validation steps.
 
