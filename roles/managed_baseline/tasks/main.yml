@@ -27,6 +27,9 @@
 - name: Enforce baseline operating system packages
   ansible.builtin.import_tasks: packages.yml
 
+- name: Validate Ansible control key material
+  ansible.builtin.import_tasks: control-key-validate.yml
+
 - name: Enforce local users and privileged access
   ansible.builtin.import_tasks: users.yml
 
