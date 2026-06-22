@@ -18,6 +18,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Listing the Contents of a Remote Backup](#listing-the-contents-of-a-remote-backup)
 - [Restoring a Local Backup](#restoring-a-local-backup)
 - [Restoring a Remote Backup](#restoring-a-remote-backup)
+- [GCS Restic Bucket Cleanup](#gcs-restic-bucket-cleanup)
 - [Root Command Audit Trail](#root-command-audit-trail)
 - [Operator Tmux Console](#operator-tmux-console)
 - [Grafana Cloud Observability](#grafana-cloud-observability)
@@ -39,6 +40,10 @@ SSH known hosts, and runs `playbooks/site.yml`.
 Manual commands that use the DigitalOcean inventory require
 `GRAYHAVEN_ENVIRONMENT` to be set. If it is unset, inventory selection fails
 closed instead of defaulting to an environment.
+
+Maintenance playbooks are also launched through
+`/usr/local/sbin/grayhaven-ansible-runner` so they use the same checkout,
+vault, runtime, lock, and dynamic inventory path as normal convergence.
 
 [Back to top](#operations)
 
@@ -123,13 +128,12 @@ Vault password rotation has three coordinated parts:
 
 After the vault files and `grayhaven-infra-opentofu` environment variables are
 updated, rotate the persisted vault password by placing the new value in a
-temporary vars file and passing that file with `--extra-vars`:
+temporary vars file and passing that file to the runner:
 
 ```bash
-ansible-playbook \
-  --inventory inventory \
-  playbooks/rotate-vault-password.yml \
-  --extra-vars @/path/to/temp-vault-password.yml
+sudo /usr/local/sbin/grayhaven-ansible-runner \
+  --rotate-vault-password \
+  --extra-vars-file /path/to/temp-vault-password.yml
 ```
 
 The temporary vars file should contain:
@@ -138,9 +142,11 @@ The temporary vars file should contain:
 new_vault_password: "<new password>"
 ```
 
-Avoid passing the new password directly on the shell command line. Remove the
-temporary vars file after the playbook completes and verify a runner invocation
-can decrypt the vault with the new password:
+Avoid passing the new password directly on the shell command line. The runner
+updates the locally persisted vault password before refreshing the
+`grayhaven-vault` checkout and running the maintenance playbook. Remove the
+temporary vars file after the playbook completes and verify a normal runner
+invocation can decrypt the vault with the new password:
 
 ```bash
 sudo systemctl start grayhaven-ansible-runner.service
@@ -169,10 +175,10 @@ Place the staged files on bastion hosts before running the playbook:
 The files should be owned by `ansible:ansible`; the private key should be mode
 `0600`, and the public key should be mode `0644`.
 
-Run the playbook from the active control bastion:
+Run the rotation from the active control bastion:
 
 ```bash
-ansible-playbook --inventory inventory playbooks/rotate-vault-deploy-key.yml
+sudo /usr/local/sbin/grayhaven-ansible-runner --rotate-vault-deploy-key
 ```
 
 After the playbook completes, verify the runner can refresh the public
@@ -185,19 +191,18 @@ for managed-host SSH. The playbook removes the staged key files from bastions.
 ## Ansible Control Key Rotation
 
 Normal convergence enforces the vault-defined Ansible control key. After
-updating `ansible_control_public_key` and `ansible_control_private_key` in the
+updating `ansible_control_public_key` and `ansible_control_private_key` in
 encrypted `grayhaven-vault` data, run the normal runner service from the active
 control bastion.
 
 The maintenance playbook remains available when you need to rotate the control
-key directly from encrypted vault values:
+key directly from encrypted vault values. The runner refreshes the public
+configuration and `grayhaven-vault` checkouts, loads live inventory, validates
+the configured private and public key material, and then runs the maintenance
+playbook:
 
 ```bash
-ansible-playbook \
-  --inventory inventory \
-  playbooks/rotate-ansible-control-key.yml \
-  --vault-password-file /etc/grayhaven/ansible/secrets/vault-password \
-  --extra-vars @/home/ansible/grayhaven-vault/vault/bastion.yml
+sudo /usr/local/sbin/grayhaven-ansible-runner --rotate-ansible-control-key
 ```
 
 After rotation, verify the active control bastion can SSH to managed hosts as
@@ -447,6 +452,36 @@ sudo rm -rf "$REMOTE_RESTORE_DIR"
 
 If the restore fails, keep the backup service logs and restore directory state
 intact until the failure is understood.
+
+[Back to top](#operations)
+
+## GCS Restic Bucket Cleanup
+
+Remote backup cleanup compares live DigitalOcean inventory with
+Ansible-managed GCS restic buckets, then reports buckets whose host is no
+longer present in inventory.
+
+Run the dry run from the active control bastion:
+
+```bash
+sudo /usr/local/sbin/grayhaven-ansible-runner --cleanup-gcs-restic-buckets
+```
+
+Review the dry-run output carefully. Only buckets labeled as Ansible-managed
+restic buckets for the configured client and environment are eligible for
+deletion.
+
+If the dry run lists only buckets that should be deleted, rerun with explicit
+deletion enabled:
+
+```bash
+sudo /usr/local/sbin/grayhaven-ansible-runner \
+  --cleanup-gcs-restic-buckets \
+  --execute
+```
+
+This is destructive. Deleted remote backup buckets are not recoverable through
+Grayhaven automation.
 
 [Back to top](#operations)
 
