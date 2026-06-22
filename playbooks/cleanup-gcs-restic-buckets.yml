@@ -28,7 +28,11 @@
 
     - name: Load live DigitalOcean inventory for expected buckets
       ansible.builtin.command:
-        cmd: ansible-inventory --inventory inventory --list
+        argv:
+          - ansible-inventory
+          - --inventory
+          - "{{ playbook_dir }}/../inventory"
+          - --list
       environment:
         DO_API_TOKEN: "{{ digitalocean_inventory_api_token }}"
         GRAYHAVEN_ENVIRONMENT: "{{ managed_baseline_environment }}"
@@ -58,41 +62,31 @@
             content: "{{ restic.remotes.gcs.credentials_json }}"
           no_log: true
 
-        - name: Store expected GCS restic bucket names
+        - name: Store temporary DigitalOcean inventory
           ansible.builtin.copy:
-            dest: "{{ gcs_cleanup_tempdir.path }}/expected-buckets.json"
+            dest: "{{ gcs_cleanup_tempdir.path }}/inventory.json"
             mode: "0600"
-            content: "{{ gcs_cleanup_expected_buckets | to_nice_json }}\n"
-          vars:
-            gcs_cleanup_expected_buckets: >-
-              {{
-                (gcs_cleanup_inventory.stdout | from_json)['_meta']['hostvars'].keys()
-                | reject('equalto', 'localhost')
-                | map('regex_replace', '^([^.]+).*$', '\1-restic')
-                | unique
-                | sort
-              }}
+            content: "{{ gcs_cleanup_inventory.stdout }}\n"
 
         - name: Review or delete stale GCS restic buckets
           ansible.builtin.command:
             cmd: >-
+              {{ ansible_playbook_python | quote }}
               {{ (gcs_cleanup_tempdir.path ~ '/grayhaven-gcs-restic-bucket-cleanup') | quote }}
               --credentials-file {{ (gcs_cleanup_tempdir.path ~ '/credentials.json') | quote }}
               --project-id {{ backup.repositories.remote.project_id | quote }}
               --client {{ backup.repositories.remote.client | default('grayhaven') | quote }}
               --environment {{ managed_baseline_environment | quote }}
-              --expected-buckets-file {{ (gcs_cleanup_tempdir.path ~ '/expected-buckets.json') | quote }}
+              --inventory-file {{ (gcs_cleanup_tempdir.path ~ '/inventory.json') | quote }}
               {{ '--execute' if confirm_delete_remote_backup_buckets else '' }}
           register: gcs_cleanup_result
           changed_when:
             - confirm_delete_remote_backup_buckets | bool
             - "'deleted=' in gcs_cleanup_result.stdout"
-          no_log: "{{ confirm_delete_remote_backup_buckets | bool }}"
 
         - name: Show GCS restic bucket cleanup result
           ansible.builtin.debug:
             msg: "{{ gcs_cleanup_result.stdout_lines }}"
-          when: not confirm_delete_remote_backup_buckets | bool
 
       always:
         - name: Remove temporary cleanup directory

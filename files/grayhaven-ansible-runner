@@ -23,6 +23,9 @@ ANSIBLE_GALAXY_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible-galaxy"
 ANSIBLE_INVENTORY_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible-inventory"
 ANSIBLE_PLAYBOOK_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible-playbook"
 ANSIBLE_VAULT_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible-vault"
+RUNNER_COMMAND="converge"
+GCS_CLEANUP_EXECUTE="false"
+RUNNER_EXTRA_VARS_FILES=()
 
 ###############################################################################
 # Logging, guards, and cleanup
@@ -30,6 +33,89 @@ ANSIBLE_VAULT_BIN="${ANSIBLE_RUNTIME_VENV}/bin/ansible-vault"
 
 log() {
   printf '[grayhaven-ansible-runner] %s\n' "$*"
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  grayhaven-ansible-runner
+  grayhaven-ansible-runner --converge
+  grayhaven-ansible-runner --cleanup-gcs-restic-buckets [--execute]
+  grayhaven-ansible-runner --rotate-vault-password --extra-vars-file <path>
+  grayhaven-ansible-runner --rotate-vault-deploy-key
+  grayhaven-ansible-runner --rotate-ansible-control-key
+
+Commands:
+  --converge
+      Run the normal full Ansible convergence. This is the default.
+
+  --cleanup-gcs-restic-buckets
+      Run the GCS restic bucket cleanup maintenance playbook in dry-run mode.
+
+  --execute
+      Delete stale GCS restic buckets. Only valid with
+      --cleanup-gcs-restic-buckets.
+
+  --extra-vars-file <path>
+      Pass an extra-vars file to the selected maintenance playbook. Required
+      for --rotate-vault-password.
+EOF
+}
+
+parse_args() {
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --converge|converge)
+        RUNNER_COMMAND="converge"
+        ;;
+      --cleanup-gcs-restic-buckets|cleanup-gcs-restic-buckets)
+        RUNNER_COMMAND="cleanup-gcs-restic-buckets"
+        ;;
+      --rotate-vault-password|rotate-vault-password)
+        RUNNER_COMMAND="rotate-vault-password"
+        ;;
+      --rotate-vault-deploy-key|rotate-vault-deploy-key)
+        RUNNER_COMMAND="rotate-vault-deploy-key"
+        ;;
+      --rotate-ansible-control-key|rotate-ansible-control-key)
+        RUNNER_COMMAND="rotate-ansible-control-key"
+        ;;
+      --execute)
+        GCS_CLEANUP_EXECUTE="true"
+        ;;
+      --extra-vars-file)
+        shift
+        if [[ "$#" -eq 0 || -z "$1" ]]; then
+          log "--extra-vars-file requires a path."
+          usage
+          exit 1
+        fi
+        RUNNER_EXTRA_VARS_FILES+=("$1")
+        ;;
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      *)
+        log "Unknown runner argument: $1"
+        usage
+        exit 1
+        ;;
+    esac
+    shift
+  done
+
+  if [[ "$GCS_CLEANUP_EXECUTE" == "true" && "$RUNNER_COMMAND" != "cleanup-gcs-restic-buckets" ]]; then
+    log "--execute is only valid with --cleanup-gcs-restic-buckets."
+    usage
+    exit 1
+  fi
+
+  if [[ "$RUNNER_COMMAND" == "rotate-vault-password" && "${#RUNNER_EXTRA_VARS_FILES[@]}" -eq 0 ]]; then
+    log "--rotate-vault-password requires --extra-vars-file."
+    usage
+    exit 1
+  fi
 }
 
 run_as_ansible() {
@@ -195,8 +281,12 @@ on_error() {
   local status="$?"
 
   set +e
-  write_convergence_metric 0 || log "Convergence failure metric could not be written."
-  send_failure_notification "$status"
+  if [[ "$RUNNER_COMMAND" == "converge" ]]; then
+    write_convergence_metric 0 || log "Convergence failure metric could not be written."
+    send_failure_notification "$status"
+  else
+    log "Runner command failed: $RUNNER_COMMAND"
+  fi
   exit "$status"
 }
 
@@ -315,6 +405,7 @@ install_ansible_runtime() {
   ln -sfn "$ANSIBLE_INVENTORY_BIN" /usr/local/bin/ansible-inventory
   ln -sfn "$ANSIBLE_PLAYBOOK_BIN" /usr/local/bin/ansible-playbook
   ln -sfn "$ANSIBLE_VAULT_BIN" /usr/local/bin/ansible-vault
+  export PATH="${ANSIBLE_RUNTIME_VENV}/bin:${PATH}"
   "$ANSIBLE_BIN" --version
 
   log "Installing pinned Ansible Galaxy collections."
@@ -481,7 +572,7 @@ PY
 # Runner orchestration
 ###############################################################################
 
-run_once() {
+prepare_runner_runtime() {
   require_file "$RUNNER_ENV"
   require_file "$VAULT_PASSWORD_FILE"
   require_file "$ANSIBLE_CONTROL_PRIVATE_KEY"
@@ -526,6 +617,9 @@ run_once() {
   export DISCORD_WEBHOOK_ID DISCORD_WEBHOOK_TOKEN
 
   render_runner_vars
+}
+
+run_convergence() {
   prepare_inventory_known_hosts
 
   log "Running full site playbook."
@@ -541,17 +635,159 @@ run_once() {
     --extra-vars "@${RUNNER_VARS}" 2>&1 | tee "$RUNNER_PLAYBOOK_LOG"
 }
 
+run_gcs_restic_bucket_cleanup() {
+  local delete_args=()
+
+  if [[ "$GCS_CLEANUP_EXECUTE" == "true" ]]; then
+    log "Running GCS restic bucket cleanup with deletion enabled."
+    delete_args+=(--extra-vars "confirm_delete_remote_backup_buckets=true")
+  else
+    log "Running GCS restic bucket cleanup dry run."
+  fi
+
+  "$ANSIBLE_PLAYBOOK_BIN" \
+    --inventory "${CHECKOUT_DIR}/inventory" \
+    "${CHECKOUT_DIR}/playbooks/cleanup-gcs-restic-buckets.yml" \
+    --vault-password-file "$VAULT_PASSWORD_FILE" \
+    --extra-vars "@${VAULT_CHECKOUT_DIR}/config.yml" \
+    --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/common.yml" \
+    --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/bastion.yml" \
+    --extra-vars "@${RUNNER_VARS}" \
+    "${delete_args[@]}"
+}
+
+extra_vars_file_args() {
+  local extra_vars_file
+
+  for extra_vars_file in "${RUNNER_EXTRA_VARS_FILES[@]}"; do
+    printf '%s\n' "--extra-vars"
+    printf '%s\n' "@${extra_vars_file}"
+  done
+}
+
+preseed_local_vault_password() {
+  local extra_vars_file
+  local temp_password_file
+
+  temp_password_file="$(mktemp)"
+  chmod 0600 "$temp_password_file"
+  for extra_vars_file in "${RUNNER_EXTRA_VARS_FILES[@]}"; do
+    /usr/bin/python3 - "$extra_vars_file" <<'PY' > "$temp_password_file"
+import ast
+import re
+import sys
+
+pattern = re.compile(r"^\s*new_vault_password\s*:\s*(?P<value>.+?)\s*$")
+with open(sys.argv[1], encoding="utf-8") as vars_file:
+    for line in vars_file:
+        match = pattern.match(line)
+        if not match:
+            continue
+
+        value = match.group("value")
+        if value and value[0] in "\"'":
+            value = ast.literal_eval(value)
+        if isinstance(value, str) and value:
+            print(value, end="")
+        break
+PY
+    if [[ -s "$temp_password_file" ]]; then
+      install -o root -g ansible -m 0640 "$temp_password_file" "$VAULT_PASSWORD_FILE"
+      rm -f "$temp_password_file"
+      return 0
+    fi
+  done
+
+  rm -f "$temp_password_file"
+  log "No new_vault_password value was found in the supplied extra-vars files."
+  exit 1
+}
+
+run_rotate_vault_password() {
+  local extra_args=()
+
+  mapfile -t extra_args < <(extra_vars_file_args)
+  log "Running vault password rotation maintenance playbook."
+  "$ANSIBLE_PLAYBOOK_BIN" \
+    --inventory "${CHECKOUT_DIR}/inventory" \
+    "${CHECKOUT_DIR}/playbooks/rotate-vault-password.yml" \
+    --vault-password-file "$VAULT_PASSWORD_FILE" \
+    "${extra_args[@]}"
+}
+
+run_rotate_vault_deploy_key() {
+  log "Running vault deploy key rotation maintenance playbook."
+  "$ANSIBLE_PLAYBOOK_BIN" \
+    --inventory "${CHECKOUT_DIR}/inventory" \
+    "${CHECKOUT_DIR}/playbooks/rotate-vault-deploy-key.yml" \
+    --vault-password-file "$VAULT_PASSWORD_FILE"
+}
+
+run_rotate_ansible_control_key() {
+  local extra_args=()
+
+  mapfile -t extra_args < <(extra_vars_file_args)
+  log "Running Ansible control key rotation maintenance playbook."
+  "$ANSIBLE_PLAYBOOK_BIN" \
+    --inventory "${CHECKOUT_DIR}/inventory" \
+    "${CHECKOUT_DIR}/playbooks/rotate-ansible-control-key.yml" \
+    --vault-password-file "$VAULT_PASSWORD_FILE" \
+    --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/bastion.yml" \
+    "${extra_args[@]}"
+}
+
+run_once() {
+  if [[ "$RUNNER_COMMAND" == "rotate-vault-password" ]]; then
+    preseed_local_vault_password
+  fi
+
+  prepare_runner_runtime
+
+  case "$RUNNER_COMMAND" in
+    converge)
+      run_convergence
+      ;;
+    cleanup-gcs-restic-buckets)
+      run_gcs_restic_bucket_cleanup
+      ;;
+    rotate-vault-password)
+      run_rotate_vault_password
+      ;;
+    rotate-vault-deploy-key)
+      run_rotate_vault_deploy_key
+      ;;
+    rotate-ansible-control-key)
+      run_rotate_ansible_control_key
+      ;;
+    *)
+      log "Unsupported runner command: $RUNNER_COMMAND"
+      exit 1
+      ;;
+  esac
+}
+
 main() {
+  parse_args "$@"
   trap cleanup_runtime_files EXIT
 
   exec 9>"$LOCK_FILE"
   if ! flock -n 9; then
-    log "Another runner invocation is already active; queueing follow-up run."
-    touch "$PENDING_FILE"
-    exit 0
+    if [[ "$RUNNER_COMMAND" == "converge" ]]; then
+      log "Another runner invocation is already active; queueing follow-up run."
+      touch "$PENDING_FILE"
+      exit 0
+    fi
+
+    log "Another runner invocation is already active; manual command cannot start."
+    exit 1
   fi
 
   trap on_error ERR
+
+  if [[ "$RUNNER_COMMAND" != "converge" ]]; then
+    run_once
+    return
+  fi
 
   while true; do
     rm -f "$PENDING_FILE"
