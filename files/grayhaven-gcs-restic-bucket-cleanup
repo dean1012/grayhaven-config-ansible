@@ -113,18 +113,34 @@ def bucket_is_managed(bucket: dict[str, Any], labels: dict[str, str]) -> bool:
     return all(bucket_labels.get(key) == value for key, value in labels.items())
 
 
+def expected_buckets_from_inventory(inventory_file: str) -> set[str]:
+    with open(inventory_file, encoding="utf-8") as inventory_handle:
+        inventory = json.load(inventory_handle)
+
+    return {
+        f"{host.split('.', 1)[0]}-restic"
+        for host in inventory.get("_meta", {}).get("hostvars", {})
+        if host != "localhost"
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--credentials-file", required=True)
     parser.add_argument("--project-id", required=True)
     parser.add_argument("--client", required=True)
     parser.add_argument("--environment", required=True)
-    parser.add_argument("--expected-buckets-file", required=True)
+    expected_bucket_source = parser.add_mutually_exclusive_group(required=True)
+    expected_bucket_source.add_argument("--expected-buckets-file")
+    expected_bucket_source.add_argument("--inventory-file")
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
 
-    with open(args.expected_buckets_file, encoding="utf-8") as expected_file:
-        expected_buckets = set(json.load(expected_file))
+    if args.inventory_file:
+        expected_buckets = expected_buckets_from_inventory(args.inventory_file)
+    else:
+        with open(args.expected_buckets_file, encoding="utf-8") as expected_file:
+            expected_buckets = set(json.load(expected_file))
 
     required_labels = {
         "managed_by": "ansible",

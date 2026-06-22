@@ -36,6 +36,19 @@ __grayhaven_root_command_escape() {
     printf '%s' "$value"
 }
 
+__grayhaven_root_command_should_skip() {
+    local command
+
+    command="${1#"${1%%[![:space:]]*}"}"
+    command="${command%"${command##*[![:space:]]}"}"
+
+    case "$command" in
+        exit | logout) return 0 ;;
+    esac
+
+    [[ "$command" =~ ^exit[[:space:]]+[0-9]+$ ]]
+}
+
 __grayhaven_root_command_origin() {
     local login_uid origin_user
 
@@ -75,6 +88,10 @@ __grayhaven_root_command_audit() {
     fi
 
     __GRAYHAVEN_ROOT_COMMAND_LAST_HISTORY_ID="$history_id"
+    if __grayhaven_root_command_should_skip "$command"; then
+        return "$previous_status"
+    fi
+
     origin_user="$(__grayhaven_root_command_origin)"
     origin_user_log="$(__grayhaven_root_command_escape "$origin_user")"
     command_log="$(__grayhaven_root_command_escape "$command")"
