@@ -19,15 +19,17 @@
   ansible.builtin.file:
     path: "{{ managed_baseline_ansible_runtime_venv | dirname }}"
     state: directory
-    owner: root
-    group: root
-    mode: "0755"
+    owner: ansible
+    group: ansible
+    mode: "0750"
   when: grayhaven_role == "bastion"
 
 - name: Create Ansible runtime virtual environment on bastion hosts
   ansible.builtin.command:
     cmd: /usr/bin/python3 -m venv "{{ managed_baseline_ansible_runtime_venv }}"
     creates: "{{ managed_baseline_ansible_runtime_venv }}/bin/python"
+  become: true
+  become_user: ansible
   when: grayhaven_role == "bastion"
 
 - name: Upgrade Ansible runtime virtual environment pip on bastion hosts
@@ -35,6 +37,10 @@
     cmd: >-
       {{ managed_baseline_ansible_runtime_venv }}/bin/python
       -m pip install --upgrade pip
+  become: true
+  become_user: ansible
+  environment:
+    HOME: /home/ansible
   register: managed_baseline_ansible_runtime_pip_upgrade
   changed_when: >-
     'Successfully installed' in managed_baseline_ansible_runtime_pip_upgrade.stdout
@@ -48,6 +54,10 @@
       --require-hashes
       --requirement
       {{ managed_baseline_runner_checkout_dir }}/pip3_requirements.txt
+  become: true
+  become_user: ansible
+  environment:
+    HOME: /home/ansible
   register: managed_baseline_ansible_install
   changed_when: "'Successfully installed' in managed_baseline_ansible_install.stdout"
   when: grayhaven_role == "bastion"
@@ -71,8 +81,11 @@
 - name: Install checksum-verified Ansible Galaxy collections on bastion hosts
   ansible.builtin.command:
     cmd: "{{ managed_baseline_runner_checkout_dir }}/scripts/install-galaxy-collections"
+  become: true
+  become_user: ansible
   environment:
     ANSIBLE_GALAXY_BIN: "{{ managed_baseline_ansible_runtime_venv }}/bin/ansible-galaxy"
+    HOME: /home/ansible
   register: managed_baseline_galaxy_install
   changed_when: "'Installing collection' in managed_baseline_galaxy_install.stdout"
   when: grayhaven_role == "bastion"
