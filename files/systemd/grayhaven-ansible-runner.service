@@ -5,4 +5,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+User=ansible
+Group=ansible
+WorkingDirectory=/home/ansible
 ExecStart=/usr/local/sbin/grayhaven-ansible-runner

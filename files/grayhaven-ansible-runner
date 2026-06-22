@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-LOCK_FILE="/run/grayhaven-ansible-runner.lock"
-PENDING_FILE="/run/grayhaven-ansible-runner.pending"
+RUNNER_RUNTIME_DIR="/run/grayhaven-ansible-runner"
+LOCK_FILE="${RUNNER_RUNTIME_DIR}/runner.lock"
+PENDING_FILE="${RUNNER_RUNTIME_DIR}/runner.pending"
 RUNNER_ENV="/etc/grayhaven/ansible/runner.env"
 VAULT_PASSWORD_FILE="/etc/grayhaven/ansible/secrets/vault-password"
-RUNNER_VARS="/run/grayhaven-ansible-runner-vars.yml"
-RUNNER_SECRET_ENV="/run/grayhaven-ansible-runner-secrets.env"
-RUNNER_PLAYBOOK_LOG="/run/grayhaven-ansible-runner-playbook.log"
+RUNNER_VARS="${RUNNER_RUNTIME_DIR}/vars.yml"
+RUNNER_SECRET_ENV="${RUNNER_RUNTIME_DIR}/secrets.env"
+RUNNER_PLAYBOOK_LOG="${RUNNER_RUNTIME_DIR}/playbook.log"
 OBSERVABILITY_TEXTFILE_DIR="/var/lib/grayhaven/observability/textfile"
 ANSIBLE_HOME="/home/ansible"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
-ANSIBLE_RUNTIME_VENV="/opt/grayhaven/ansible-runtime"
+ANSIBLE_RUNTIME_VENV="${ANSIBLE_HOME}/ansible-runner/ansible-runtime"
 CHECKOUT_PARENT="${ANSIBLE_HOME}"
 DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
 DEFAULT_VAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-vault"
@@ -118,7 +119,16 @@ parse_args() {
   fi
 }
 
+running_as_ansible() {
+  [[ "$(id -un)" == "ansible" ]]
+}
+
 run_as_ansible() {
+  if running_as_ansible; then
+    "$@"
+    return
+  fi
+
   runuser -u ansible -- "$@"
 }
 
@@ -127,7 +137,7 @@ run_git_as_ansible() {
   shift
 
   if [[ -n "$private_key" ]]; then
-    runuser -u ansible -- env \
+    run_as_ansible env \
       GIT_SSH_COMMAND="ssh -i ${private_key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ANSIBLE_HOME}/.ssh/known_hosts" \
       git "$@"
     return
@@ -158,13 +168,35 @@ cleanup_runtime_files() {
   rm -f "$RUNNER_SECRET_ENV" "$RUNNER_VARS"
 }
 
+grafana_cloud_enabled() {
+  local config_file="${VAULT_CHECKOUT_DIR:-}/config.yml"
+
+  [[ -f "$config_file" ]] || return 1
+
+  /usr/bin/python3 - "$config_file" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as config_file:
+    config = yaml.safe_load(config_file) or {}
+
+grafana_cloud = (config.get("observability") or {}).get("grafana_cloud") or {}
+raise SystemExit(0 if grafana_cloud.get("enabled") is True else 1)
+PY
+}
+
 write_convergence_metric() {
   local success_value="$1"
   local host="${GRAYHAVEN_HOSTNAME:-$(hostname -f)}"
   local environment="${GRAYHAVEN_ENVIRONMENT:-unknown}"
   local tmp_file
 
-  install -d -o root -g root -m 0755 "$OBSERVABILITY_TEXTFILE_DIR"
+  if ! grafana_cloud_enabled; then
+    return 0
+  fi
+
+  install -d -m 0755 "$OBSERVABILITY_TEXTFILE_DIR"
   tmp_file="$(mktemp "${OBSERVABILITY_TEXTFILE_DIR}/ansible-convergence.XXXXXX")"
   {
     printf '# HELP grayhaven_ansible_convergence_last_success Last Grayhaven Ansible convergence success status.\n'
@@ -321,14 +353,18 @@ checkout_ref() {
 }
 
 prepare_github_known_hosts() {
-  install -d -o ansible -g ansible -m 0700 "${ANSIBLE_HOME}/.ssh"
-  cat > "${ANSIBLE_HOME}/.ssh/known_hosts" <<'EOF'
+  if running_as_ansible; then
+    install -d -m 0700 "${ANSIBLE_HOME}/.ssh"
+  else
+    install -d -o ansible -g ansible -m 0700 "${ANSIBLE_HOME}/.ssh"
+  fi
+
+  run_as_ansible /usr/bin/tee "${ANSIBLE_HOME}/.ssh/known_hosts" >/dev/null <<'EOF'
 github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
 github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
 github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
 EOF
-  chown ansible:ansible "${ANSIBLE_HOME}/.ssh/known_hosts"
-  chmod 0644 "${ANSIBLE_HOME}/.ssh/known_hosts"
+  run_as_ansible chmod 0644 "${ANSIBLE_HOME}/.ssh/known_hosts"
 }
 
 prepare_inventory_known_hosts() {
@@ -379,10 +415,10 @@ PY
   fi
 
   log "Preparing SSH known hosts for remote inventory targets."
-  install -d -o root -g root -m 0755 /etc/ssh
+  install -d -m 0700 "${ANSIBLE_HOME}/.ssh"
   # shellcheck disable=SC2086
-  ssh-keyscan -T 5 -t ed25519 $scan_targets > /etc/ssh/ssh_known_hosts
-  chmod 0644 /etc/ssh/ssh_known_hosts
+  ssh-keyscan -T 5 -t ed25519 $scan_targets >> "${ANSIBLE_HOME}/.ssh/known_hosts"
+  run_as_ansible chmod 0644 "${ANSIBLE_HOME}/.ssh/known_hosts"
 }
 
 ###############################################################################
@@ -391,25 +427,22 @@ PY
 
 install_ansible_runtime() {
   log "Ensuring pip-managed Ansible runtime is available."
-  install -d -o root -g root -m 0755 "$(dirname "$ANSIBLE_RUNTIME_VENV")"
-  /usr/bin/python3 -m venv "$ANSIBLE_RUNTIME_VENV"
-  "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install --upgrade pip
+  run_as_ansible install -d -m 0750 "$(dirname "$ANSIBLE_RUNTIME_VENV")"
+  run_as_ansible /usr/bin/python3 -m venv "$ANSIBLE_RUNTIME_VENV"
+  run_as_ansible "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install --upgrade pip
 
   log "Installing hash-pinned Python and Ansible runtime dependencies."
-  "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install \
+  run_as_ansible "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install \
     --upgrade \
     --require-hashes \
     --requirement "${CHECKOUT_DIR}/pip3_requirements.txt"
-  ln -sfn "$ANSIBLE_BIN" /usr/local/bin/ansible
-  ln -sfn "$ANSIBLE_GALAXY_BIN" /usr/local/bin/ansible-galaxy
-  ln -sfn "$ANSIBLE_INVENTORY_BIN" /usr/local/bin/ansible-inventory
-  ln -sfn "$ANSIBLE_PLAYBOOK_BIN" /usr/local/bin/ansible-playbook
-  ln -sfn "$ANSIBLE_VAULT_BIN" /usr/local/bin/ansible-vault
   export PATH="${ANSIBLE_RUNTIME_VENV}/bin:${PATH}"
-  "$ANSIBLE_BIN" --version
+  run_as_ansible "$ANSIBLE_BIN" --version
 
   log "Installing pinned Ansible Galaxy collections."
-  ANSIBLE_GALAXY_BIN="$ANSIBLE_GALAXY_BIN" \
+  run_as_ansible env \
+    HOME="$ANSIBLE_HOME" \
+    ANSIBLE_GALAXY_BIN="$ANSIBLE_GALAXY_BIN" \
     "${CHECKOUT_DIR}/scripts/install-galaxy-collections"
 }
 
@@ -418,7 +451,7 @@ install_ansible_runtime() {
 ###############################################################################
 
 render_secret_environment() {
-  install -o root -g root -m 0600 /dev/null "$RUNNER_SECRET_ENV"
+  install -m 0600 /dev/null "$RUNNER_SECRET_ENV"
   /usr/bin/python3 - "$VAULT_CHECKOUT_DIR" "$VAULT_PASSWORD_FILE" <<'PY' > "$RUNNER_SECRET_ENV"
 import io
 import os
@@ -543,7 +576,7 @@ PY
 
 render_runner_vars() {
   log "Preparing runtime variables derived from local control state."
-  install -o root -g root -m 0600 /dev/null "$RUNNER_VARS"
+  install -m 0600 /dev/null "$RUNNER_VARS"
   /usr/bin/python3 - <<'PY' > "$RUNNER_VARS"
 import json
 import os
@@ -594,14 +627,20 @@ prepare_runner_runtime() {
   export GRAYHAVEN_CERTIFICATE_ENVIRONMENT GRAYHAVEN_TLS_MODE
   export ANSIBLE_VAULT_BIN
   export ANSIBLE_CONFIG="${CHECKOUT_DIR}/ansible.cfg"
-  export HOME="/root"
+  export HOME="$ANSIBLE_HOME"
 
   log "Preparing checkouts."
-  install -d -o ansible -g ansible -m 0755 "$CHECKOUT_PARENT"
+  if running_as_ansible; then
+    install -d -m 0755 "$CHECKOUT_PARENT"
+  else
+    install -d -o ansible -g ansible -m 0755 "$CHECKOUT_PARENT"
+  fi
   prepare_github_known_hosts
   checkout_ref "$CHECKOUT_DIR" "$REPO_URL" "$REPO_REF"
   checkout_ref "$VAULT_CHECKOUT_DIR" "$VAULT_REPO_URL" "$VAULT_REPO_REF" "$VAULT_DEPLOY_PRIVATE_KEY"
-  chown -R ansible:ansible "$CHECKOUT_DIR" "$VAULT_CHECKOUT_DIR"
+  if ! running_as_ansible; then
+    chown -R ansible:ansible "$CHECKOUT_DIR" "$VAULT_CHECKOUT_DIR"
+  fi
 
   install_ansible_runtime
   render_secret_environment
@@ -623,7 +662,7 @@ run_convergence() {
   prepare_inventory_known_hosts
 
   log "Running full site playbook."
-  install -o root -g root -m 0600 /dev/null "$RUNNER_PLAYBOOK_LOG"
+  install -m 0600 /dev/null "$RUNNER_PLAYBOOK_LOG"
   "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/site.yml" \
@@ -669,7 +708,7 @@ preseed_local_vault_password() {
   local extra_vars_file
   local temp_password_file
 
-  temp_password_file="$(mktemp)"
+  temp_password_file="$(mktemp "${RUNNER_RUNTIME_DIR}/vault-password.XXXXXX")"
   chmod 0600 "$temp_password_file"
   for extra_vars_file in "${RUNNER_EXTRA_VARS_FILES[@]}"; do
     /usr/bin/python3 - "$extra_vars_file" <<'PY' > "$temp_password_file"
@@ -692,7 +731,11 @@ with open(sys.argv[1], encoding="utf-8") as vars_file:
         break
 PY
     if [[ -s "$temp_password_file" ]]; then
-      install -o root -g ansible -m 0640 "$temp_password_file" "$VAULT_PASSWORD_FILE"
+      if running_as_ansible; then
+        sudo install -o root -g ansible -m 0640 "$temp_password_file" "$VAULT_PASSWORD_FILE"
+      else
+        install -o root -g ansible -m 0640 "$temp_password_file" "$VAULT_PASSWORD_FILE"
+      fi
       rm -f "$temp_password_file"
       return 0
     fi
