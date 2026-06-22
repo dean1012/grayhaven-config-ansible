@@ -40,15 +40,19 @@
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
-    owner: root
+    owner: "{{ item.owner | default('root') }}"
     group: "{{ item.group | default('root') }}"
     mode: "{{ item.mode }}"
   loop:
     - path: "{{ observability_config_dir }}"
       mode: "0750"
     - path: /var/lib/grayhaven/observability
+      owner: ansible
+      group: alloy
       mode: "0755"
     - path: "{{ observability_textfile_dir }}"
+      owner: ansible
+      group: alloy
       mode: "0755"
   when: observability_metrics_enabled
 
