@@ -11,6 +11,7 @@ RUNNER_SECRET_ENV="${RUNNER_RUNTIME_DIR}/secrets.env"
 RUNNER_PLAYBOOK_LOG="${RUNNER_RUNTIME_DIR}/playbook.log"
 OBSERVABILITY_TEXTFILE_DIR="/var/lib/grayhaven/observability/textfile"
 ANSIBLE_HOME="/home/ansible"
+RUNNER_WORK_DIR="${ANSIBLE_HOME}/ansible-runner"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
 ANSIBLE_RUNTIME_VENV="${ANSIBLE_HOME}/ansible-runner/ansible-runtime"
@@ -372,7 +373,7 @@ prepare_inventory_known_hosts() {
   local scan_targets
 
   inventory_json="$(mktemp)"
-  "$ANSIBLE_INVENTORY_BIN" \
+  run_as_ansible "$ANSIBLE_INVENTORY_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     --list > "$inventory_json"
 
@@ -513,7 +514,7 @@ refresh_runtime_state_from_inventory() {
   inventory_json="$(mktemp)"
   runtime_env="$(mktemp)"
 
-  "$ANSIBLE_INVENTORY_BIN" \
+  run_as_ansible "$ANSIBLE_INVENTORY_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     --list > "$inventory_json"
 
@@ -628,6 +629,12 @@ prepare_runner_runtime() {
   export ANSIBLE_VAULT_BIN
   export ANSIBLE_CONFIG="${CHECKOUT_DIR}/ansible.cfg"
   export HOME="$ANSIBLE_HOME"
+  if running_as_ansible; then
+    install -d -m 0755 "$RUNNER_WORK_DIR"
+  else
+    install -d -o ansible -g ansible -m 0755 "$RUNNER_WORK_DIR"
+  fi
+  cd "$RUNNER_WORK_DIR"
 
   log "Preparing checkouts."
   if running_as_ansible; then
@@ -663,7 +670,7 @@ run_convergence() {
 
   log "Running full site playbook."
   install -m 0600 /dev/null "$RUNNER_PLAYBOOK_LOG"
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/site.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE" \
@@ -684,7 +691,7 @@ run_gcs_restic_bucket_cleanup() {
     log "Running GCS restic bucket cleanup dry run."
   fi
 
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/cleanup-gcs-restic-buckets.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE" \
@@ -751,7 +758,7 @@ run_rotate_vault_password() {
 
   mapfile -t extra_args < <(extra_vars_file_args)
   log "Running vault password rotation maintenance playbook."
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/rotate-vault-password.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE" \
@@ -760,7 +767,7 @@ run_rotate_vault_password() {
 
 run_rotate_vault_deploy_key() {
   log "Running vault deploy key rotation maintenance playbook."
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/rotate-vault-deploy-key.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE"
@@ -771,7 +778,7 @@ run_rotate_ansible_control_key() {
 
   mapfile -t extra_args < <(extra_vars_file_args)
   log "Running Ansible control key rotation maintenance playbook."
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/rotate-ansible-control-key.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE" \

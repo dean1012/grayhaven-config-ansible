@@ -129,6 +129,15 @@
         group: ansible
         mode: "0700"
 
+    - name: Create ansible runtime cache directory
+      ansible.builtin.file:
+        path: /home/ansible/.ansible
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: "0750"
+      when: grayhaven_role == "bastion"
+
     - name: Create ansible runner workspace directory
       ansible.builtin.file:
         path: /home/ansible/ansible-runner

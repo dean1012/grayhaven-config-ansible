@@ -24,6 +24,24 @@
     mode: "0750"
   when: grayhaven_role == "bastion"
 
+- name: Ensure Ansible cache directory is owned by ansible on bastion hosts
+  ansible.builtin.file:
+    path: /home/ansible/.ansible
+    state: directory
+    owner: ansible
+    group: ansible
+    recurse: true
+  when: grayhaven_role == "bastion"
+
+- name: Ensure Ansible runner directory is owned by ansible on bastion hosts
+  ansible.builtin.file:
+    path: "{{ managed_baseline_ansible_runtime_venv | dirname }}"
+    state: directory
+    owner: ansible
+    group: ansible
+    recurse: true
+  when: grayhaven_role == "bastion"
+
 - name: Create Ansible runtime virtual environment on bastion hosts
   ansible.builtin.command:
     cmd: /usr/bin/python3 -m venv "{{ managed_baseline_ansible_runtime_venv }}"
