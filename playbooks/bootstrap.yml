@@ -129,6 +129,17 @@
         group: ansible
         mode: "0700"
 
+    - name: Create temporary first-convergence SSH known hosts file on bastion hosts
+      ansible.builtin.file:
+        path: /home/ansible/.ssh/known_hosts
+        state: touch
+        owner: ansible
+        group: ansible
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+      when: grayhaven_role == "bastion"
+
     - name: Create ansible runtime cache directory
       ansible.builtin.file:
         path: /home/ansible/.ansible

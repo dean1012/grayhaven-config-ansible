@@ -14,6 +14,9 @@ ANSIBLE_HOME="/home/ansible"
 RUNNER_WORK_DIR="${ANSIBLE_HOME}/ansible-runner"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
+GITHUB_KNOWN_HOSTS="${ANSIBLE_HOME}/.ssh/github_known_hosts"
+INVENTORY_KNOWN_HOSTS="${ANSIBLE_HOME}/.ssh/known_hosts"
+GITHUB_META_URL="https://api.github.com/meta"
 ANSIBLE_RUNTIME_VENV="${ANSIBLE_HOME}/ansible-runner/ansible-runtime"
 CHECKOUT_PARENT="${ANSIBLE_HOME}"
 DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
@@ -135,16 +138,18 @@ run_as_ansible() {
 
 run_git_as_ansible() {
   local private_key="$1"
+  local git_ssh_command
   shift
 
+  git_ssh_command="ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${GITHUB_KNOWN_HOSTS}"
+
   if [[ -n "$private_key" ]]; then
-    run_as_ansible env \
-      GIT_SSH_COMMAND="ssh -i ${private_key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ANSIBLE_HOME}/.ssh/known_hosts" \
-      git "$@"
-    return
+    git_ssh_command="ssh -i ${private_key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${GITHUB_KNOWN_HOSTS}"
   fi
 
-  run_as_ansible git "$@"
+  run_as_ansible env \
+    GIT_SSH_COMMAND="$git_ssh_command" \
+    git "$@"
 }
 
 require_file() {
@@ -354,30 +359,69 @@ checkout_ref() {
 }
 
 prepare_github_known_hosts() {
+  local github_meta_json
+  local github_known_hosts
+
   if running_as_ansible; then
     install -d -m 0700 "${ANSIBLE_HOME}/.ssh"
   else
     install -d -o ansible -g ansible -m 0700 "${ANSIBLE_HOME}/.ssh"
   fi
 
-  run_as_ansible /usr/bin/tee "${ANSIBLE_HOME}/.ssh/known_hosts" >/dev/null <<'EOF'
-github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
-github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
-github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
-EOF
-  run_as_ansible chmod 0644 "${ANSIBLE_HOME}/.ssh/known_hosts"
+  github_meta_json="$(mktemp)"
+  github_known_hosts="$(mktemp)"
+
+  curl -fsSL \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2026-03-10" \
+    "$GITHUB_META_URL" > "$github_meta_json"
+
+  /usr/bin/python3 - "$github_meta_json" > "$github_known_hosts" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as github_meta_file:
+    github_meta = json.load(github_meta_file)
+
+ssh_keys = github_meta.get("ssh_keys") or []
+if not ssh_keys:
+    raise SystemExit("GitHub meta response did not include ssh_keys.")
+
+for ssh_key in ssh_keys:
+    print(f"github.com {ssh_key}")
+PY
+
+  if running_as_ansible; then
+    install -m 0644 "$github_known_hosts" "$GITHUB_KNOWN_HOSTS"
+  else
+    install -o ansible -g ansible -m 0644 "$github_known_hosts" "$GITHUB_KNOWN_HOSTS"
+  fi
+
+  rm -f "$github_meta_json" "$github_known_hosts"
 }
 
 prepare_inventory_known_hosts() {
   local inventory_json
-  local scan_targets
+  local target_rows
+  local inventory_known_hosts
+  local host_alias
+  local ssh_target
+  local scan_output
+  local scanned_host
+  local key_type
+  local key_body
+
+  if [[ ! -f "$INVENTORY_KNOWN_HOSTS" ]]; then
+    log "Temporary inventory known-hosts bridge is absent; using managed global SSH known hosts."
+    return 0
+  fi
 
   inventory_json="$(mktemp)"
   run_as_ansible "$ANSIBLE_INVENTORY_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     --list > "$inventory_json"
 
-  scan_targets="$(
+  target_rows="$(
     /usr/bin/python3 - "$inventory_json" <<'PY'
 import json
 import sys
@@ -396,30 +440,54 @@ def unwrap_ansible_value(value):
     return value
 
 
-for variables in hostvars.values():
+for inventory_hostname, variables in hostvars.items():
     if unwrap_ansible_value(variables.get("ansible_connection")) == "local":
         continue
 
     ansible_host = unwrap_ansible_value(variables.get("ansible_host"))
     if ansible_host:
-        targets.append(str(ansible_host))
+        targets.append((str(inventory_hostname), str(ansible_host)))
 
-print("\n".join(dict.fromkeys(targets)))
+for host_alias, ssh_target in dict.fromkeys(targets):
+    print(f"{host_alias}\t{ssh_target}")
 PY
   )"
 
   rm -f "$inventory_json"
 
-  if [[ -z "$scan_targets" ]]; then
+  if [[ -z "$target_rows" ]]; then
     log "No remote inventory targets require SSH known-host preparation."
     return 0
   fi
 
-  log "Preparing SSH known hosts for remote inventory targets."
-  install -d -m 0700 "${ANSIBLE_HOME}/.ssh"
-  # shellcheck disable=SC2086
-  ssh-keyscan -T 5 -t ed25519 $scan_targets >> "${ANSIBLE_HOME}/.ssh/known_hosts"
-  run_as_ansible chmod 0644 "${ANSIBLE_HOME}/.ssh/known_hosts"
+  log "Preparing temporary SSH known hosts for first convergence."
+  inventory_known_hosts="$(mktemp)"
+
+  while IFS=$'\t' read -r host_alias ssh_target; do
+    [[ -n "$host_alias" && -n "$ssh_target" ]] || continue
+
+    scan_output="$(ssh-keyscan -T 5 -t ed25519 "$ssh_target" 2>/dev/null)"
+    if [[ -z "$scan_output" ]]; then
+      log "Unable to scan SSH host key for ${host_alias} via ${ssh_target}."
+      exit 1
+    fi
+
+    while read -r scanned_host key_type key_body _; do
+      [[ -n "$scanned_host" && -n "$key_type" && -n "$key_body" ]] || continue
+      printf '%s %s %s\n' "$ssh_target" "$key_type" "$key_body" >> "$inventory_known_hosts"
+      if [[ "$host_alias" != "$ssh_target" ]]; then
+        printf '%s %s %s\n' "$host_alias" "$key_type" "$key_body" >> "$inventory_known_hosts"
+      fi
+    done <<< "$scan_output"
+  done <<< "$target_rows"
+
+  if running_as_ansible; then
+    install -m 0644 "$inventory_known_hosts" "$INVENTORY_KNOWN_HOSTS"
+  else
+    install -o ansible -g ansible -m 0644 "$inventory_known_hosts" "$INVENTORY_KNOWN_HOSTS"
+  fi
+
+  rm -f "$inventory_known_hosts"
 }
 
 ###############################################################################
