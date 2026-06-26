@@ -148,10 +148,10 @@ sudo /usr/local/sbin/grayhaven-ansible-runner \
 ```
 
 Avoid passing the new password directly on the shell command line. The runner
-updates the locally persisted vault password before refreshing the
-`grayhaven-vault` checkout and running the maintenance playbook. Remove the
-temporary vars file after the playbook completes and verify a normal runner
-invocation can decrypt the vault with the new password:
+uses the temporary vars file to decrypt the updated `grayhaven-vault` checkout,
+then the maintenance playbook updates the locally persisted vault password.
+Remove the temporary vars file after the playbook completes and verify a normal
+runner invocation can decrypt the vault with the new password:
 
 ```bash
 sudo rm -f "$TEMP_VAULT_PASSWORD_FILE"

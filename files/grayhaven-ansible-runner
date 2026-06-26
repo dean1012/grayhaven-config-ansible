@@ -9,6 +9,7 @@ VAULT_PASSWORD_FILE="/etc/grayhaven/ansible/secrets/vault-password"
 RUNNER_VARS="${RUNNER_RUNTIME_DIR}/vars.yml"
 RUNNER_SECRET_ENV="${RUNNER_RUNTIME_DIR}/secrets.env"
 RUNNER_PLAYBOOK_LOG="${RUNNER_RUNTIME_DIR}/playbook.log"
+ROTATE_VAULT_PASSWORD_FILE=""
 OBSERVABILITY_TEXTFILE_DIR="/var/lib/grayhaven/observability/textfile"
 ANSIBLE_HOME="/home/ansible"
 RUNNER_WORK_DIR="${ANSIBLE_HOME}/ansible-runner"
@@ -197,6 +198,9 @@ require_env() {
 
 cleanup_runtime_files() {
   rm -f "$RUNNER_SECRET_ENV" "$RUNNER_VARS"
+  if [[ -n "${ROTATE_VAULT_PASSWORD_FILE:-}" ]]; then
+    rm -f "$ROTATE_VAULT_PASSWORD_FILE"
+  fi
 }
 
 grafana_cloud_enabled() {
@@ -812,7 +816,7 @@ extra_vars_file_args() {
   done
 }
 
-preseed_local_vault_password() {
+prepare_rotate_vault_password_file() {
   local extra_vars_file
   local temp_password_file
 
@@ -839,12 +843,9 @@ with open(sys.argv[1], encoding="utf-8") as vars_file:
         break
 PY
     if [[ -s "$temp_password_file" ]]; then
-      if running_as_ansible; then
-        sudo install -o root -g ansible -m 0640 "$temp_password_file" "$VAULT_PASSWORD_FILE"
-      else
-        install -o root -g ansible -m 0640 "$temp_password_file" "$VAULT_PASSWORD_FILE"
-      fi
-      rm -f "$temp_password_file"
+      ROTATE_VAULT_PASSWORD_FILE="$temp_password_file"
+      VAULT_PASSWORD_FILE="$ROTATE_VAULT_PASSWORD_FILE"
+      export VAULT_PASSWORD_FILE
       return 0
     fi
   done
@@ -889,7 +890,7 @@ run_rotate_ansible_control_key() {
 
 run_once() {
   if [[ "$RUNNER_COMMAND" == "rotate-vault-password" ]]; then
-    preseed_local_vault_password
+    prepare_rotate_vault_password_file
   fi
 
   prepare_runner_runtime
