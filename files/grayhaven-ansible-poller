@@ -15,6 +15,12 @@ log() {
   printf '[grayhaven-ansible-poller] %s\n' "$*"
 }
 
+drop_to_ansible() {
+  if [[ "$(id -un)" != "ansible" ]]; then
+    exec runuser -u ansible -- "$0" "$@"
+  fi
+}
+
 require_file() {
   local path="$1"
 
@@ -28,7 +34,7 @@ prepare_github_known_hosts() {
   local github_meta_json
   local github_known_hosts
 
-  install -d -o ansible -g ansible -m 0700 "${ANSIBLE_HOME}/.ssh"
+  install -d -m 0700 "${ANSIBLE_HOME}/.ssh"
 
   github_meta_json="$(mktemp)"
   github_known_hosts="$(mktemp)"
@@ -53,7 +59,7 @@ for ssh_key in ssh_keys:
     print(f"github.com {ssh_key}")
 PY
 
-  install -o ansible -g ansible -m 0644 "$github_known_hosts" "$GITHUB_KNOWN_HOSTS"
+  install -m 0644 "$github_known_hosts" "$GITHUB_KNOWN_HOSTS"
   rm -f "$github_meta_json" "$github_known_hosts"
 }
 
@@ -84,6 +90,8 @@ persist_ref() {
 }
 
 main() {
+  drop_to_ansible "$@"
+
   require_file "$RUNNER_ENV"
   require_file "$ANSIBLE_CONTROL_PRIVATE_KEY"
   require_file "$VAULT_DEPLOY_PRIVATE_KEY"
@@ -96,7 +104,7 @@ main() {
 
   prepare_github_known_hosts
 
-  install -d -o root -g root -m 0755 "$STATE_DIR"
+  install -d -m 0755 "$STATE_DIR"
 
   local config_ref
   local vault_ref
@@ -119,7 +127,7 @@ main() {
   fi
 
   log "Repository change detected; triggering Ansible runner."
-  systemctl start --no-block grayhaven-ansible-runner.service
+  sudo -n systemctl start --no-block grayhaven-ansible-runner.service
 
   # Record the observed refs only after systemd accepts the runner request. If
   # the trigger fails, the next poll should retry the same repository change.

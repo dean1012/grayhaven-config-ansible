@@ -86,6 +86,7 @@
     dest: "/usr/local/bin/{{ item }}"
     state: link
     force: true
+    follow: false
     owner: root
     group: root
   loop:
@@ -94,6 +95,15 @@
     - ansible-inventory
     - ansible-playbook
     - ansible-vault
+  when: grayhaven_role == "bastion"
+
+- name: Ensure Ansible runtime virtual environment remains owned by ansible
+  ansible.builtin.file:
+    path: "{{ managed_baseline_ansible_runtime_venv }}"
+    state: directory
+    owner: ansible
+    group: ansible
+    recurse: true
   when: grayhaven_role == "bastion"
 
 - name: Install checksum-verified Ansible Galaxy collections on bastion hosts

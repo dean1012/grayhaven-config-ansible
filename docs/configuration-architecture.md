@@ -59,13 +59,14 @@ persistent checkouts of:
 - `/home/ansible/grayhaven-config-ansible`
 - `/home/ansible/grayhaven-vault`
 
-The runner installs hash-pinned Python runtime dependencies and
-checksum-verified, version-pinned Ansible Galaxy collections under the
-ansible-owned `/home/ansible/ansible-runner` workspace. Ansible commands from
-that virtual environment are linked into `/usr/local/bin` for operator use. The
-runner decrypts vault values through Ansible Vault, prepares first-convergence
-SSH known hosts when the bootstrap bridge file is present, and runs
-`playbooks/site.yml`.
+The runner and poller services execute as the `ansible` automation user. The
+runner installs hash-pinned Python runtime dependencies and checksum-verified,
+version-pinned Ansible Galaxy collections under the ansible-owned
+`/home/ansible/ansible-runner` workspace. Ansible commands from that virtual
+environment are linked into `/usr/local/bin` for operator use without changing
+ownership of the virtual environment. The runner decrypts vault values through
+Ansible Vault, prepares first-convergence SSH known hosts when the bootstrap
+bridge file is present, and runs `playbooks/site.yml`.
 
 `grayhaven-vault` SSH access uses the vault deployment SSH key stored at
 `/home/ansible/.ssh/grayhaven_vault_deploy_key` on bastion hosts. Repository SSH
@@ -78,9 +79,10 @@ droplet tags so OpenTofu policy changes can be applied without relying on stale
 first-boot bootstrap values.
 
 The poller checks the public configuration repository and `grayhaven-vault` for
-changes every five minutes. If either tracked ref changes, it
-starts the normal runner service. The daily runner timer remains in place as a
-convergence safety net.
+changes every five minutes. If either tracked ref changes, it starts the normal
+runner service and stores the observed refs under the ansible-owned
+`/var/lib/grayhaven/ansible-poller` state directory. The daily runner timer
+remains in place as a convergence safety net.
 
 Only the active control bastion runs the scheduled runner and poller. Other
 bastions are configured as SSH jump points and are managed over SSH by the

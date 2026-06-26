@@ -167,6 +167,15 @@
         mode: "0755"
       when: grayhaven_role == "bastion"
 
+    - name: Create ansible poller state directory
+      ansible.builtin.file:
+        path: /var/lib/grayhaven/ansible-poller
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: "0755"
+      when: grayhaven_role == "bastion"
+
     - name: Install ansible runner runtime tmpfiles rule
       ansible.builtin.copy:
         dest: /etc/tmpfiles.d/grayhaven-ansible-runner.conf
