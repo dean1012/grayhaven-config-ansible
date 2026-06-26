@@ -7,11 +7,11 @@
       ansible.builtin.tempfile:
         state: directory
         suffix: grayhaven-control-key
-      register: managed_baseline_control_key_tempdir
+      register: grayhaven_control_key_tempdir
 
     - name: Store temporary Ansible control private key for validation
       ansible.builtin.copy:
-        dest: "{{ managed_baseline_control_key_tempdir.path }}/id_ed25519"
+        dest: "{{ grayhaven_control_key_tempdir.path }}/id_ed25519"
         owner: root
         group: root
         mode: "0600"
@@ -20,7 +20,7 @@
 
     - name: Store temporary Ansible control public key for validation
       ansible.builtin.copy:
-        dest: "{{ managed_baseline_control_key_tempdir.path }}/id_ed25519.pub"
+        dest: "{{ grayhaven_control_key_tempdir.path }}/id_ed25519.pub"
         owner: root
         group: root
         mode: "0600"
@@ -50,15 +50,15 @@
             for line in lines[1:-1]:
                 if not line or any(char not in allowed for char in line):
                     raise SystemExit(1)
-          - "{{ managed_baseline_control_key_tempdir.path }}/id_ed25519"
-      register: managed_baseline_control_key_armor
+          - "{{ grayhaven_control_key_tempdir.path }}/id_ed25519"
+      register: grayhaven_control_key_armor
       changed_when: false
       failed_when: false
 
     - name: Fail if Ansible control private key armor is malformed
       ansible.builtin.assert:
         that:
-          - managed_baseline_control_key_armor.rc == 0
+          - grayhaven_control_key_armor.rc == 0
         fail_msg: >-
           ansible_control_private_key must be an OpenSSH private key with no
           spaces, tabs, or invalid characters inside the key body.
@@ -95,8 +95,8 @@
                 base64.b64decode(fields[1].encode("ascii"), validate=True)
             except (UnicodeEncodeError, binascii.Error):
                 raise SystemExit(1)
-          - "{{ managed_baseline_control_key_tempdir.path }}/id_ed25519.pub"
-      register: managed_baseline_control_key_public_format
+          - "{{ grayhaven_control_key_tempdir.path }}/id_ed25519.pub"
+      register: grayhaven_control_key_public_format
       changed_when: false
       failed_when: false
       no_log: true
@@ -104,7 +104,7 @@
     - name: Fail if Ansible control public key format is malformed
       ansible.builtin.assert:
         that:
-          - managed_baseline_control_key_public_format.rc == 0
+          - grayhaven_control_key_public_format.rc == 0
         fail_msg: >-
           ansible_control_public_key must be a single-line ssh-ed25519 public
           key with no leading or trailing whitespace, tabs, repeated spaces, or
@@ -117,8 +117,8 @@
           - ssh-keygen
           - -y
           - -f
-          - "{{ managed_baseline_control_key_tempdir.path }}/id_ed25519"
-      register: managed_baseline_control_key_public
+          - "{{ grayhaven_control_key_tempdir.path }}/id_ed25519"
+      register: grayhaven_control_key_public
       changed_when: false
       failed_when: false
       no_log: true
@@ -126,8 +126,8 @@
     - name: Fail if Ansible control private key does not match public key
       ansible.builtin.assert:
         that:
-          - managed_baseline_control_key_public.rc == 0
-          - managed_baseline_control_key_public.stdout | trim == ansible_control_public_key | trim
+          - grayhaven_control_key_public.rc == 0
+          - grayhaven_control_key_public.stdout | trim == ansible_control_public_key | trim
         fail_msg: >-
           ansible_control_private_key must parse successfully and derive the
           configured ansible_control_public_key.
@@ -136,6 +136,6 @@
   always:
     - name: Remove temporary Ansible control key validation directory
       ansible.builtin.file:
-        path: "{{ managed_baseline_control_key_tempdir.path }}"
+        path: "{{ grayhaven_control_key_tempdir.path }}"
         state: absent
-      when: managed_baseline_control_key_tempdir is defined
+      when: grayhaven_control_key_tempdir is defined
