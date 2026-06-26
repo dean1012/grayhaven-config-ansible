@@ -128,18 +128,23 @@ Vault password rotation has three coordinated parts:
 
 After the vault files and `grayhaven-infra-opentofu` environment variables are
 updated, rotate the persisted vault password by placing the new value in a
-temporary vars file and passing that file to the runner:
+temporary vars file that is readable by the `ansible` group and passing that
+file to the runner:
+
+```bash
+umask 077
+TEMP_VAULT_PASSWORD_FILE="$(mktemp /tmp/grayhaven-vault-password.XXXXXX.yml)"
+printf '%s\n' 'new_vault_password: "<new password>"' > "$TEMP_VAULT_PASSWORD_FILE"
+sudo chown root:ansible "$TEMP_VAULT_PASSWORD_FILE"
+sudo chmod 0640 "$TEMP_VAULT_PASSWORD_FILE"
+```
+
+Run the rotation through the runner:
 
 ```bash
 sudo /usr/local/sbin/grayhaven-ansible-runner \
   --rotate-vault-password \
-  --extra-vars-file /path/to/temp-vault-password.yml
-```
-
-The temporary vars file should contain:
-
-```yaml
-new_vault_password: "<new password>"
+  --extra-vars-file "$TEMP_VAULT_PASSWORD_FILE"
 ```
 
 Avoid passing the new password directly on the shell command line. The runner
@@ -149,6 +154,7 @@ temporary vars file after the playbook completes and verify a normal runner
 invocation can decrypt the vault with the new password:
 
 ```bash
+sudo rm -f "$TEMP_VAULT_PASSWORD_FILE"
 sudo systemctl start grayhaven-ansible-runner.service
 sudo journalctl -u grayhaven-ansible-runner.service
 ```

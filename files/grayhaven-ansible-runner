@@ -40,6 +40,19 @@ log() {
   printf '[grayhaven-ansible-runner] %s\n' "$*"
 }
 
+drop_to_ansible() {
+  if running_as_ansible; then
+    return
+  fi
+
+  if [[ "$(id -u)" -ne 0 ]]; then
+    log "Runner must be invoked as root or ansible."
+    exit 1
+  fi
+
+  exec runuser -u ansible -- "$0" "$@"
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -668,6 +681,7 @@ vars_to_render = {
 for key, value in vars_to_render.items():
     print(f"{key}: {json.dumps(value)}")
 PY
+  chmod 0600 "$RUNNER_VARS"
 }
 
 ###############################################################################
@@ -885,6 +899,7 @@ run_once() {
 }
 
 main() {
+  drop_to_ansible "$@"
   parse_args "$@"
   trap cleanup_runtime_files EXIT
 
