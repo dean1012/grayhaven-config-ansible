@@ -7,5 +7,5 @@ After=network-online.target
 Type=oneshot
 User=ansible
 Group=ansible
-WorkingDirectory=/home/ansible
+WorkingDirectory=/home/ansible/ansible-runner
 ExecStart=/usr/local/sbin/grayhaven-ansible-runner
