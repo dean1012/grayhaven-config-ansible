@@ -18,6 +18,7 @@ GITHUB_KNOWN_HOSTS="${ANSIBLE_HOME}/.ssh/github_known_hosts"
 INVENTORY_KNOWN_HOSTS="${ANSIBLE_HOME}/.ssh/known_hosts"
 GITHUB_META_URL="https://api.github.com/meta"
 ANSIBLE_RUNTIME_VENV="${ANSIBLE_HOME}/ansible-runner/ansible-runtime"
+ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_HOME}/.ansible/collections"
 CHECKOUT_PARENT="${ANSIBLE_HOME}"
 DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
 DEFAULT_VAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-vault"
@@ -42,6 +43,9 @@ log() {
 
 drop_to_ansible() {
   if running_as_ansible; then
+    export HOME="$ANSIBLE_HOME"
+    export USER="ansible"
+    export LOGNAME="ansible"
     return
   fi
 
@@ -50,7 +54,11 @@ drop_to_ansible() {
     exit 1
   fi
 
-  exec runuser -u ansible -- "$0" "$@"
+  exec runuser -u ansible -- env \
+    HOME="$ANSIBLE_HOME" \
+    USER="ansible" \
+    LOGNAME="ansible" \
+    "$0" "$@"
 }
 
 usage() {
@@ -142,11 +150,15 @@ running_as_ansible() {
 
 run_as_ansible() {
   if running_as_ansible; then
-    "$@"
+    env HOME="$ANSIBLE_HOME" USER="ansible" LOGNAME="ansible" "$@"
     return
   fi
 
-  runuser -u ansible -- "$@"
+  runuser -u ansible -- env \
+    HOME="$ANSIBLE_HOME" \
+    USER="ansible" \
+    LOGNAME="ansible" \
+    "$@"
 }
 
 run_git_as_ansible() {
@@ -510,6 +522,7 @@ PY
 install_ansible_runtime() {
   log "Ensuring pip-managed Ansible runtime is available."
   run_as_ansible install -d -m 0750 "$(dirname "$ANSIBLE_RUNTIME_VENV")"
+  run_as_ansible install -d -m 0755 "$ANSIBLE_COLLECTIONS_PATH"
   run_as_ansible /usr/bin/python3 -m venv "$ANSIBLE_RUNTIME_VENV"
   run_as_ansible "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install --upgrade pip
 
@@ -524,6 +537,8 @@ install_ansible_runtime() {
   log "Installing pinned Ansible Galaxy collections."
   run_as_ansible env \
     HOME="$ANSIBLE_HOME" \
+    ANSIBLE_COLLECTIONS_PATH="$ANSIBLE_COLLECTIONS_PATH" \
+    ANSIBLE_COLLECTIONS_PATHS="$ANSIBLE_COLLECTIONS_PATH" \
     ANSIBLE_GALAXY_BIN="$ANSIBLE_GALAXY_BIN" \
     "${CHECKOUT_DIR}/scripts/install-galaxy-collections"
 }
@@ -711,6 +726,10 @@ prepare_runner_runtime() {
   export ANSIBLE_VAULT_BIN
   export ANSIBLE_CONFIG="${CHECKOUT_DIR}/ansible.cfg"
   export HOME="$ANSIBLE_HOME"
+  export USER="ansible"
+  export LOGNAME="ansible"
+  export ANSIBLE_COLLECTIONS_PATH
+  export ANSIBLE_COLLECTIONS_PATHS="$ANSIBLE_COLLECTIONS_PATH"
   if running_as_ansible; then
     install -d -m 0755 "$RUNNER_WORK_DIR"
   else

@@ -33,6 +33,15 @@
     recurse: true
   when: grayhaven_role == "bastion"
 
+- name: Ensure Ansible collection directory is owned by ansible on bastion hosts
+  ansible.builtin.file:
+    path: "{{ managed_baseline_ansible_runtime_venv | dirname }}/collections"
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0755"
+  when: grayhaven_role == "bastion"
+
 - name: Ensure Ansible runner directory is owned by ansible on bastion hosts
   ansible.builtin.file:
     path: "{{ managed_baseline_ansible_runtime_venv | dirname }}"
@@ -59,6 +68,8 @@
   become_user: ansible
   environment:
     HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
   register: managed_baseline_ansible_runtime_pip_upgrade
   changed_when: >-
     'Successfully installed' in managed_baseline_ansible_runtime_pip_upgrade.stdout
@@ -76,6 +87,8 @@
   become_user: ansible
   environment:
     HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
   register: managed_baseline_ansible_install
   changed_when: "'Successfully installed' in managed_baseline_ansible_install.stdout"
   when: grayhaven_role == "bastion"
@@ -113,7 +126,11 @@
   become_user: ansible
   environment:
     ANSIBLE_GALAXY_BIN: "{{ managed_baseline_ansible_runtime_venv }}/bin/ansible-galaxy"
+    ANSIBLE_COLLECTIONS_PATH: "{{ managed_baseline_ansible_runtime_venv | dirname }}/collections"
+    ANSIBLE_COLLECTIONS_PATHS: "{{ managed_baseline_ansible_runtime_venv | dirname }}/collections"
     HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
   register: managed_baseline_galaxy_install
   changed_when: "'Installing collection' in managed_baseline_galaxy_install.stdout"
   when: grayhaven_role == "bastion"

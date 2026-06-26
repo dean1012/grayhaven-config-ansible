@@ -4,6 +4,7 @@ set -Eeuo pipefail
 RUNNER_ENV="/etc/grayhaven/ansible/runner.env"
 STATE_DIR="/var/lib/grayhaven/ansible-poller"
 ANSIBLE_HOME="/home/ansible"
+ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_HOME}/.ansible/collections"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
 GITHUB_KNOWN_HOSTS="${ANSIBLE_HOME}/.ssh/github_known_hosts"
@@ -16,9 +17,22 @@ log() {
 }
 
 drop_to_ansible() {
-  if [[ "$(id -un)" != "ansible" ]]; then
-    exec runuser -u ansible -- "$0" "$@"
+  if [[ "$(id -un)" == "ansible" ]]; then
+    export HOME="$ANSIBLE_HOME"
+    export USER="ansible"
+    export LOGNAME="ansible"
+    export ANSIBLE_COLLECTIONS_PATH
+    export ANSIBLE_COLLECTIONS_PATHS="$ANSIBLE_COLLECTIONS_PATH"
+    return
   fi
+
+  exec runuser -u ansible -- env \
+    HOME="$ANSIBLE_HOME" \
+    USER="ansible" \
+    LOGNAME="ansible" \
+    ANSIBLE_COLLECTIONS_PATH="$ANSIBLE_COLLECTIONS_PATH" \
+    ANSIBLE_COLLECTIONS_PATHS="$ANSIBLE_COLLECTIONS_PATH" \
+    "$0" "$@"
 }
 
 require_file() {

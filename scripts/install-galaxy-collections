@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 requirements_file="${1:-${repo_root}/galaxy_requirements.yml}"
 checksum_file="${2:-${repo_root}/galaxy_requirements.sha256}"
 ansible_galaxy_bin="${ANSIBLE_GALAXY_BIN:-ansible-galaxy}"
+collections_path="${ANSIBLE_COLLECTIONS_PATH:-${HOME}/.ansible/collections}"
 download_dir="$(mktemp -d /tmp/grayhaven-galaxy.XXXXXX)"
 
 cleanup() {
@@ -31,5 +32,8 @@ fi
 )
 
 while IFS= read -r -d '' artifact; do
-  "$ansible_galaxy_bin" collection install "$artifact" --force
+  "$ansible_galaxy_bin" collection install \
+    "$artifact" \
+    --force \
+    --collections-path "$collections_path"
 done < <(find "$download_dir" -maxdepth 1 -type f -name '*.tar.gz' -print0 | sort -z)
