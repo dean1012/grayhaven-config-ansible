@@ -1,14 +1,14 @@
 ---
+- name: Install EPEL release package
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+
 - name: Update installed operating system packages
   ansible.builtin.dnf:
     name: "*"
     state: latest
     update_only: true
-
-- name: Install EPEL release package
-  ansible.builtin.dnf:
-    name: epel-release
-    state: present
 
 - name: Install baseline administration packages
   ansible.builtin.dnf:
