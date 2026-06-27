@@ -169,19 +169,15 @@ first boot so bastions can read `grayhaven-vault`.
 After full convergence, bastions keep it only for `grayhaven-vault` repository
 access at `/home/ansible/.ssh/grayhaven_vault_deploy_key`.
 
-The deployment SSH keypair is shared by workspace environments. Run this
-maintenance playbook from the active control bastion in each deployed
-environment that has existing bastions retaining the key.
+The deployment SSH keypair is shared by workspace environments. Log in through
+the environment bastion DNS name so the session lands on the active control
+bastion, then generate the staged keypair:
 
-Place the staged files on bastion hosts before running the playbook:
+```bash
+sudo -iu ansible ssh-keygen -f /home/ansible/new_ansible_deploy_key
+```
 
-- `/home/ansible/new_ansible_deploy_key`
-- `/home/ansible/new_ansible_deploy_key.pub`
-
-The files should be owned by `ansible:ansible`; the private key should be mode
-`0600`, and the public key should be mode `0644`.
-
-Run the rotation from the active control bastion:
+Run the rotation:
 
 ```bash
 sudo /usr/local/sbin/grayhaven-ansible-runner --rotate-vault-deploy-key
