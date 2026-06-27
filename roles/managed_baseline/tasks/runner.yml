@@ -31,6 +31,24 @@
       }}
     managed_baseline_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
 
+- name: Ensure Grayhaven Systems LLC state directory is owned by ansible
+  ansible.builtin.file:
+    path: /var/lib/grayhaven
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0755"
+  when: grayhaven_role == "bastion"
+
+- name: Ensure bastion poller state directory is owned by ansible
+  ansible.builtin.file:
+    path: /var/lib/grayhaven/ansible-poller
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0755"
+  when: grayhaven_role == "bastion"
+
 - name: Install bastion runner executable
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../files/grayhaven-ansible-runner"

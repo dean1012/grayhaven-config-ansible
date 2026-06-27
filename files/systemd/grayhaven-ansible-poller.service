@@ -5,4 +5,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+User=ansible
+Group=ansible
+WorkingDirectory=/home/ansible/ansible-runner
 ExecStart=/usr/local/sbin/grayhaven-ansible-poller

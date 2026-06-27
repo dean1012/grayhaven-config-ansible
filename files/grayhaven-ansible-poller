@@ -4,13 +4,35 @@ set -Eeuo pipefail
 RUNNER_ENV="/etc/grayhaven/ansible/runner.env"
 STATE_DIR="/var/lib/grayhaven/ansible-poller"
 ANSIBLE_HOME="/home/ansible"
+ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_HOME}/.ansible/collections"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
+GITHUB_KNOWN_HOSTS="${ANSIBLE_HOME}/.ssh/github_known_hosts"
+GITHUB_META_URL="https://api.github.com/meta"
 DEFAULT_REPO_URL="https://github.com/dean1012/grayhaven-config-ansible.git"
 DEFAULT_REPO_REF="main"
 
 log() {
   printf '[grayhaven-ansible-poller] %s\n' "$*"
+}
+
+drop_to_ansible() {
+  if [[ "$(id -un)" == "ansible" ]]; then
+    export HOME="$ANSIBLE_HOME"
+    export USER="ansible"
+    export LOGNAME="ansible"
+    export ANSIBLE_COLLECTIONS_PATH
+    export ANSIBLE_COLLECTIONS_PATHS="$ANSIBLE_COLLECTIONS_PATH"
+    return
+  fi
+
+  exec runuser -u ansible -- env \
+    HOME="$ANSIBLE_HOME" \
+    USER="ansible" \
+    LOGNAME="ansible" \
+    ANSIBLE_COLLECTIONS_PATH="$ANSIBLE_COLLECTIONS_PATH" \
+    ANSIBLE_COLLECTIONS_PATHS="$ANSIBLE_COLLECTIONS_PATH" \
+    "$0" "$@"
 }
 
 require_file() {
@@ -23,28 +45,52 @@ require_file() {
 }
 
 prepare_github_known_hosts() {
-  install -d -o ansible -g ansible -m 0700 "${ANSIBLE_HOME}/.ssh"
-  cat > "${ANSIBLE_HOME}/.ssh/known_hosts" <<'EOF'
-github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
-github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
-github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
-EOF
-  chown ansible:ansible "${ANSIBLE_HOME}/.ssh/known_hosts"
-  chmod 0644 "${ANSIBLE_HOME}/.ssh/known_hosts"
+  local github_meta_json
+  local github_known_hosts
+
+  install -d -m 0700 "${ANSIBLE_HOME}/.ssh"
+
+  github_meta_json="$(mktemp)"
+  github_known_hosts="$(mktemp)"
+
+  curl -fsSL \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2026-03-10" \
+    "$GITHUB_META_URL" > "$github_meta_json"
+
+  /usr/bin/python3 - "$github_meta_json" > "$github_known_hosts" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as github_meta_file:
+    github_meta = json.load(github_meta_file)
+
+ssh_keys = github_meta.get("ssh_keys") or []
+if not ssh_keys:
+    raise SystemExit("GitHub meta response did not include ssh_keys.")
+
+for ssh_key in ssh_keys:
+    print(f"github.com {ssh_key}")
+PY
+
+  install -m 0644 "$github_known_hosts" "$GITHUB_KNOWN_HOSTS"
+  rm -f "$github_meta_json" "$github_known_hosts"
 }
 
 remote_ref() {
   local repo_url="$1"
   local repo_ref="$2"
   local private_key="${3:-}"
+  local git_ssh_command
+
+  git_ssh_command="ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${GITHUB_KNOWN_HOSTS}"
 
   if [[ -n "$private_key" ]]; then
-    GIT_SSH_COMMAND="ssh -i ${private_key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ANSIBLE_HOME}/.ssh/known_hosts" \
-      git ls-remote "$repo_url" "refs/heads/${repo_ref}" "refs/tags/${repo_ref}" | awk 'NR == 1 { print $1 }'
-    return
+    git_ssh_command="ssh -i ${private_key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${GITHUB_KNOWN_HOSTS}"
   fi
 
-  git ls-remote "$repo_url" "refs/heads/${repo_ref}" "refs/tags/${repo_ref}" | awk 'NR == 1 { print $1 }'
+  GIT_SSH_COMMAND="$git_ssh_command" \
+    git ls-remote "$repo_url" "refs/heads/${repo_ref}" "refs/tags/${repo_ref}" | awk 'NR == 1 { print $1 }'
 }
 
 persist_ref() {
@@ -58,6 +104,8 @@ persist_ref() {
 }
 
 main() {
+  drop_to_ansible "$@"
+
   require_file "$RUNNER_ENV"
   require_file "$ANSIBLE_CONTROL_PRIVATE_KEY"
   require_file "$VAULT_DEPLOY_PRIVATE_KEY"
@@ -70,7 +118,7 @@ main() {
 
   prepare_github_known_hosts
 
-  install -d -o root -g root -m 0755 "$STATE_DIR"
+  install -d -m 0755 "$STATE_DIR"
 
   local config_ref
   local vault_ref
@@ -93,7 +141,7 @@ main() {
   fi
 
   log "Repository change detected; triggering Ansible runner."
-  systemctl start --no-block grayhaven-ansible-runner.service
+  sudo -n systemctl start --no-block grayhaven-ansible-runner.service
 
   # Record the observed refs only after systemd accepts the runner request. If
   # the trigger fails, the next poll should retry the same repository change.

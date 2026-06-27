@@ -129,6 +129,69 @@
         group: ansible
         mode: "0700"
 
+    - name: Create temporary first-convergence SSH known hosts file on bastion hosts
+      ansible.builtin.file:
+        path: /home/ansible/.ssh/known_hosts
+        state: touch
+        owner: ansible
+        group: ansible
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+      when: grayhaven_role == "bastion"
+
+    - name: Create ansible runtime cache directory
+      ansible.builtin.file:
+        path: /home/ansible/.ansible
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: "0750"
+      when: grayhaven_role == "bastion"
+
+    - name: Create ansible runner workspace directory
+      ansible.builtin.file:
+        path: /home/ansible/ansible-runner
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: "0750"
+      when: grayhaven_role == "bastion"
+
+    - name: Create Grayhaven Systems LLC state directory
+      ansible.builtin.file:
+        path: /var/lib/grayhaven
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: "0755"
+      when: grayhaven_role == "bastion"
+
+    - name: Create ansible poller state directory
+      ansible.builtin.file:
+        path: /var/lib/grayhaven/ansible-poller
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: "0755"
+      when: grayhaven_role == "bastion"
+
+    - name: Install ansible runner runtime tmpfiles rule
+      ansible.builtin.copy:
+        dest: /etc/tmpfiles.d/grayhaven-ansible-runner.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          d /run/grayhaven-ansible-runner 0750 ansible ansible -
+      when: grayhaven_role == "bastion"
+
+    - name: Create ansible runner runtime directory
+      ansible.builtin.command:
+        cmd: systemd-tmpfiles --create /etc/tmpfiles.d/grayhaven-ansible-runner.conf
+      changed_when: false
+      when: grayhaven_role == "bastion"
+
     - name: Install Ansible authorized key
       ansible.builtin.copy:
         dest: /home/ansible/.ssh/authorized_keys

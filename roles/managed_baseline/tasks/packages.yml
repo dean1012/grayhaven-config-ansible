@@ -1,14 +1,14 @@
 ---
+- name: Install EPEL release package
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+
 - name: Update installed operating system packages
   ansible.builtin.dnf:
     name: "*"
     state: latest
     update_only: true
-
-- name: Install EPEL release package
-  ansible.builtin.dnf:
-    name: epel-release
-    state: present
 
 - name: Install baseline administration packages
   ansible.builtin.dnf:
@@ -19,15 +19,44 @@
   ansible.builtin.file:
     path: "{{ managed_baseline_ansible_runtime_venv | dirname }}"
     state: directory
-    owner: root
-    group: root
+    owner: ansible
+    group: ansible
+    mode: "0750"
+  when: grayhaven_role == "bastion"
+
+- name: Ensure Ansible cache directory is owned by ansible on bastion hosts
+  ansible.builtin.file:
+    path: /home/ansible/.ansible
+    state: directory
+    owner: ansible
+    group: ansible
+    recurse: true
+  when: grayhaven_role == "bastion"
+
+- name: Ensure Ansible collection directory is owned by ansible on bastion hosts
+  ansible.builtin.file:
+    path: "{{ managed_baseline_ansible_runtime_venv | dirname }}/collections"
+    state: directory
+    owner: ansible
+    group: ansible
     mode: "0755"
+  when: grayhaven_role == "bastion"
+
+- name: Ensure Ansible runner directory is owned by ansible on bastion hosts
+  ansible.builtin.file:
+    path: "{{ managed_baseline_ansible_runtime_venv | dirname }}"
+    state: directory
+    owner: ansible
+    group: ansible
+    recurse: true
   when: grayhaven_role == "bastion"
 
 - name: Create Ansible runtime virtual environment on bastion hosts
   ansible.builtin.command:
     cmd: /usr/bin/python3 -m venv "{{ managed_baseline_ansible_runtime_venv }}"
     creates: "{{ managed_baseline_ansible_runtime_venv }}/bin/python"
+  become: true
+  become_user: ansible
   when: grayhaven_role == "bastion"
 
 - name: Upgrade Ansible runtime virtual environment pip on bastion hosts
@@ -35,6 +64,12 @@
     cmd: >-
       {{ managed_baseline_ansible_runtime_venv }}/bin/python
       -m pip install --upgrade pip
+  become: true
+  become_user: ansible
+  environment:
+    HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
   register: managed_baseline_ansible_runtime_pip_upgrade
   changed_when: >-
     'Successfully installed' in managed_baseline_ansible_runtime_pip_upgrade.stdout
@@ -48,6 +83,12 @@
       --require-hashes
       --requirement
       {{ managed_baseline_runner_checkout_dir }}/pip3_requirements.txt
+  become: true
+  become_user: ansible
+  environment:
+    HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
   register: managed_baseline_ansible_install
   changed_when: "'Successfully installed' in managed_baseline_ansible_install.stdout"
   when: grayhaven_role == "bastion"
@@ -58,6 +99,7 @@
     dest: "/usr/local/bin/{{ item }}"
     state: link
     force: true
+    follow: false
     owner: root
     group: root
   loop:
@@ -68,11 +110,27 @@
     - ansible-vault
   when: grayhaven_role == "bastion"
 
+- name: Ensure Ansible runtime virtual environment remains owned by ansible
+  ansible.builtin.file:
+    path: "{{ managed_baseline_ansible_runtime_venv }}"
+    state: directory
+    owner: ansible
+    group: ansible
+    recurse: true
+  when: grayhaven_role == "bastion"
+
 - name: Install checksum-verified Ansible Galaxy collections on bastion hosts
   ansible.builtin.command:
     cmd: "{{ managed_baseline_runner_checkout_dir }}/scripts/install-galaxy-collections"
+  become: true
+  become_user: ansible
   environment:
     ANSIBLE_GALAXY_BIN: "{{ managed_baseline_ansible_runtime_venv }}/bin/ansible-galaxy"
+    ANSIBLE_COLLECTIONS_PATH: "{{ managed_baseline_ansible_runtime_venv | dirname }}/collections"
+    ANSIBLE_COLLECTIONS_PATHS: "{{ managed_baseline_ansible_runtime_venv | dirname }}/collections"
+    HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
   register: managed_baseline_galaxy_install
   changed_when: "'Installing collection' in managed_baseline_galaxy_install.stdout"
   when: grayhaven_role == "bastion"

@@ -38,6 +38,7 @@
       Banner /etc/issue
       ClientAliveInterval 60
       ClientAliveCountMax 5
+      UseDNS no
   notify: Restart sshd
 
 - name: Enable and start SSH daemon

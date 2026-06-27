@@ -128,27 +128,33 @@ Vault password rotation has three coordinated parts:
 
 After the vault files and `grayhaven-infra-opentofu` environment variables are
 updated, rotate the persisted vault password by placing the new value in a
-temporary vars file and passing that file to the runner:
+temporary vars file that is readable by the `ansible` group and passing that
+file to the runner:
+
+```bash
+umask 077
+TEMP_VAULT_PASSWORD_FILE="$(mktemp /tmp/grayhaven-vault-password.XXXXXX.yml)"
+printf '%s\n' 'new_vault_password: "<new password>"' > "$TEMP_VAULT_PASSWORD_FILE"
+sudo chown root:ansible "$TEMP_VAULT_PASSWORD_FILE"
+sudo chmod 0640 "$TEMP_VAULT_PASSWORD_FILE"
+```
+
+Run the rotation through the runner:
 
 ```bash
 sudo /usr/local/sbin/grayhaven-ansible-runner \
   --rotate-vault-password \
-  --extra-vars-file /path/to/temp-vault-password.yml
-```
-
-The temporary vars file should contain:
-
-```yaml
-new_vault_password: "<new password>"
+  --extra-vars-file "$TEMP_VAULT_PASSWORD_FILE"
 ```
 
 Avoid passing the new password directly on the shell command line. The runner
-updates the locally persisted vault password before refreshing the
-`grayhaven-vault` checkout and running the maintenance playbook. Remove the
-temporary vars file after the playbook completes and verify a normal runner
-invocation can decrypt the vault with the new password:
+uses the temporary vars file to decrypt the updated `grayhaven-vault` checkout,
+then the maintenance playbook updates the locally persisted vault password.
+Remove the temporary vars file after the playbook completes and verify a normal
+runner invocation can decrypt the vault with the new password:
 
 ```bash
+sudo rm -f "$TEMP_VAULT_PASSWORD_FILE"
 sudo systemctl start grayhaven-ansible-runner.service
 sudo journalctl -u grayhaven-ansible-runner.service
 ```
@@ -163,19 +169,15 @@ first boot so bastions can read `grayhaven-vault`.
 After full convergence, bastions keep it only for `grayhaven-vault` repository
 access at `/home/ansible/.ssh/grayhaven_vault_deploy_key`.
 
-The deployment SSH keypair is shared by workspace environments. Run this
-maintenance playbook from the active control bastion in each deployed
-environment that has existing bastions retaining the key.
+The deployment SSH keypair is shared by workspace environments. Log in through
+the environment bastion DNS name so the session lands on the active control
+bastion, then generate the staged keypair:
 
-Place the staged files on bastion hosts before running the playbook:
+```bash
+sudo -iu ansible ssh-keygen -f /home/ansible/new_ansible_deploy_key
+```
 
-- `/home/ansible/new_ansible_deploy_key`
-- `/home/ansible/new_ansible_deploy_key.pub`
-
-The files should be owned by `ansible:ansible`; the private key should be mode
-`0600`, and the public key should be mode `0644`.
-
-Run the rotation from the active control bastion:
+Run the rotation:
 
 ```bash
 sudo /usr/local/sbin/grayhaven-ansible-runner --rotate-vault-deploy-key

@@ -35,6 +35,31 @@
     - grayhaven_role == "bastion"
     - managed_baseline_known_host_scan_targets | default([]) | length > 0
 
+- name: Normalize managed host SSH keys from bastion
+  ansible.builtin.set_fact:
+    managed_baseline_known_host_keys: >-
+      {{
+        managed_baseline_known_host_scan.stdout_lines
+        | reject('match', '^#')
+        | reject('equalto', '')
+        | unique
+        | sort
+        | list
+      }}
+  when:
+    - grayhaven_role == "bastion"
+    - managed_baseline_known_host_scan_targets | default([]) | length > 0
+
+- name: Validate managed host SSH key scan from bastion
+  ansible.builtin.assert:
+    that:
+      - managed_baseline_known_host_keys | default([]) | length == managed_baseline_known_host_scan_targets | length
+    fail_msg: "Managed host SSH key scan did not return one key line for each expected target."
+    quiet: true
+  when:
+    - grayhaven_role == "bastion"
+    - managed_baseline_known_host_scan_targets | default([]) | length > 0
+
 - name: Install managed global SSH known hosts on bastion
   ansible.builtin.copy:
     dest: /etc/ssh/ssh_known_hosts
@@ -43,10 +68,18 @@
     mode: "0644"
     content: |
       # Managed by Ansible. Do not edit manually.
-      {{ managed_baseline_known_host_scan.stdout }}
+      {% for managed_baseline_known_host_key in managed_baseline_known_host_keys %}
+      {{ managed_baseline_known_host_key }}
+      {% endfor %}
   when:
     - grayhaven_role == "bastion"
     - managed_baseline_known_host_scan_targets | default([]) | length > 0
+
+- name: Remove temporary first-convergence Ansible SSH known hosts on bastion
+  ansible.builtin.file:
+    path: /home/ansible/.ssh/known_hosts
+    state: absent
+  when: grayhaven_role == "bastion"
 
 - name: Create local Ansible facts directory
   ansible.builtin.file:

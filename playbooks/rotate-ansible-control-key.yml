@@ -19,9 +19,7 @@
       no_log: true
 
     - name: Validate vault control key material
-      ansible.builtin.include_role:
-        name: managed_baseline
-        tasks_from: control-key-validate
+      ansible.builtin.import_tasks: ../maintenance/tasks/validate-ansible-control-key.yml
 
     - name: Add vault control key before replacing bastion private key
       ansible.posix.authorized_key:

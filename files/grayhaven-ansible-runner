@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-LOCK_FILE="/run/grayhaven-ansible-runner.lock"
-PENDING_FILE="/run/grayhaven-ansible-runner.pending"
+RUNNER_RUNTIME_DIR="/run/grayhaven-ansible-runner"
+LOCK_FILE="${RUNNER_RUNTIME_DIR}/runner.lock"
+PENDING_FILE="${RUNNER_RUNTIME_DIR}/runner.pending"
 RUNNER_ENV="/etc/grayhaven/ansible/runner.env"
 VAULT_PASSWORD_FILE="/etc/grayhaven/ansible/secrets/vault-password"
-RUNNER_VARS="/run/grayhaven-ansible-runner-vars.yml"
-RUNNER_SECRET_ENV="/run/grayhaven-ansible-runner-secrets.env"
-RUNNER_PLAYBOOK_LOG="/run/grayhaven-ansible-runner-playbook.log"
+RUNNER_VARS="${RUNNER_RUNTIME_DIR}/vars.yml"
+RUNNER_SECRET_ENV="${RUNNER_RUNTIME_DIR}/secrets.env"
+RUNNER_PLAYBOOK_LOG="${RUNNER_RUNTIME_DIR}/playbook.log"
+ROTATE_VAULT_PASSWORD_FILE=""
 OBSERVABILITY_TEXTFILE_DIR="/var/lib/grayhaven/observability/textfile"
 ANSIBLE_HOME="/home/ansible"
+RUNNER_WORK_DIR="${ANSIBLE_HOME}/ansible-runner"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
-ANSIBLE_RUNTIME_VENV="/opt/grayhaven/ansible-runtime"
+GITHUB_KNOWN_HOSTS="${ANSIBLE_HOME}/.ssh/github_known_hosts"
+INVENTORY_KNOWN_HOSTS="${ANSIBLE_HOME}/.ssh/known_hosts"
+GITHUB_META_URL="https://api.github.com/meta"
+ANSIBLE_RUNTIME_VENV="${ANSIBLE_HOME}/ansible-runner/ansible-runtime"
+ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_HOME}/.ansible/collections"
 CHECKOUT_PARENT="${ANSIBLE_HOME}"
 DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
 DEFAULT_VAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-vault"
@@ -33,6 +40,26 @@ RUNNER_EXTRA_VARS_FILES=()
 
 log() {
   printf '[grayhaven-ansible-runner] %s\n' "$*"
+}
+
+drop_to_ansible() {
+  if running_as_ansible; then
+    export HOME="$ANSIBLE_HOME"
+    export USER="ansible"
+    export LOGNAME="ansible"
+    return
+  fi
+
+  if [[ "$(id -u)" -ne 0 ]]; then
+    log "Runner must be invoked as root or ansible."
+    exit 1
+  fi
+
+  exec runuser -u ansible -- env \
+    HOME="$ANSIBLE_HOME" \
+    USER="ansible" \
+    LOGNAME="ansible" \
+    "$0" "$@"
 }
 
 usage() {
@@ -118,22 +145,37 @@ parse_args() {
   fi
 }
 
+running_as_ansible() {
+  [[ "$(id -un)" == "ansible" ]]
+}
+
 run_as_ansible() {
-  runuser -u ansible -- "$@"
+  if running_as_ansible; then
+    env HOME="$ANSIBLE_HOME" USER="ansible" LOGNAME="ansible" "$@"
+    return
+  fi
+
+  runuser -u ansible -- env \
+    HOME="$ANSIBLE_HOME" \
+    USER="ansible" \
+    LOGNAME="ansible" \
+    "$@"
 }
 
 run_git_as_ansible() {
   local private_key="$1"
+  local git_ssh_command
   shift
 
+  git_ssh_command="ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${GITHUB_KNOWN_HOSTS}"
+
   if [[ -n "$private_key" ]]; then
-    runuser -u ansible -- env \
-      GIT_SSH_COMMAND="ssh -i ${private_key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ANSIBLE_HOME}/.ssh/known_hosts" \
-      git "$@"
-    return
+    git_ssh_command="ssh -i ${private_key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${GITHUB_KNOWN_HOSTS}"
   fi
 
-  run_as_ansible git "$@"
+  run_as_ansible env \
+    GIT_SSH_COMMAND="$git_ssh_command" \
+    git "$@"
 }
 
 require_file() {
@@ -156,6 +198,27 @@ require_env() {
 
 cleanup_runtime_files() {
   rm -f "$RUNNER_SECRET_ENV" "$RUNNER_VARS"
+  if [[ -n "${ROTATE_VAULT_PASSWORD_FILE:-}" ]]; then
+    rm -f "$ROTATE_VAULT_PASSWORD_FILE"
+  fi
+}
+
+grafana_cloud_enabled() {
+  local config_file="${VAULT_CHECKOUT_DIR:-}/config.yml"
+
+  [[ -f "$config_file" ]] || return 1
+
+  /usr/bin/python3 - "$config_file" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as config_file:
+    config = yaml.safe_load(config_file) or {}
+
+grafana_cloud = (config.get("observability") or {}).get("grafana_cloud") or {}
+raise SystemExit(0 if grafana_cloud.get("enabled") is True else 1)
+PY
 }
 
 write_convergence_metric() {
@@ -164,7 +227,11 @@ write_convergence_metric() {
   local environment="${GRAYHAVEN_ENVIRONMENT:-unknown}"
   local tmp_file
 
-  install -d -o root -g root -m 0755 "$OBSERVABILITY_TEXTFILE_DIR"
+  if ! grafana_cloud_enabled; then
+    return 0
+  fi
+
+  install -d -m 0755 "$OBSERVABILITY_TEXTFILE_DIR"
   tmp_file="$(mktemp "${OBSERVABILITY_TEXTFILE_DIR}/ansible-convergence.XXXXXX")"
   {
     printf '# HELP grayhaven_ansible_convergence_last_success Last Grayhaven Ansible convergence success status.\n'
@@ -321,26 +388,69 @@ checkout_ref() {
 }
 
 prepare_github_known_hosts() {
-  install -d -o ansible -g ansible -m 0700 "${ANSIBLE_HOME}/.ssh"
-  cat > "${ANSIBLE_HOME}/.ssh/known_hosts" <<'EOF'
-github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
-github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
-github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
-EOF
-  chown ansible:ansible "${ANSIBLE_HOME}/.ssh/known_hosts"
-  chmod 0644 "${ANSIBLE_HOME}/.ssh/known_hosts"
+  local github_meta_json
+  local github_known_hosts
+
+  if running_as_ansible; then
+    install -d -m 0700 "${ANSIBLE_HOME}/.ssh"
+  else
+    install -d -o ansible -g ansible -m 0700 "${ANSIBLE_HOME}/.ssh"
+  fi
+
+  github_meta_json="$(mktemp)"
+  github_known_hosts="$(mktemp)"
+
+  curl -fsSL \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2026-03-10" \
+    "$GITHUB_META_URL" > "$github_meta_json"
+
+  /usr/bin/python3 - "$github_meta_json" > "$github_known_hosts" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as github_meta_file:
+    github_meta = json.load(github_meta_file)
+
+ssh_keys = github_meta.get("ssh_keys") or []
+if not ssh_keys:
+    raise SystemExit("GitHub meta response did not include ssh_keys.")
+
+for ssh_key in ssh_keys:
+    print(f"github.com {ssh_key}")
+PY
+
+  if running_as_ansible; then
+    install -m 0644 "$github_known_hosts" "$GITHUB_KNOWN_HOSTS"
+  else
+    install -o ansible -g ansible -m 0644 "$github_known_hosts" "$GITHUB_KNOWN_HOSTS"
+  fi
+
+  rm -f "$github_meta_json" "$github_known_hosts"
 }
 
 prepare_inventory_known_hosts() {
   local inventory_json
-  local scan_targets
+  local target_rows
+  local inventory_known_hosts
+  local host_alias
+  local ssh_target
+  local scan_output
+  local scanned_host
+  local key_type
+  local key_body
+
+  if [[ ! -f "$INVENTORY_KNOWN_HOSTS" ]]; then
+    log "Temporary inventory known-hosts bridge is absent; using managed global SSH known hosts."
+    return 0
+  fi
 
   inventory_json="$(mktemp)"
-  "$ANSIBLE_INVENTORY_BIN" \
+  run_as_ansible "$ANSIBLE_INVENTORY_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     --list > "$inventory_json"
 
-  scan_targets="$(
+  target_rows="$(
     /usr/bin/python3 - "$inventory_json" <<'PY'
 import json
 import sys
@@ -359,30 +469,54 @@ def unwrap_ansible_value(value):
     return value
 
 
-for variables in hostvars.values():
+for inventory_hostname, variables in hostvars.items():
     if unwrap_ansible_value(variables.get("ansible_connection")) == "local":
         continue
 
     ansible_host = unwrap_ansible_value(variables.get("ansible_host"))
     if ansible_host:
-        targets.append(str(ansible_host))
+        targets.append((str(inventory_hostname), str(ansible_host)))
 
-print("\n".join(dict.fromkeys(targets)))
+for host_alias, ssh_target in dict.fromkeys(targets):
+    print(f"{host_alias}\t{ssh_target}")
 PY
   )"
 
   rm -f "$inventory_json"
 
-  if [[ -z "$scan_targets" ]]; then
+  if [[ -z "$target_rows" ]]; then
     log "No remote inventory targets require SSH known-host preparation."
     return 0
   fi
 
-  log "Preparing SSH known hosts for remote inventory targets."
-  install -d -o root -g root -m 0755 /etc/ssh
-  # shellcheck disable=SC2086
-  ssh-keyscan -T 5 -t ed25519 $scan_targets > /etc/ssh/ssh_known_hosts
-  chmod 0644 /etc/ssh/ssh_known_hosts
+  log "Preparing temporary SSH known hosts for first convergence."
+  inventory_known_hosts="$(mktemp)"
+
+  while IFS=$'\t' read -r host_alias ssh_target; do
+    [[ -n "$host_alias" && -n "$ssh_target" ]] || continue
+
+    scan_output="$(ssh-keyscan -T 5 -t ed25519 "$ssh_target" 2>/dev/null)"
+    if [[ -z "$scan_output" ]]; then
+      log "Unable to scan SSH host key for ${host_alias} via ${ssh_target}."
+      exit 1
+    fi
+
+    while read -r scanned_host key_type key_body _; do
+      [[ -n "$scanned_host" && -n "$key_type" && -n "$key_body" ]] || continue
+      printf '%s %s %s\n' "$ssh_target" "$key_type" "$key_body" >> "$inventory_known_hosts"
+      if [[ "$host_alias" != "$ssh_target" ]]; then
+        printf '%s %s %s\n' "$host_alias" "$key_type" "$key_body" >> "$inventory_known_hosts"
+      fi
+    done <<< "$scan_output"
+  done <<< "$target_rows"
+
+  if running_as_ansible; then
+    install -m 0644 "$inventory_known_hosts" "$INVENTORY_KNOWN_HOSTS"
+  else
+    install -o ansible -g ansible -m 0644 "$inventory_known_hosts" "$INVENTORY_KNOWN_HOSTS"
+  fi
+
+  rm -f "$inventory_known_hosts"
 }
 
 ###############################################################################
@@ -391,25 +525,25 @@ PY
 
 install_ansible_runtime() {
   log "Ensuring pip-managed Ansible runtime is available."
-  install -d -o root -g root -m 0755 "$(dirname "$ANSIBLE_RUNTIME_VENV")"
-  /usr/bin/python3 -m venv "$ANSIBLE_RUNTIME_VENV"
-  "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install --upgrade pip
+  run_as_ansible install -d -m 0750 "$(dirname "$ANSIBLE_RUNTIME_VENV")"
+  run_as_ansible install -d -m 0755 "$ANSIBLE_COLLECTIONS_PATH"
+  run_as_ansible /usr/bin/python3 -m venv "$ANSIBLE_RUNTIME_VENV"
+  run_as_ansible "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install --upgrade pip
 
   log "Installing hash-pinned Python and Ansible runtime dependencies."
-  "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install \
+  run_as_ansible "${ANSIBLE_RUNTIME_VENV}/bin/python" -m pip install \
     --upgrade \
     --require-hashes \
     --requirement "${CHECKOUT_DIR}/pip3_requirements.txt"
-  ln -sfn "$ANSIBLE_BIN" /usr/local/bin/ansible
-  ln -sfn "$ANSIBLE_GALAXY_BIN" /usr/local/bin/ansible-galaxy
-  ln -sfn "$ANSIBLE_INVENTORY_BIN" /usr/local/bin/ansible-inventory
-  ln -sfn "$ANSIBLE_PLAYBOOK_BIN" /usr/local/bin/ansible-playbook
-  ln -sfn "$ANSIBLE_VAULT_BIN" /usr/local/bin/ansible-vault
   export PATH="${ANSIBLE_RUNTIME_VENV}/bin:${PATH}"
-  "$ANSIBLE_BIN" --version
+  run_as_ansible "$ANSIBLE_BIN" --version
 
   log "Installing pinned Ansible Galaxy collections."
-  ANSIBLE_GALAXY_BIN="$ANSIBLE_GALAXY_BIN" \
+  run_as_ansible env \
+    HOME="$ANSIBLE_HOME" \
+    ANSIBLE_COLLECTIONS_PATH="$ANSIBLE_COLLECTIONS_PATH" \
+    ANSIBLE_COLLECTIONS_PATHS="$ANSIBLE_COLLECTIONS_PATH" \
+    ANSIBLE_GALAXY_BIN="$ANSIBLE_GALAXY_BIN" \
     "${CHECKOUT_DIR}/scripts/install-galaxy-collections"
 }
 
@@ -418,7 +552,7 @@ install_ansible_runtime() {
 ###############################################################################
 
 render_secret_environment() {
-  install -o root -g root -m 0600 /dev/null "$RUNNER_SECRET_ENV"
+  install -m 0600 /dev/null "$RUNNER_SECRET_ENV"
   /usr/bin/python3 - "$VAULT_CHECKOUT_DIR" "$VAULT_PASSWORD_FILE" <<'PY' > "$RUNNER_SECRET_ENV"
 import io
 import os
@@ -480,7 +614,7 @@ refresh_runtime_state_from_inventory() {
   inventory_json="$(mktemp)"
   runtime_env="$(mktemp)"
 
-  "$ANSIBLE_INVENTORY_BIN" \
+  run_as_ansible "$ANSIBLE_INVENTORY_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     --list > "$inventory_json"
 
@@ -543,7 +677,7 @@ PY
 
 render_runner_vars() {
   log "Preparing runtime variables derived from local control state."
-  install -o root -g root -m 0600 /dev/null "$RUNNER_VARS"
+  install -m 0600 /dev/null "$RUNNER_VARS"
   /usr/bin/python3 - <<'PY' > "$RUNNER_VARS"
 import json
 import os
@@ -566,6 +700,7 @@ vars_to_render = {
 for key, value in vars_to_render.items():
     print(f"{key}: {json.dumps(value)}")
 PY
+  chmod 0600 "$RUNNER_VARS"
 }
 
 ###############################################################################
@@ -594,14 +729,30 @@ prepare_runner_runtime() {
   export GRAYHAVEN_CERTIFICATE_ENVIRONMENT GRAYHAVEN_TLS_MODE
   export ANSIBLE_VAULT_BIN
   export ANSIBLE_CONFIG="${CHECKOUT_DIR}/ansible.cfg"
-  export HOME="/root"
+  export HOME="$ANSIBLE_HOME"
+  export USER="ansible"
+  export LOGNAME="ansible"
+  export ANSIBLE_COLLECTIONS_PATH
+  export ANSIBLE_COLLECTIONS_PATHS="$ANSIBLE_COLLECTIONS_PATH"
+  if running_as_ansible; then
+    install -d -m 0755 "$RUNNER_WORK_DIR"
+  else
+    install -d -o ansible -g ansible -m 0755 "$RUNNER_WORK_DIR"
+  fi
+  cd "$RUNNER_WORK_DIR"
 
   log "Preparing checkouts."
-  install -d -o ansible -g ansible -m 0755 "$CHECKOUT_PARENT"
+  if running_as_ansible; then
+    install -d -m 0755 "$CHECKOUT_PARENT"
+  else
+    install -d -o ansible -g ansible -m 0755 "$CHECKOUT_PARENT"
+  fi
   prepare_github_known_hosts
   checkout_ref "$CHECKOUT_DIR" "$REPO_URL" "$REPO_REF"
   checkout_ref "$VAULT_CHECKOUT_DIR" "$VAULT_REPO_URL" "$VAULT_REPO_REF" "$VAULT_DEPLOY_PRIVATE_KEY"
-  chown -R ansible:ansible "$CHECKOUT_DIR" "$VAULT_CHECKOUT_DIR"
+  if ! running_as_ansible; then
+    chown -R ansible:ansible "$CHECKOUT_DIR" "$VAULT_CHECKOUT_DIR"
+  fi
 
   install_ansible_runtime
   render_secret_environment
@@ -623,8 +774,8 @@ run_convergence() {
   prepare_inventory_known_hosts
 
   log "Running full site playbook."
-  install -o root -g root -m 0600 /dev/null "$RUNNER_PLAYBOOK_LOG"
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  install -m 0600 /dev/null "$RUNNER_PLAYBOOK_LOG"
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/site.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE" \
@@ -645,7 +796,7 @@ run_gcs_restic_bucket_cleanup() {
     log "Running GCS restic bucket cleanup dry run."
   fi
 
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/cleanup-gcs-restic-buckets.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE" \
@@ -665,11 +816,11 @@ extra_vars_file_args() {
   done
 }
 
-preseed_local_vault_password() {
+prepare_rotate_vault_password_file() {
   local extra_vars_file
   local temp_password_file
 
-  temp_password_file="$(mktemp)"
+  temp_password_file="$(mktemp "${RUNNER_RUNTIME_DIR}/vault-password.XXXXXX")"
   chmod 0600 "$temp_password_file"
   for extra_vars_file in "${RUNNER_EXTRA_VARS_FILES[@]}"; do
     /usr/bin/python3 - "$extra_vars_file" <<'PY' > "$temp_password_file"
@@ -692,8 +843,9 @@ with open(sys.argv[1], encoding="utf-8") as vars_file:
         break
 PY
     if [[ -s "$temp_password_file" ]]; then
-      install -o root -g ansible -m 0640 "$temp_password_file" "$VAULT_PASSWORD_FILE"
-      rm -f "$temp_password_file"
+      ROTATE_VAULT_PASSWORD_FILE="$temp_password_file"
+      VAULT_PASSWORD_FILE="$ROTATE_VAULT_PASSWORD_FILE"
+      export VAULT_PASSWORD_FILE
       return 0
     fi
   done
@@ -708,7 +860,7 @@ run_rotate_vault_password() {
 
   mapfile -t extra_args < <(extra_vars_file_args)
   log "Running vault password rotation maintenance playbook."
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/rotate-vault-password.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE" \
@@ -717,7 +869,7 @@ run_rotate_vault_password() {
 
 run_rotate_vault_deploy_key() {
   log "Running vault deploy key rotation maintenance playbook."
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/rotate-vault-deploy-key.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE"
@@ -728,7 +880,7 @@ run_rotate_ansible_control_key() {
 
   mapfile -t extra_args < <(extra_vars_file_args)
   log "Running Ansible control key rotation maintenance playbook."
-  "$ANSIBLE_PLAYBOOK_BIN" \
+  run_as_ansible "$ANSIBLE_PLAYBOOK_BIN" \
     --inventory "${CHECKOUT_DIR}/inventory" \
     "${CHECKOUT_DIR}/playbooks/rotate-ansible-control-key.yml" \
     --vault-password-file "$VAULT_PASSWORD_FILE" \
@@ -738,7 +890,7 @@ run_rotate_ansible_control_key() {
 
 run_once() {
   if [[ "$RUNNER_COMMAND" == "rotate-vault-password" ]]; then
-    preseed_local_vault_password
+    prepare_rotate_vault_password_file
   fi
 
   prepare_runner_runtime
@@ -767,6 +919,7 @@ run_once() {
 }
 
 main() {
+  drop_to_ansible "$@"
   parse_args "$@"
   trap cleanup_runtime_files EXIT
 
