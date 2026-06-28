@@ -6,6 +6,10 @@ managed_baseline_swapfile_path: /swapfile
 managed_baseline_swapfile_size: 1G
 managed_baseline_ansible_runtime_venv: /home/ansible/ansible-runner/ansible-runtime
 managed_baseline_firewalld_ssh_args: -C -o ControlMaster=no -o ControlPersist=no -o ControlPath=none
+managed_baseline_backupctl_checkout_dir: /home/ansible/grayhaven-backupctl
+managed_baseline_backupctl_repo_url: https://github.com/dean1012/grayhaven-backupctl.git
+managed_baseline_backupctl_repo_ref: main
+managed_baseline_backupctl_state_dir: /var/lib/grayhaven/backupctl
 
 managed_baseline_admin_packages:
   - bash-completion
@@ -28,6 +32,7 @@ managed_baseline_required_packages:
   - NetworkManager
   - openssh-server
   - python3-firewall
+  - python3-libselinux
   - restic
   - yum-utils
 

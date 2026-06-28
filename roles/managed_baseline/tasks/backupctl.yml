@@ -1,0 +1,127 @@
+---
+- name: Validate grayhaven-backupctl checkout path
+  ansible.builtin.assert:
+    that:
+      - managed_baseline_backupctl_checkout_dir is string
+      - managed_baseline_backupctl_checkout_dir is match('^/home/ansible/.+')
+      - managed_baseline_backupctl_checkout_dir != '/home/ansible'
+    fail_msg: "grayhaven-backupctl checkout directory must be below /home/ansible."
+    quiet: true
+
+- name: Ensure grayhaven-backupctl state directory exists
+  ansible.builtin.file:
+    path: "{{ managed_baseline_backupctl_state_dir }}"
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0755"
+
+- name: Check previous grayhaven-backupctl checkout marker
+  ansible.builtin.stat:
+    path: "{{ managed_baseline_backupctl_state_dir }}/checkout-dir"
+  register: managed_baseline_backupctl_checkout_marker
+
+- name: Read previous grayhaven-backupctl checkout marker
+  ansible.builtin.slurp:
+    src: "{{ managed_baseline_backupctl_state_dir }}/checkout-dir"
+  register: managed_baseline_backupctl_previous_checkout_marker
+  when: managed_baseline_backupctl_checkout_marker.stat.exists
+
+- name: Derive previous grayhaven-backupctl checkout path
+  ansible.builtin.set_fact:
+    managed_baseline_backupctl_previous_checkout_dir: >-
+      {{
+        (
+          managed_baseline_backupctl_previous_checkout_marker.content
+          | default('')
+          | b64decode
+          | trim
+        )
+      }}
+
+- name: Remove previous grayhaven-backupctl checkout when path changes
+  ansible.builtin.file:
+    path: "{{ managed_baseline_backupctl_previous_checkout_dir }}"
+    state: absent
+  when:
+    - managed_baseline_backupctl_previous_checkout_dir | length > 0
+    - managed_baseline_backupctl_previous_checkout_dir != managed_baseline_backupctl_checkout_dir
+    - managed_baseline_backupctl_previous_checkout_dir is match('^/home/ansible/.+')
+    - managed_baseline_backupctl_previous_checkout_dir != '/home/ansible'
+
+- name: Check existing grayhaven-backupctl checkout
+  ansible.builtin.stat:
+    path: "{{ managed_baseline_backupctl_checkout_dir }}/.git"
+  register: managed_baseline_backupctl_existing_checkout
+
+- name: Read existing grayhaven-backupctl origin URL
+  ansible.builtin.command:
+    cmd: git -C "{{ managed_baseline_backupctl_checkout_dir }}" config --get remote.origin.url
+  become: true
+  become_user: ansible
+  environment:
+    HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
+  register: managed_baseline_backupctl_existing_origin
+  changed_when: false
+  failed_when: false
+  when: managed_baseline_backupctl_existing_checkout.stat.exists
+
+- name: Remove grayhaven-backupctl checkout when origin URL changes
+  ansible.builtin.file:
+    path: "{{ managed_baseline_backupctl_checkout_dir }}"
+    state: absent
+  when:
+    - managed_baseline_backupctl_existing_checkout.stat.exists
+    - managed_baseline_backupctl_existing_origin.stdout | default('') | trim != managed_baseline_backupctl_repo_url
+
+- name: Check out grayhaven-backupctl
+  ansible.builtin.git:
+    repo: "{{ managed_baseline_backupctl_repo_url }}"
+    dest: "{{ managed_baseline_backupctl_checkout_dir }}"
+    version: "{{ managed_baseline_backupctl_repo_ref }}"
+    force: true
+    update: true
+  become: true
+  become_user: ansible
+  environment:
+    HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
+
+- name: Install grayhaven-backupctl Python requirements
+  ansible.builtin.pip:
+    executable: /usr/bin/pip3
+    requirements: "{{ managed_baseline_backupctl_checkout_dir }}/requirements.txt"
+
+- name: Install grayhaven-backupctl command
+  ansible.builtin.copy:
+    src: "{{ managed_baseline_backupctl_checkout_dir }}/grayhaven-backupctl"
+    dest: /usr/local/sbin/grayhaven-backupctl
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+
+- name: Generate grayhaven-backupctl bash completion
+  ansible.builtin.command:
+    cmd: /usr/local/sbin/grayhaven-backupctl completion bash
+  register: managed_baseline_backupctl_completion
+  changed_when: false
+
+- name: Install grayhaven-backupctl bash completion
+  ansible.builtin.copy:
+    dest: /etc/bash_completion.d/grayhaven-backupctl
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ managed_baseline_backupctl_completion.stdout }}\n"
+
+- name: Store grayhaven-backupctl checkout marker
+  ansible.builtin.copy:
+    dest: "{{ managed_baseline_backupctl_state_dir }}/checkout-dir"
+    owner: ansible
+    group: ansible
+    mode: "0644"
+    content: "{{ managed_baseline_backupctl_checkout_dir }}\n"

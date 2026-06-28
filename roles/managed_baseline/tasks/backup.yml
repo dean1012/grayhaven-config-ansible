@@ -10,3 +10,6 @@
 
 - name: Enforce local restic backup
   ansible.builtin.import_tasks: backup-local.yml
+
+- name: Install managed backup operator utility
+  ansible.builtin.import_tasks: backupctl.yml
