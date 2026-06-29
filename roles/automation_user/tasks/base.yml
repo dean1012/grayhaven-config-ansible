@@ -1,0 +1,27 @@
+---
+- name: Create ansible automation user
+  ansible.builtin.user:
+    name: ansible
+    comment: Grayhaven Systems LLC automation user
+    create_home: true
+    shell: /bin/bash
+    password_lock: true
+    state: present
+
+- name: Grant ansible passwordless sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/ansible
+    owner: root
+    group: root
+    mode: "0440"
+    content: |
+      ansible ALL=(ALL) NOPASSWD: ALL
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Create ansible SSH directory
+  ansible.builtin.file:
+    path: /home/ansible/.ssh
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0700"

@@ -62,72 +62,24 @@
       when: grayhaven_role == "bastion"
 
     # First boot needs enough local baseline state to let the full runner take
-    # over reliably, even on small droplets.
-    - name: Set system hostname
-      ansible.builtin.hostname:
-        name: "{{ grayhaven_hostname }}"
+    # over reliably, even on small droplets. These role task files are limited
+    # to bootstrap-safe local work and do not depend on vault or dynamic
+    # inventory.
+    - name: Configure bootstrap hostname
+      ansible.builtin.include_role:
+        name: host_identity
+        tasks_from: hostname
+      vars:
+        host_identity_hostname: "{{ grayhaven_hostname }}"
 
-    - name: Check active swap devices
-      ansible.builtin.command:
-        cmd: swapon --show=NAME --noheadings
-      register: grayhaven_bootstrap_active_swap
-      changed_when: false
+    - name: Configure bootstrap swap
+      ansible.builtin.include_role:
+        name: swap
 
-    - name: Create bootstrap swapfile
-      ansible.builtin.command:
-        cmd: fallocate -l 1G /swapfile
-        creates: /swapfile
-
-    - name: Secure bootstrap swapfile permissions
-      ansible.builtin.file:
-        path: /swapfile
-        owner: root
-        group: root
-        mode: "0600"
-
-    - name: Format bootstrap swapfile
-      ansible.builtin.command:
-        cmd: mkswap /swapfile
-      when: "'/swapfile' not in grayhaven_bootstrap_active_swap.stdout_lines"
-
-    - name: Enable bootstrap swapfile
-      ansible.builtin.command:
-        cmd: swapon /swapfile
-      when: "'/swapfile' not in grayhaven_bootstrap_active_swap.stdout_lines"
-
-    - name: Persist bootstrap swapfile
-      ansible.builtin.lineinfile:
-        path: /etc/fstab
-        regexp: '^/swapfile\s+'
-        line: /swapfile none swap sw 0 0
-        state: present
-
-    - name: Create ansible automation user
-      ansible.builtin.user:
-        name: ansible
-        comment: Grayhaven Systems LLC automation user
-        create_home: true
-        shell: /bin/bash
-        password_lock: true
-        state: present
-
-    - name: Grant ansible passwordless sudo
-      ansible.builtin.copy:
-        dest: /etc/sudoers.d/ansible
-        owner: root
-        group: root
-        mode: "0440"
-        content: |
-          ansible ALL=(ALL) NOPASSWD: ALL
-        validate: /usr/sbin/visudo -cf %s
-
-    - name: Create ansible SSH directory
-      ansible.builtin.file:
-        path: /home/ansible/.ssh
-        state: directory
-        owner: ansible
-        group: ansible
-        mode: "0700"
+    - name: Configure bootstrap automation user access
+      ansible.builtin.include_role:
+        name: automation_user
+        tasks_from: base
 
     - name: Create temporary first-convergence SSH known hosts file on bastion hosts
       ansible.builtin.file:
@@ -140,56 +92,10 @@
         access_time: preserve
       when: grayhaven_role == "bastion"
 
-    - name: Create ansible runtime cache directory
-      ansible.builtin.file:
-        path: /home/ansible/.ansible
-        state: directory
-        owner: ansible
-        group: ansible
-        mode: "0750"
-      when: grayhaven_role == "bastion"
-
-    - name: Create ansible runner workspace directory
-      ansible.builtin.file:
-        path: /home/ansible/ansible-runner
-        state: directory
-        owner: ansible
-        group: ansible
-        mode: "0750"
-      when: grayhaven_role == "bastion"
-
-    - name: Create Grayhaven Systems LLC state directory
-      ansible.builtin.file:
-        path: /var/lib/grayhaven
-        state: directory
-        owner: ansible
-        group: ansible
-        mode: "0755"
-      when: grayhaven_role == "bastion"
-
-    - name: Create ansible poller state directory
-      ansible.builtin.file:
-        path: /var/lib/grayhaven/ansible-poller
-        state: directory
-        owner: ansible
-        group: ansible
-        mode: "0755"
-      when: grayhaven_role == "bastion"
-
-    - name: Install ansible runner runtime tmpfiles rule
-      ansible.builtin.copy:
-        dest: /etc/tmpfiles.d/grayhaven-ansible-runner.conf
-        owner: root
-        group: root
-        mode: "0644"
-        content: |
-          d /run/grayhaven-ansible-runner 0750 ansible ansible -
-      when: grayhaven_role == "bastion"
-
-    - name: Create ansible runner runtime directory
-      ansible.builtin.command:
-        cmd: systemd-tmpfiles --create /etc/tmpfiles.d/grayhaven-ansible-runner.conf
-      changed_when: false
+    - name: Prepare bootstrap runner directories
+      ansible.builtin.include_role:
+        name: automation_runner
+        tasks_from: directories
       when: grayhaven_role == "bastion"
 
     - name: Install Ansible authorized key
@@ -219,6 +125,8 @@
         content: "{{ grayhaven_ansible_deploy_public_key | trim }}\n"
       when: grayhaven_role == "bastion"
 
+    # The id_ed25519 bootstrap copy is temporary first-boot access. Full
+    # convergence replaces it with the vault-defined Ansible control key.
     - name: Install temporary bootstrap Ansible control private key on bastion hosts
       ansible.builtin.copy:
         dest: /home/ansible/.ssh/id_ed25519
@@ -256,127 +164,48 @@
       when: grayhaven_role == "bastion"
       no_log: true
 
-    - name: Stop and disable DigitalOcean Droplet agent
-      ansible.builtin.service:
-        name: droplet-agent
-        state: stopped
-        enabled: false
-      failed_when: false
+    - name: Remove legacy DigitalOcean Droplet agent during bootstrap
+      ansible.builtin.include_role:
+        name: digitalocean_agent
+        tasks_from: remove-droplet-agent
 
-    - name: Remove DigitalOcean Droplet agent package
-      ansible.builtin.dnf:
-        name: droplet-agent
-        state: absent
-
-    - name: Remove DigitalOcean Droplet agent configuration directory
-      ansible.builtin.file:
-        path: /etc/droplet-agent
-        state: absent
-
-    - name: Remove DigitalOcean Droplet agent log directory
-      ansible.builtin.file:
-        path: /var/log/droplet-agent
-        state: absent
-
-    # The id_ed25519 bootstrap copy is temporary first-boot access. Full
-    # convergence replaces it with the vault-defined Ansible control key and
-    # removes the consumed bootstrap variable handoff file.
-    - name: Install bastion runner OS dependencies
-      ansible.builtin.dnf:
-        name:
-          - git
-          - python3-pip
-        state: present
+    # Bootstrap installs only the packages needed to fetch and run the full
+    # convergence runner. Normal convergence owns full package state.
+    - name: Install bootstrap runner OS dependencies
+      ansible.builtin.include_role:
+        name: system_packages
+        tasks_from: bootstrap-runner
       when: grayhaven_role == "bastion"
 
     - name: Store bastion runner environment
-      ansible.builtin.copy:
-        dest: /etc/grayhaven/ansible/runner.env
-        owner: root
-        group: ansible
-        mode: "0640"
-        content: |
-          REPO_URL={{ "https://github.com/dean1012/grayhaven-config-ansible.git" | quote }}
-          REPO_REF={{ grayhaven_config_repo_ref | quote }}
-          CHECKOUT_DIR={{ "/home/ansible/grayhaven-config-ansible" | quote }}
-          VAULT_REPO_URL={{ grayhaven_vault_repo_url | quote }}
-          VAULT_REPO_REF={{ grayhaven_vault_repo_ref | quote }}
-          VAULT_CHECKOUT_DIR={{ "/home/ansible/grayhaven-vault" | quote }}
-          GRAYHAVEN_ENVIRONMENT={{ grayhaven_environment | quote }}
-          GRAYHAVEN_HOSTNAME={{ grayhaven_hostname | quote }}
-          GRAYHAVEN_IS_CONTROL_NODE={{ (grayhaven_is_control_node | bool) | ternary("true", "false") | quote }}
-          GRAYHAVEN_CERTIFICATE_ENVIRONMENT={{ grayhaven_certificate_environment | quote }}
-          GRAYHAVEN_TLS_MODE={{ grayhaven_tls_mode | quote }}
+      ansible.builtin.include_role:
+        name: automation_runner
+        tasks_from: environment
+      vars:
+        automation_runner_bootstrap_repo_url: https://github.com/dean1012/grayhaven-config-ansible.git
+        automation_runner_bootstrap_config_repo_ref: "{{ grayhaven_config_repo_ref }}"
+        automation_runner_bootstrap_checkout_dir: /home/ansible/grayhaven-config-ansible
+        automation_runner_bootstrap_vault_repo_url: "{{ grayhaven_vault_repo_url }}"
+        automation_runner_bootstrap_vault_repo_ref: "{{ grayhaven_vault_repo_ref }}"
+        automation_runner_bootstrap_vault_checkout_dir: /home/ansible/grayhaven-vault
+        automation_runner_bootstrap_hostname: "{{ grayhaven_hostname }}"
+        automation_runner_bootstrap_is_control_node: "{{ grayhaven_is_control_node | bool }}"
+        automation_runner_bootstrap_certificate_environment: "{{ grayhaven_certificate_environment }}"
+        automation_runner_bootstrap_tls_mode: "{{ grayhaven_tls_mode }}"
       when: grayhaven_role == "bastion"
 
-    - name: Install bastion runner executable
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/grayhaven-ansible-runner"
-        dest: /usr/local/sbin/grayhaven-ansible-runner
-        owner: root
-        group: root
-        mode: "0755"
+    - name: Install bootstrap runner files
+      ansible.builtin.include_role:
+        name: automation_runner
+        tasks_from: install
       when: grayhaven_role == "bastion"
 
-    - name: Install bastion runner service unit
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.service"
-        dest: /etc/systemd/system/grayhaven-ansible-runner.service
-        owner: root
-        group: root
-        mode: "0644"
-      when: grayhaven_role == "bastion"
-
-    - name: Install bastion runner timer unit
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.timer"
-        dest: /etc/systemd/system/grayhaven-ansible-runner.timer
-        owner: root
-        group: root
-        mode: "0644"
-      when: grayhaven_role == "bastion"
-
-    - name: Install bastion poller executable
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/grayhaven-ansible-poller"
-        dest: /usr/local/sbin/grayhaven-ansible-poller
-        owner: root
-        group: root
-        mode: "0755"
-      when: grayhaven_role == "bastion"
-
-    - name: Install bastion poller service unit
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.service"
-        dest: /etc/systemd/system/grayhaven-ansible-poller.service
-        owner: root
-        group: root
-        mode: "0644"
-      when: grayhaven_role == "bastion"
-
-    - name: Install bastion poller timer unit
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.timer"
-        dest: /etc/systemd/system/grayhaven-ansible-poller.timer
-        owner: root
-        group: root
-        mode: "0644"
-      when: grayhaven_role == "bastion"
-
-    - name: Manage bastion runner timer
-      ansible.builtin.systemd_service:
-        name: grayhaven-ansible-runner.timer
-        enabled: "{{ grayhaven_is_control_node | bool }}"
-        state: "{{ (grayhaven_is_control_node | bool) | ternary('started', 'stopped') }}"
-        daemon_reload: true
-      when: grayhaven_role == "bastion"
-
-    - name: Manage bastion poller timer
-      ansible.builtin.systemd_service:
-        name: grayhaven-ansible-poller.timer
-        enabled: "{{ grayhaven_is_control_node | bool }}"
-        state: "{{ (grayhaven_is_control_node | bool) | ternary('started', 'stopped') }}"
-        daemon_reload: true
+    - name: Manage bootstrap runner timers
+      ansible.builtin.include_role:
+        name: automation_runner
+        tasks_from: timers
+      vars:
+        automation_runner_bootstrap_is_control_node: "{{ grayhaven_is_control_node | bool }}"
       when: grayhaven_role == "bastion"
 
     - name: Remove consumed bootstrap variables
