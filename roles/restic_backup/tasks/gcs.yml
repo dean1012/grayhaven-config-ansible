@@ -1,13 +1,13 @@
 ---
 - name: Ensure GCS restic bucket exists
   google.cloud.gcp_storage_bucket:
-    name: "{{ managed_baseline_backup_remote_gcs_bucket_name }}"
-    project: "{{ managed_baseline_backup_remote_gcs_project_id }}"
+    name: "{{ restic_backup_remote_gcs_bucket_name }}"
+    project: "{{ restic_backup_remote_gcs_project_id }}"
     auth_kind: serviceaccount
-    service_account_contents: "{{ managed_baseline_backup_remote_gcs_credentials_json }}"
-    location: "{{ managed_baseline_backup_remote_gcs_location }}"
-    storage_class: "{{ managed_baseline_backup_remote_gcs_storage_class }}"
-    labels: "{{ managed_baseline_backup_remote_gcs_labels }}"
+    service_account_contents: "{{ restic_backup_remote_gcs_credentials_json }}"
+    location: "{{ restic_backup_remote_gcs_location }}"
+    storage_class: "{{ restic_backup_remote_gcs_storage_class }}"
+    labels: "{{ restic_backup_remote_gcs_labels }}"
     versioning:
       enabled: false
     iam_configuration:
@@ -18,5 +18,5 @@
   delegate_to: localhost
   vars:
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
-  when: managed_baseline_backup_remote_gcs_enabled | bool
+  when: restic_backup_remote_gcs_enabled | bool
   no_log: true

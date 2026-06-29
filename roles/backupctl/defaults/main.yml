@@ -1,0 +1,5 @@
+---
+backupctl_checkout_dir: /home/ansible/grayhaven-backupctl
+backupctl_repo_url: https://github.com/dean1012/grayhaven-backupctl.git
+backupctl_repo_ref: main
+backupctl_state_dir: /var/lib/grayhaven/backupctl

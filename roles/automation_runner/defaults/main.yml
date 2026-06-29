@@ -1,0 +1,3 @@
+---
+automation_runner_checkout_dir: /home/ansible/grayhaven-config-ansible
+automation_runner_repo_url: https://github.com/dean1012/grayhaven-config-ansible.git

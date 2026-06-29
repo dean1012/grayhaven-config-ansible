@@ -2,14 +2,14 @@
 - name: Check current system timezone
   ansible.builtin.command:
     cmd: timedatectl show --property=Timezone --value
-  register: managed_baseline_current_timezone
+  register: time_sync_current_timezone
   changed_when: false
 
 - name: Set system timezone
   ansible.builtin.command:
-    cmd: "timedatectl set-timezone {{ managed_baseline_timezone }}"
+    cmd: "timedatectl set-timezone {{ grayhaven_timezone }}"
   changed_when: true
-  when: managed_baseline_current_timezone.stdout != managed_baseline_timezone
+  when: time_sync_current_timezone.stdout != grayhaven_timezone
 
 - name: Configure chrony
   ansible.builtin.template:

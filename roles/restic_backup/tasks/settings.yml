@@ -1,23 +1,23 @@
 ---
 - name: Derive local backup settings
   ansible.builtin.set_fact:
-    managed_baseline_backup_repository_path: >-
+    restic_backup_repository_path: >-
       {{
         backup.repositories.local.repository_path
         | default('/var/backups/restic')
       }}
-    managed_baseline_backup_homedir_archive_path: >-
+    restic_backup_homedir_archive_path: >-
       {{
         backup.repositories.local.homedir_archive_path
         | default('/var/backups/deleted-homedir-archives')
       }}
-    managed_baseline_backup_keep_daily: "{{ backup.retention.keep_daily | default(7) }}"
-    managed_baseline_restic_config: "{{ restic | default({}) }}"
-    managed_baseline_backup_remote_config: "{{ backup.repositories.remote | default({}) }}"
-    managed_baseline_backup_exclude_paths: >-
+    restic_backup_keep_daily: "{{ backup.retention.keep_daily | default(7) }}"
+    restic_backup_config: "{{ restic | default({}) }}"
+    restic_backup_remote_config: "{{ backup.repositories.remote | default({}) }}"
+    restic_backup_exclude_paths: >-
       {{
         [
-          managed_baseline_backupctl_checkout_dir ~ '/.git',
+          (backupctl_checkout_dir | default('/home/ansible/grayhaven-backupctl')) ~ '/.git',
           '/home/ansible/grayhaven-config-ansible/.git',
           '/home/ansible/grayhaven-vault/.git',
           '/var/lib/grayhaven/observability',
@@ -31,20 +31,20 @@
 
 - name: Derive restic credential settings
   ansible.builtin.set_fact:
-    managed_baseline_restic_password: >-
+    restic_backup_password: >-
       {{
-        managed_baseline_restic_config.encryption_password
+        restic_backup_config.encryption_password
         | default(restic_password | default(''))
       }}
-    managed_baseline_restic_remotes: "{{ managed_baseline_restic_config.remotes | default({}) }}"
+    restic_backup_restic_remotes: "{{ restic_backup_config.remotes | default({}) }}"
   no_log: true
 
 - name: Derive local backup include paths
   ansible.builtin.set_fact:
-    managed_baseline_backup_include_paths: >-
+    restic_backup_include_paths: >-
       {{
         (
-          [managed_baseline_backup_homedir_archive_path] +
+          [restic_backup_homedir_archive_path] +
           (
             backup.include
             | default([
@@ -58,53 +58,53 @@
 
 - name: Derive optional remote backup settings
   ansible.builtin.set_fact:
-    managed_baseline_backup_remote_provider: >-
-      {{ managed_baseline_backup_remote_config.provider | default('') | lower }}
-    managed_baseline_backup_remote_enabled: >-
-      {{ (managed_baseline_backup_remote_config.provider | default('') | length) > 0 }}
-    managed_baseline_restic_gcs_config: "{{ managed_baseline_restic_remotes.gcs | default({}) }}"
+    restic_backup_remote_provider: >-
+      {{ restic_backup_remote_config.provider | default('') | lower }}
+    restic_backup_remote_enabled: >-
+      {{ (restic_backup_remote_config.provider | default('') | length) > 0 }}
+    restic_backup_gcs_config: "{{ restic_backup_restic_remotes.gcs | default({}) }}"
   no_log: true
 
 - name: Derive optional GCS backup settings
   ansible.builtin.set_fact:
-    managed_baseline_backup_remote_gcs_enabled: "{{ managed_baseline_backup_remote_provider == 'gcs' }}"
-    managed_baseline_backup_remote_gcs_project_id: >-
-      {{ managed_baseline_backup_remote_config.project_id | default('') }}
-    managed_baseline_backup_remote_gcs_location: "{{ managed_baseline_backup_remote_config.location | default('US') }}"
-    managed_baseline_backup_remote_gcs_storage_class: >-
-      {{ managed_baseline_backup_remote_config.storage_class | default('STANDARD') }}
-    managed_baseline_backup_remote_gcs_credentials_json: >-
-      {{ managed_baseline_restic_gcs_config.credentials_json | default('') }}
-    managed_baseline_backup_remote_gcs_bucket_name: "{{ inventory_hostname.split('.')[0] }}-restic"
-    managed_baseline_backup_remote_gcs_repository: "gs:{{ inventory_hostname.split('.')[0] }}-restic:/"
+    restic_backup_remote_gcs_enabled: "{{ restic_backup_remote_provider == 'gcs' }}"
+    restic_backup_remote_gcs_project_id: >-
+      {{ restic_backup_remote_config.project_id | default('') }}
+    restic_backup_remote_gcs_location: "{{ restic_backup_remote_config.location | default('US') }}"
+    restic_backup_remote_gcs_storage_class: >-
+      {{ restic_backup_remote_config.storage_class | default('STANDARD') }}
+    restic_backup_remote_gcs_credentials_json: >-
+      {{ restic_backup_gcs_config.credentials_json | default('') }}
+    restic_backup_remote_gcs_bucket_name: "{{ inventory_hostname.split('.')[0] }}-restic"
+    restic_backup_remote_gcs_repository: "gs:{{ inventory_hostname.split('.')[0] }}-restic:/"
   no_log: true
 
 - name: Derive optional GCS bucket labels
   ansible.builtin.set_fact:
-    managed_baseline_backup_remote_gcs_labels:
+    restic_backup_remote_gcs_labels:
       managed_by: ansible
-      client: "{{ managed_baseline_backup_label_client }}"
-      env: "{{ managed_baseline_environment }}"
-      project: "{{ managed_baseline_backup_label_project }}"
+      client: "{{ restic_backup_label_client }}"
+      env: "{{ grayhaven_environment }}"
+      project: "{{ restic_backup_label_project }}"
       role: "{{ grayhaven_role }}"
       purpose: restic
       host: "{{ inventory_hostname.split('.')[0] }}"
   vars:
-    managed_baseline_backup_label_tags: "{{ hostvars[inventory_hostname].do_tags | default([]) }}"
-    managed_baseline_backup_label_client: >-
+    restic_backup_label_tags: "{{ hostvars[inventory_hostname].do_tags | default([]) }}"
+    restic_backup_label_client: >-
       {{
         (
-          managed_baseline_backup_label_tags
+          restic_backup_label_tags
           | select('match', '^client-')
           | first
           | default('client-grayhaven')
         )
         | regex_replace('^client-', '')
       }}
-    managed_baseline_backup_label_project: >-
+    restic_backup_label_project: >-
       {{
         (
-          managed_baseline_backup_label_tags
+          restic_backup_label_tags
           | select('match', '^project-')
           | first
           | default('project-unknown')

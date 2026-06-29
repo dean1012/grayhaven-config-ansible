@@ -35,7 +35,7 @@
 - name: Fail if Grafana Cloud is enabled outside production
   ansible.builtin.assert:
     that:
-      - not observability_grafana_enabled or managed_baseline_environment == "prod"
+      - not observability_grafana_enabled or grayhaven_environment == "prod"
     fail_msg: "Grafana Cloud observability is currently supported only in the prod environment."
     quiet: true
 

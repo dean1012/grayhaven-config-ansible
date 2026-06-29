@@ -16,9 +16,9 @@
           - restic.remotes.gcs.credentials_json is defined
           - restic.remotes.gcs.credentials_json is string
           - restic.remotes.gcs.credentials_json | length > 0
-          - managed_baseline_environment is defined
-          - managed_baseline_environment is string
-          - managed_baseline_environment | length > 0
+          - grayhaven_environment is defined
+          - grayhaven_environment is string
+          - grayhaven_environment | length > 0
           - digitalocean_inventory_api_token is defined
           - digitalocean_inventory_api_token is string
           - digitalocean_inventory_api_token | length > 0
@@ -35,7 +35,7 @@
           - --list
       environment:
         DO_API_TOKEN: "{{ digitalocean_inventory_api_token }}"
-        GRAYHAVEN_ENVIRONMENT: "{{ managed_baseline_environment }}"
+        GRAYHAVEN_ENVIRONMENT: "{{ grayhaven_environment }}"
         GRAYHAVEN_HOSTNAME: ""
       register: gcs_cleanup_inventory
       changed_when: false
@@ -76,7 +76,7 @@
               --credentials-file {{ (gcs_cleanup_tempdir.path ~ '/credentials.json') | quote }}
               --project-id {{ backup.repositories.remote.project_id | quote }}
               --client {{ backup.repositories.remote.client | default('grayhaven') | quote }}
-              --environment {{ managed_baseline_environment | quote }}
+              --environment {{ grayhaven_environment | quote }}
               --inventory-file {{ (gcs_cleanup_tempdir.path ~ '/inventory.json') | quote }}
               {{ '--execute' if confirm_delete_remote_backup_buckets else '' }}
           register: gcs_cleanup_result

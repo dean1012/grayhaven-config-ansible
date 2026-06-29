@@ -263,7 +263,7 @@ repository.
 
 ## Firewalld Policy
 
-The managed baseline reads the environment firewall policy from `firewall.yml`
+The firewalld policy role reads the environment firewall policy from `firewall.yml`
 in the checked-out `grayhaven-vault` repository and caches it locally under
 `/etc/grayhaven/firewall/policy.yml`. The
 [grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)

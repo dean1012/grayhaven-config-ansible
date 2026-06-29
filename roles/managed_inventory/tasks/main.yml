@@ -1,9 +1,9 @@
 ---
 - name: Build managed host metadata from inventory
   ansible.builtin.set_fact:
-    managed_baseline_hosts: "{{ managed_baseline_hosts | default([]) + [managed_baseline_host_entry] }}"
+    managed_inventory_hosts: "{{ managed_inventory_hosts | default([]) + [managed_inventory_host_entry] }}"
   vars:
-    managed_baseline_host_role: >-
+    managed_inventory_host_role: >-
       {{
         'bastion'
         if 'role-bastion' in (hostvars[item].do_tags | default([]))
@@ -11,7 +11,7 @@
         if 'role-web' in (hostvars[item].do_tags | default([]))
         else 'unknown'
       }}
-    managed_baseline_host_private_ip: >-
+    managed_inventory_host_private_ip: >-
       {{
         hostvars[item].grayhaven_private_ipv4
         | default(
@@ -22,20 +22,20 @@
             | first
           )
       }}
-    managed_baseline_host_entry:
+    managed_inventory_host_entry:
       inventory_name: "{{ item }}"
       fqdn: "{{ hostvars[item].inventory_hostname | default(item) }}"
-      private_ip: "{{ managed_baseline_host_private_ip }}"
-      role: "{{ managed_baseline_host_role }}"
+      private_ip: "{{ managed_inventory_host_private_ip }}"
+      role: "{{ managed_inventory_host_role }}"
       host_alias: "{{ (hostvars[item].inventory_hostname | default(item)).split('.')[0] }}"
   loop: "{{ ansible_play_hosts_all }}"
-  when: managed_baseline_host_role != "unknown"
+  when: managed_inventory_host_role != "unknown"
 
 - name: Derive bastion private source addresses
   ansible.builtin.set_fact:
-    managed_baseline_bastion_private_sources: >-
+    managed_inventory_bastion_private_sources: >-
       {{
-        managed_baseline_hosts
+        managed_inventory_hosts
         | default([])
         | selectattr('role', 'equalto', 'bastion')
         | map(attribute='private_ip')
@@ -46,11 +46,11 @@
 
 - name: Build web SSH source list for control-node failover
   ansible.builtin.set_fact:
-    managed_baseline_web_ssh_sources: >-
+    managed_inventory_web_ssh_sources: >-
       {{
         (
-          [managed_baseline_fallback_vpc_cidr]
-          + managed_baseline_bastion_private_sources
+          [managed_inventory_fallback_vpc_cidr]
+          + managed_inventory_bastion_private_sources
         )
         | unique
       }}

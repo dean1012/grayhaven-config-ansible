@@ -3,7 +3,7 @@
   <short>Grayhaven Systems LLC managed inbound policy</short>
   <description>Inbound rules managed by Ansible from the vault firewall policy.</description>
 
-{% for rule in managed_baseline_firewall_role_policy.inbound | default([]) %}
+{% for rule in firewalld_policy_role_policy.inbound | default([]) %}
 {% for source_address in rule.source_addresses | default([]) %}
   <rule family="ipv4">
     <source address="{{ source_address }}"/>
@@ -13,7 +13,7 @@
 {% endfor %}
 {% for source_tag in rule.source_tags | default([]) %}
 {% if source_tag == "bastion" %}
-{% for source in managed_baseline_web_ssh_sources %}
+{% for source in managed_inventory_web_ssh_sources %}
   <rule family="ipv4">
     <source address="{{ source }}"/>
     <port protocol="{{ rule.protocol }}" port="{{ rule.port_range }}"/>

@@ -69,7 +69,7 @@ modules:
       check       = "https_200",
       client      = {{ observability_client | to_json }},
       domain      = {{ site.domain | to_json }},
-      environment = {{ managed_baseline_environment | to_json }},
+      environment = {{ grayhaven_environment | to_json }},
       host        = {{ inventory_hostname | to_json }},
       project     = {{ observability_project | to_json }},
       role        = {{ observability_role | to_json }},
@@ -84,7 +84,7 @@ modules:
       check       = "https_200",
       client      = {{ observability_client | to_json }},
       domain      = {{ site.aliases[0] | to_json }},
-      environment = {{ managed_baseline_environment | to_json }},
+      environment = {{ grayhaven_environment | to_json }},
       host        = {{ inventory_hostname | to_json }},
       project     = {{ observability_project | to_json }},
       role        = {{ observability_role | to_json }},
@@ -99,7 +99,7 @@ modules:
       check       = "dev_basic_auth_401",
       client      = {{ observability_client | to_json }},
       domain      = {{ site.dev_domain | to_json }},
-      environment = {{ managed_baseline_environment | to_json }},
+      environment = {{ grayhaven_environment | to_json }},
       host        = {{ inventory_hostname | to_json }},
       project     = {{ observability_project | to_json }},
       role        = {{ observability_role | to_json }},
@@ -114,7 +114,7 @@ modules:
       check       = "ssl_certificate",
       client      = {{ observability_client | to_json }},
       domain      = {{ site.domain | to_json }},
-      environment = {{ managed_baseline_environment | to_json }},
+      environment = {{ grayhaven_environment | to_json }},
       host        = {{ inventory_hostname | to_json }},
       project     = {{ observability_project | to_json }},
       role        = {{ observability_role | to_json }},
@@ -130,7 +130,7 @@ modules:
       check       = "http_https_redirect",
       client      = {{ observability_client | to_json }},
       domain      = {{ redirect_domain | to_json }},
-      environment = {{ managed_baseline_environment | to_json }},
+      environment = {{ grayhaven_environment | to_json }},
       host        = {{ inventory_hostname | to_json }},
       project     = {{ observability_project | to_json }},
       role        = {{ observability_role | to_json }},
@@ -158,7 +158,7 @@ prometheus.relabel "grayhaven" {
 
   rule {
     target_label = "environment"
-    replacement  = {{ managed_baseline_environment | to_json }}
+    replacement  = {{ grayhaven_environment | to_json }}
   }
 
   rule {
@@ -202,7 +202,7 @@ local.file_match "nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]
     "__path__"   = {{ ("/var/log/nginx/" ~ site.root_name ~ "." ~ log_name ~ ".log") | to_json }},
     "client"     = {{ observability_client | to_json }},
     "domain"     = {{ site.domain | to_json }},
-    "environment" = {{ managed_baseline_environment | to_json }},
+    "environment" = {{ grayhaven_environment | to_json }},
     "host"       = {{ inventory_hostname | to_json }},
     "job"        = "nginx_{{ 'access' if 'access' in log_name else 'error' }}",
     "project"    = {{ observability_project | to_json }},
@@ -222,7 +222,7 @@ local.file_match "audit" {
   path_targets = [{
     "__path__"   = "/var/log/audit/audit.log",
     "client"     = {{ observability_client | to_json }},
-    "environment" = {{ managed_baseline_environment | to_json }},
+    "environment" = {{ grayhaven_environment | to_json }},
     "host"       = {{ inventory_hostname | to_json }},
     "job"        = "audit",
     "project"    = {{ observability_project | to_json }},
@@ -239,7 +239,7 @@ local.file_match "certbot" {
   path_targets = [{
     "__path__"   = "/var/log/letsencrypt/letsencrypt.log",
     "client"     = {{ observability_client | to_json }},
-    "environment" = {{ managed_baseline_environment | to_json }},
+    "environment" = {{ grayhaven_environment | to_json }},
     "host"       = {{ inventory_hostname | to_json }},
     "job"        = "certbot",
     "project"    = {{ observability_project | to_json }},
@@ -256,7 +256,7 @@ loki.source.journal "system" {
   max_age    = "24h"
   labels     = {
     "client"      = {{ observability_client | to_json }},
-    "environment" = {{ managed_baseline_environment | to_json }},
+    "environment" = {{ grayhaven_environment | to_json }},
     "host"        = {{ inventory_hostname | to_json }},
     "job"         = "systemd_journal",
     "project"     = {{ observability_project | to_json }},
