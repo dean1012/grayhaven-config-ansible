@@ -692,9 +692,9 @@ vars_to_render = {
     "automation_notifications_discord_webhook_id": os.environ["DISCORD_WEBHOOK_ID"],
     "automation_notifications_discord_webhook_token": os.environ["DISCORD_WEBHOOK_TOKEN"],
     "automation_notifications_environment": os.environ["GRAYHAVEN_ENVIRONMENT"],
-    "web_static_environment": os.environ["GRAYHAVEN_ENVIRONMENT"],
-    "web_static_certificate_environment": os.environ["GRAYHAVEN_CERTIFICATE_ENVIRONMENT"],
-    "web_static_tls_mode": os.environ["GRAYHAVEN_TLS_MODE"],
+    "deploy_websites_environment": os.environ["GRAYHAVEN_ENVIRONMENT"],
+    "deploy_websites_certificate_environment": os.environ["GRAYHAVEN_CERTIFICATE_ENVIRONMENT"],
+    "deploy_websites_tls_mode": os.environ["GRAYHAVEN_TLS_MODE"],
 }
 
 for key, value in vars_to_render.items():

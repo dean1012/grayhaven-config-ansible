@@ -66,7 +66,7 @@
     - automation_runner
     - reboot_notifications
     - admin_access
-    - web_static
+    - deploy_websites
     - observability
 
   post_tasks:

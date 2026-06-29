@@ -1,18 +1,18 @@
 ---
-- name: Validate web static hosting inputs
+- name: Validate website hosting inputs
   ansible.builtin.import_tasks: validate.yml
 
-- name: Prepare web static TLS and package state
+- name: Prepare website TLS and package state
   ansible.builtin.import_tasks: tls-prep.yml
 
 - name: Enforce development basic authentication
   ansible.builtin.import_tasks: auth.yml
 
-- name: Deploy static website content
+- name: Deploy website content
   ansible.builtin.import_tasks: content.yml
 
-- name: Enforce web static certificates
+- name: Enforce website certificates
   ansible.builtin.import_tasks: certificates.yml
 
-- name: Enforce nginx static hosting
+- name: Enforce nginx website deployment
   ansible.builtin.import_tasks: nginx.yml

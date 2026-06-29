@@ -1,11 +1,17 @@
 ---
-- name: Install nginx static site configuration
+- name: Install nginx site configuration
   ansible.builtin.template:
-    src: static-sites.conf.j2
-    dest: /etc/nginx/conf.d/grayhaven-static-sites.conf
+    src: websites.conf.j2
+    dest: /etc/nginx/conf.d/grayhaven-websites.conf
     owner: root
     group: root
     mode: "0644"
+  notify: Reload nginx
+
+- name: Remove legacy nginx static site configuration
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d/grayhaven-static-sites.conf
+    state: absent
   notify: Reload nginx
 
 - name: Remove nginx default welcome configuration
@@ -25,7 +31,7 @@
       set -Eeuo pipefail
 
       systemctl reload nginx
-  when: web_static_tls_mode == "host"
+  when: deploy_websites_tls_mode == "host"
 
 - name: Enable Certbot renewal timer when present
   ansible.builtin.systemd_service:
@@ -33,7 +39,7 @@
     enabled: true
     state: started
   failed_when: false
-  when: web_static_tls_mode == "host"
+  when: deploy_websites_tls_mode == "host"
 
 - name: Enable and start nginx
   ansible.builtin.systemd_service:

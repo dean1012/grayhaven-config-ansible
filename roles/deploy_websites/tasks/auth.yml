@@ -1,9 +1,9 @@
 ---
-# Development hostnames are intentionally protected while temporary static sites
-# are served from this repository.
+# Development hostnames are always protected, whether content comes from a
+# repository-backed deployment or the generic fallback site.
 - name: Create development basic-auth directory for nginx
   ansible.builtin.file:
-    path: "{{ web_static_dev_htpasswd_dir }}"
+    path: "{{ deploy_websites_dev_htpasswd_dir }}"
     state: directory
     owner: root
     group: nginx
@@ -16,7 +16,7 @@
     group: nginx
     mode: "0640"
     content: "{{ item.htpasswd_entries | map('trim') | join('\n') }}\n"
-  loop: "{{ web_static_sites }}"
+  loop: "{{ deploy_websites_sites }}"
   loop_control:
     label: "{{ item.root_name }}"
   no_log: true
