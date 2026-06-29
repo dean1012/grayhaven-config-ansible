@@ -17,6 +17,7 @@
     managed_baseline_backup_exclude_paths: >-
       {{
         [
+          managed_baseline_backupctl_checkout_dir ~ '/.git',
           '/home/ansible/grayhaven-config-ansible/.git',
           '/home/ansible/grayhaven-vault/.git',
           '/var/lib/grayhaven/observability',
