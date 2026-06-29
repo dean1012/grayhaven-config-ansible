@@ -1,0 +1,16 @@
+---
+- name: Validate backup inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Derive backup settings
+  ansible.builtin.import_tasks: settings.yml
+
+- name: Enforce optional GCS remote backup bucket
+  ansible.builtin.import_tasks: gcs.yml
+
+- name: Enforce local restic backup
+  ansible.builtin.import_tasks: local.yml
+
+- name: Install managed backup operator utility
+  ansible.builtin.import_role:
+    name: backupctl

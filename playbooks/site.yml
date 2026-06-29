@@ -49,7 +49,22 @@
       run_once: true
 
   roles:
-    - managed_baseline
+    - baseline_validation
+    - managed_inventory
+    - swap
+    - system_packages
+    - automation_user
+    - restic_backup
+    - host_identity
+    - sshd_hardening
+    - journald
+    - dns_resolver
+    - time_sync
+    - firewalld_policy
+    - fail2ban_policy
+    - digitalocean_agent
+    - automation_runner
+    - reboot_notifications
     - admin_access
     - web_static
     - observability

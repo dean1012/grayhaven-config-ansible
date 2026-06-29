@@ -8,7 +8,7 @@ full-playbook convergence.
 - [Bootstrap Phase](#bootstrap-phase)
 - [Runner And Poller](#runner-and-poller)
 - [Vault Loading](#vault-loading)
-- [Managed Baseline](#managed-baseline)
+- [Managed Host Baseline](#managed-host-baseline)
 - [Managed Users](#managed-users)
 - [Operator Tmux Console](#operator-tmux-console)
 - [Web Hosting](#web-hosting)
@@ -115,10 +115,13 @@ Vault values provide:
 
 [Back to top](#configuration-architecture)
 
-## Managed Baseline
+## Managed Host Baseline
 
 The full playbook enforces a common managed-host baseline before applying
-role-specific configuration. The baseline covers:
+role-specific configuration. The baseline is implemented as focused roles so
+inventory metadata, package policy, automation-user state, backups, firewall
+policy, intrusion prevention, runner services, and host status are owned by
+smaller task boundaries. The baseline covers:
 
 - root password hash and root SSH authorized-key removal;
 - `ansible` automation user, sudo policy, and SSH key state;
