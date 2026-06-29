@@ -1,23 +1,6 @@
 ---
-- name: Stop and disable DigitalOcean Droplet agent
-  ansible.builtin.service:
-    name: droplet-agent
-    state: stopped
-    enabled: false
-  failed_when: false
-
-- name: Remove DigitalOcean Droplet agent package
-  ansible.builtin.dnf:
-    name: droplet-agent
-    state: absent
-
-- name: Remove DigitalOcean Droplet agent state directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /etc/droplet-agent
-    - /var/log/droplet-agent
+- name: Remove legacy DigitalOcean Droplet agent
+  ansible.builtin.import_tasks: remove-droplet-agent.yml
 
 - name: Import DigitalOcean metrics agent repository GPG key
   ansible.builtin.rpm_key:

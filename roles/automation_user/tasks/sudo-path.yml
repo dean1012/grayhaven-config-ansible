@@ -1,0 +1,8 @@
+---
+- name: Allow sudo to resolve locally installed administrator commands
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers
+    regexp: '^Defaults\s+secure_path\s*='
+    line: "Defaults    secure_path = /sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin"
+    state: present
+    validate: /usr/sbin/visudo -cf %s

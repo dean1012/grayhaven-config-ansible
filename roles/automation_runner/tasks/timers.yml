@@ -1,0 +1,30 @@
+---
+- name: Manage bastion runner timer
+  ansible.builtin.systemd_service:
+    name: grayhaven-ansible-runner.timer
+    enabled: "{{ automation_runner_effective_is_control_node | bool }}"
+    state: "{{ (automation_runner_effective_is_control_node | bool) | ternary('started', 'stopped') }}"
+    daemon_reload: true
+  when: grayhaven_role == "bastion"
+  vars:
+    automation_runner_effective_is_control_node: >-
+      {{
+        automation_runner_bootstrap_is_control_node
+        | default('control-node' in (do_tags | default([])))
+        | bool
+      }}
+
+- name: Manage bastion poller timer
+  ansible.builtin.systemd_service:
+    name: grayhaven-ansible-poller.timer
+    enabled: "{{ automation_runner_effective_is_control_node | bool }}"
+    state: "{{ (automation_runner_effective_is_control_node | bool) | ternary('started', 'stopped') }}"
+    daemon_reload: true
+  when: grayhaven_role == "bastion"
+  vars:
+    automation_runner_effective_is_control_node: >-
+      {{
+        automation_runner_bootstrap_is_control_node
+        | default('control-node' in (do_tags | default([])))
+        | bool
+      }}

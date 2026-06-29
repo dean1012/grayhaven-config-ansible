@@ -1,7 +1,6 @@
 ---
-- name: Set system hostname
-  ansible.builtin.hostname:
-    name: "{{ inventory_hostname }}"
+- name: Configure system hostname
+  ansible.builtin.import_tasks: hostname.yml
 
 - name: Install local hosts file
   ansible.builtin.template:

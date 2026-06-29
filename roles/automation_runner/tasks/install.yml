@@ -1,0 +1,54 @@
+---
+- name: Install bastion runner executable
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/grayhaven-ansible-runner"
+    dest: /usr/local/sbin/grayhaven-ansible-runner
+    owner: root
+    group: root
+    mode: "0755"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion runner service unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.service"
+    dest: /etc/systemd/system/grayhaven-ansible-runner.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion runner timer unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.timer"
+    dest: /etc/systemd/system/grayhaven-ansible-runner.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion poller executable
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/grayhaven-ansible-poller"
+    dest: /usr/local/sbin/grayhaven-ansible-poller
+    owner: root
+    group: root
+    mode: "0755"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion poller service unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.service"
+    dest: /etc/systemd/system/grayhaven-ansible-poller.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion poller timer unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.timer"
+    dest: /etc/systemd/system/grayhaven-ansible-poller.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: grayhaven_role == "bastion"

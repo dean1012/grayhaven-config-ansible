@@ -10,40 +10,11 @@
     path: /root/.ssh/authorized_keys
     state: absent
 
-- name: Create ansible automation user
-  ansible.builtin.user:
-    name: ansible
-    comment: Grayhaven Systems LLC automation user
-    create_home: true
-    shell: /bin/bash
-    password_lock: true
-    state: present
+- name: Configure base automation user access
+  ansible.builtin.import_tasks: base.yml
 
-- name: Grant ansible passwordless sudo
-  ansible.builtin.copy:
-    dest: /etc/sudoers.d/ansible
-    owner: root
-    group: root
-    mode: "0440"
-    content: |
-      ansible ALL=(ALL) NOPASSWD: ALL
-    validate: /usr/sbin/visudo -cf %s
-
-- name: Allow sudo to resolve locally installed administrator commands
-  ansible.builtin.lineinfile:
-    path: /etc/sudoers
-    regexp: '^Defaults\s+secure_path\s*='
-    line: "Defaults    secure_path = /sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin"
-    state: present
-    validate: /usr/sbin/visudo -cf %s
-
-- name: Create ansible SSH directory
-  ansible.builtin.file:
-    path: /home/ansible/.ssh
-    state: directory
-    owner: ansible
-    group: ansible
-    mode: "0700"
+- name: Configure sudo command lookup path
+  ansible.builtin.import_tasks: sudo-path.yml
 
 - name: Install vault Ansible control private key on bastion hosts
   ansible.builtin.copy:

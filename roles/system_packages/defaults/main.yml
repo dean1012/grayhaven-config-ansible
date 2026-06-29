@@ -1,6 +1,10 @@
 ---
 system_packages_ansible_runtime_venv: /home/ansible/ansible-runner/ansible-runtime
 
+system_packages_bootstrap_runner_packages:
+  - git
+  - python3-pip
+
 system_packages_admin_packages:
   - bash-completion
   - bind-utils

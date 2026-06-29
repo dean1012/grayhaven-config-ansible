@@ -1,0 +1,13 @@
+---
+- name: Remove bastion runner from non-bastion hosts
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/sbin/grayhaven-ansible-runner
+    - /usr/local/sbin/grayhaven-ansible-poller
+    - /etc/systemd/system/grayhaven-ansible-runner.service
+    - /etc/systemd/system/grayhaven-ansible-runner.timer
+    - /etc/systemd/system/grayhaven-ansible-poller.service
+    - /etc/systemd/system/grayhaven-ansible-poller.timer
+  when: grayhaven_role != "bastion"
