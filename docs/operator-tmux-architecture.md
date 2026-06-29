@@ -22,8 +22,9 @@ a single shell window.
 
 Auto-attach is optional. When enabled for a managed sudo user, interactive SSH
 logins to bastion run `gtmux` automatically. Administrators can bypass the
-auto-attach hook by setting `GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1` for the SSH
-session.
+auto-attach hook for one session by setting
+`GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1` in the remote login shell before it loads
+the normal shell startup files.
 
 All managed users receive a small shell helper that keeps forwarded SSH agent
 access available through `~/.ssh/ssh_auth_sock`. This keeps agent forwarding

@@ -306,10 +306,11 @@ gtmux --reset
 
 If tmux auto-attach is enabled for a user, logging in to that bastion user over
 interactive SSH runs `gtmux` automatically. If that causes login trouble,
-bypass it for one SSH session:
+bypass it for one SSH session by setting the bypass variable in the remote
+login shell:
 
 ```bash
-GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1 ssh <user>@bastion.grayhavensystems.com
+ssh -tt <user>@bastion.grayhavensystems.com 'GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1 exec bash -l'
 ```
 
 The
