@@ -1,5 +1,5 @@
 ---
-- name: Validate managed baseline variables
+- name: Validate baseline variables
   ansible.builtin.assert:
     that:
       - grayhaven_role is defined
@@ -14,6 +14,6 @@
       - ansible_control_private_key is defined
       - ansible_control_private_key is string
       - ansible_control_private_key | trim | length > 0
-    fail_msg: "Required managed baseline variables were not provided."
+    fail_msg: "Required baseline variables were not provided."
     quiet: true
   no_log: true

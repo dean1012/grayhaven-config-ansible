@@ -6,30 +6,30 @@
     group: ansible
     mode: "0640"
     content: |
-      REPO_URL={{ managed_baseline_runner_repo_url | quote }}
-      REPO_REF={{ managed_baseline_config_repo_ref | default('main') | quote }}
-      CHECKOUT_DIR={{ managed_baseline_runner_checkout_dir | quote }}
-      VAULT_REPO_URL={{ managed_baseline_effective_vault_repo_url | quote }}
-      VAULT_REPO_REF={{ ('main' if managed_baseline_environment == 'prod' else 'staging') | quote }}
-      VAULT_CHECKOUT_DIR={{ managed_baseline_vault_checkout_dir | default('/home/ansible/grayhaven-vault') | quote }}
-      GRAYHAVEN_ENVIRONMENT={{ managed_baseline_environment | quote }}
+      REPO_URL={{ automation_runner_repo_url | quote }}
+      REPO_REF={{ automation_runner_config_repo_ref | default('main') | quote }}
+      CHECKOUT_DIR={{ automation_runner_checkout_dir | quote }}
+      VAULT_REPO_URL={{ automation_runner_effective_vault_repo_url | quote }}
+      VAULT_REPO_REF={{ ('main' if grayhaven_environment == 'prod' else 'staging') | quote }}
+      VAULT_CHECKOUT_DIR={{ grayhaven_vault_checkout_dir | default('/home/ansible/grayhaven-vault') | quote }}
+      GRAYHAVEN_ENVIRONMENT={{ grayhaven_environment | quote }}
       GRAYHAVEN_HOSTNAME={{ inventory_hostname | quote }}
-      GRAYHAVEN_IS_CONTROL_NODE={{ managed_baseline_control_node_string | quote }}
-      GRAYHAVEN_CERTIFICATE_ENVIRONMENT={{ managed_baseline_certificate_environment | default('staging') | quote }}
-      GRAYHAVEN_TLS_MODE={{ managed_baseline_tls_mode | default('host') | quote }}
+      GRAYHAVEN_IS_CONTROL_NODE={{ automation_runner_control_node_string | quote }}
+      GRAYHAVEN_CERTIFICATE_ENVIRONMENT={{ grayhaven_certificate_environment | default('staging') | quote }}
+      GRAYHAVEN_TLS_MODE={{ grayhaven_tls_mode | default('host') | quote }}
   when: grayhaven_role == "bastion"
   vars:
-    managed_baseline_effective_vault_repo_url: >-
+    automation_runner_effective_vault_repo_url: >-
       {{
-        managed_baseline_vault_repo_url
+        automation_runner_vault_repo_url
         | default('git@github.com:dean1012/grayhaven-vault.git')
       }}
-    managed_baseline_control_node_string: >-
+    automation_runner_control_node_string: >-
       {{
-        managed_baseline_host_is_control_node
+        automation_runner_host_is_control_node
         | ternary('true', 'false')
       }}
-    managed_baseline_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
+    automation_runner_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
 
 - name: Ensure Grayhaven Systems LLC state directory is owned by ansible
   ansible.builtin.file:
@@ -106,22 +106,22 @@
 - name: Enable bastion runner timer
   ansible.builtin.systemd_service:
     name: grayhaven-ansible-runner.timer
-    enabled: "{{ managed_baseline_host_is_control_node }}"
-    state: "{{ managed_baseline_host_is_control_node | ternary('started', 'stopped') }}"
+    enabled: "{{ automation_runner_host_is_control_node }}"
+    state: "{{ automation_runner_host_is_control_node | ternary('started', 'stopped') }}"
     daemon_reload: true
   when: grayhaven_role == "bastion"
   vars:
-    managed_baseline_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
+    automation_runner_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
 
 - name: Enable bastion poller timer
   ansible.builtin.systemd_service:
     name: grayhaven-ansible-poller.timer
-    enabled: "{{ managed_baseline_host_is_control_node }}"
-    state: "{{ managed_baseline_host_is_control_node | ternary('started', 'stopped') }}"
+    enabled: "{{ automation_runner_host_is_control_node }}"
+    state: "{{ automation_runner_host_is_control_node | ternary('started', 'stopped') }}"
     daemon_reload: true
   when: grayhaven_role == "bastion"
   vars:
-    managed_baseline_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
+    automation_runner_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
 
 - name: Remove bastion runner from non-bastion hosts
   ansible.builtin.file:

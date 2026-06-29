@@ -126,7 +126,7 @@
         automation_notifications_reboot_required: >-
           {{
             automation_notifications_success_targets
-            | map('extract', hostvars, 'managed_baseline_reboot_required')
+            | map('extract', hostvars, 'host_status_reboot_required')
             | select('defined')
             | select('equalto', true)
             | list

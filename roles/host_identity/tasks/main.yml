@@ -13,9 +13,9 @@
 
 - name: Build bastion SSH known-host scan targets
   ansible.builtin.set_fact:
-    managed_baseline_known_host_scan_targets: >-
+    host_identity_known_host_scan_targets: >-
       {%- set targets = [] -%}
-      {%- for managed_host in managed_baseline_hosts | default([]) -%}
+      {%- for managed_host in managed_inventory_hosts | default([]) -%}
       {%- if managed_host.fqdn != inventory_hostname and managed_host.private_ip | default('') | string | length > 0 -%}
       {%- set managed_host_aliases = [managed_host.host_alias, managed_host.host_alias ~ '.internal'] -%}
       {%- set _ = targets.extend(managed_host_aliases + [managed_host.private_ip]) -%}
@@ -28,18 +28,18 @@
   ansible.builtin.command:
     cmd: >-
       ssh-keyscan -T 5 -t ed25519
-      {{ managed_baseline_known_host_scan_targets | map('quote') | join(' ') }}
-  register: managed_baseline_known_host_scan
+      {{ host_identity_known_host_scan_targets | map('quote') | join(' ') }}
+  register: host_identity_known_host_scan
   changed_when: false
   when:
     - grayhaven_role == "bastion"
-    - managed_baseline_known_host_scan_targets | default([]) | length > 0
+    - host_identity_known_host_scan_targets | default([]) | length > 0
 
 - name: Normalize managed host SSH keys from bastion
   ansible.builtin.set_fact:
-    managed_baseline_known_host_keys: >-
+    host_identity_known_host_keys: >-
       {{
-        managed_baseline_known_host_scan.stdout_lines
+        host_identity_known_host_scan.stdout_lines
         | reject('match', '^#')
         | reject('equalto', '')
         | unique
@@ -48,17 +48,17 @@
       }}
   when:
     - grayhaven_role == "bastion"
-    - managed_baseline_known_host_scan_targets | default([]) | length > 0
+    - host_identity_known_host_scan_targets | default([]) | length > 0
 
 - name: Validate managed host SSH key scan from bastion
   ansible.builtin.assert:
     that:
-      - managed_baseline_known_host_keys | default([]) | length == managed_baseline_known_host_scan_targets | length
+      - host_identity_known_host_keys | default([]) | length == host_identity_known_host_scan_targets | length
     fail_msg: "Managed host SSH key scan did not return one key line for each expected target."
     quiet: true
   when:
     - grayhaven_role == "bastion"
-    - managed_baseline_known_host_scan_targets | default([]) | length > 0
+    - host_identity_known_host_scan_targets | default([]) | length > 0
 
 - name: Install managed global SSH known hosts on bastion
   ansible.builtin.copy:
@@ -68,12 +68,12 @@
     mode: "0644"
     content: |
       # Managed by Ansible. Do not edit manually.
-      {% for managed_baseline_known_host_key in managed_baseline_known_host_keys %}
-      {{ managed_baseline_known_host_key }}
+      {% for host_identity_known_host_key in host_identity_known_host_keys %}
+      {{ host_identity_known_host_key }}
       {% endfor %}
   when:
     - grayhaven_role == "bastion"
-    - managed_baseline_known_host_scan_targets | default([]) | length > 0
+    - host_identity_known_host_scan_targets | default([]) | length > 0
 
 - name: Remove temporary first-convergence Ansible SSH known hosts on bastion
   ansible.builtin.file:
@@ -95,19 +95,19 @@
     owner: root
     group: root
     mode: "0644"
-    content: "{{ managed_baseline_local_fact | to_nice_json }}\n"
+    content: "{{ host_identity_local_fact | to_nice_json }}\n"
   vars:
-    managed_baseline_local_fact:
-      environment: "{{ managed_baseline_environment }}"
+    host_identity_local_fact:
+      environment: "{{ grayhaven_environment }}"
       hostname: "{{ inventory_hostname }}"
       role: "{{ grayhaven_role }}"
-      control_node: "{{ managed_baseline_host_is_control_node }}"
-      tls_mode: "{{ managed_baseline_tls_mode | default('host') }}"
-      certificate_environment: "{{ managed_baseline_certificate_environment | default('staging') }}"
+      control_node: "{{ automation_runner_host_is_control_node }}"
+      tls_mode: "{{ grayhaven_tls_mode | default('host') }}"
+      certificate_environment: "{{ grayhaven_certificate_environment | default('staging') }}"
       tags: "{{ do_tags | default([]) | sort }}"
       private_ipv4: "{{ grayhaven_private_ipv4 | default('') }}"
       public_ipv4: "{{ grayhaven_public_ipv4 | default('') }}"
-    managed_baseline_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
+    automation_runner_host_is_control_node: "{{ 'control-node' in (do_tags | default([])) }}"
 
 - name: Install login issue banner
   ansible.builtin.template:

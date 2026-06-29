@@ -39,7 +39,7 @@ def fixture_context() -> dict[str, object]:
     return {
         "grayhaven_role": "web",
         "inventory_hostname": "grayhaven-core-prod-web-01.grayhavensystems.com",
-        "managed_baseline_environment": "prod",
+        "grayhaven_environment": "prod",
         "observability_alloy_token_file": "/etc/grayhaven/observability/grafana-alloy-token",
         "observability_client": "grayhaven",
         "observability_grafana_credentials": {

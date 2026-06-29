@@ -9,29 +9,29 @@
 
 - name: Derive vault firewalld policy path
   ansible.builtin.set_fact:
-    managed_baseline_vault_firewall_policy_path: >-
-      {{ managed_baseline_vault_checkout_dir | default('/home/ansible/grayhaven-vault') }}/firewall.yml
+    firewalld_policy_vault_path: >-
+      {{ grayhaven_vault_checkout_dir | default('/home/ansible/grayhaven-vault') }}/firewall.yml
 
 - name: Check vault firewalld policy on the control node
   ansible.builtin.stat:
-    path: "{{ managed_baseline_vault_firewall_policy_path }}"
-  register: managed_baseline_vault_firewall_policy
+    path: "{{ firewalld_policy_vault_path }}"
+  register: firewalld_policy_vault_stat
   delegate_to: localhost
   run_once: true
 
 - name: Cache vault firewalld policy
   ansible.builtin.copy:
-    src: "{{ managed_baseline_vault_firewall_policy_path }}"
+    src: "{{ firewalld_policy_vault_path }}"
     dest: /etc/grayhaven/firewall/policy.yml
     owner: root
     group: root
     mode: "0644"
-  when: managed_baseline_vault_firewall_policy.stat.exists
+  when: firewalld_policy_vault_stat.stat.exists
 
 - name: Check cached firewalld policy
   ansible.builtin.stat:
     path: /etc/grayhaven/firewall/policy.yml
-  register: managed_baseline_firewall_policy_cache
+  register: firewalld_policy_cache_stat
 
 - name: Notify Discord when cached firewalld policy is used
   ansible.builtin.include_role:
@@ -42,10 +42,10 @@
     automation_notifications_target: >-
       {{ inventory_hostname }}
 
-      Environment: {{ managed_baseline_environment }}
+      Environment: {{ grayhaven_environment }}
   when:
-    - not managed_baseline_vault_firewall_policy.stat.exists
-    - managed_baseline_firewall_policy_cache.stat.exists
+    - not firewalld_policy_vault_stat.stat.exists
+    - firewalld_policy_cache_stat.stat.exists
 
 - name: Notify Discord when firewalld policy is unavailable
   ansible.builtin.include_role:
@@ -56,57 +56,57 @@
     automation_notifications_target: >-
       {{ inventory_hostname }}
 
-      Environment: {{ managed_baseline_environment }}
+      Environment: {{ grayhaven_environment }}
   when:
-    - not managed_baseline_vault_firewall_policy.stat.exists
-    - not managed_baseline_firewall_policy_cache.stat.exists
+    - not firewalld_policy_vault_stat.stat.exists
+    - not firewalld_policy_cache_stat.stat.exists
 
 - name: Read cached firewalld policy
   ansible.builtin.slurp:
     src: /etc/grayhaven/firewall/policy.yml
-  register: managed_baseline_firewall_policy_slurp
-  when: managed_baseline_firewall_policy_cache.stat.exists
+  register: firewalld_policy_cache_slurp
+  when: firewalld_policy_cache_stat.stat.exists
 
 - name: Parse cached firewalld policy
   ansible.builtin.set_fact:
-    managed_baseline_firewall_policy: "{{ managed_baseline_firewall_policy_slurp.content | b64decode | from_yaml }}"
-  when: managed_baseline_firewall_policy_cache.stat.exists
+    firewalld_policy_data: "{{ firewalld_policy_cache_slurp.content | b64decode | from_yaml }}"
+  when: firewalld_policy_cache_stat.stat.exists
 
 - name: Derive role firewalld policy
   ansible.builtin.set_fact:
-    managed_baseline_firewall_role_policy: "{{ managed_baseline_firewall_policy.firewalls[grayhaven_role] }}"
-  when: managed_baseline_firewall_policy_cache.stat.exists
+    firewalld_policy_role_policy: "{{ firewalld_policy_data.firewalls[grayhaven_role] }}"
+  when: firewalld_policy_cache_stat.stat.exists
 
 - name: Initialize load-balancer TLS firewalld inbound policy
   ansible.builtin.set_fact:
-    managed_baseline_load_balancer_tls_inbound: []
+    firewalld_policy_load_balancer_tls_inbound: []
   when:
-    - managed_baseline_firewall_policy_cache.stat.exists
+    - firewalld_policy_cache_stat.stat.exists
     - grayhaven_role == "web"
-    - managed_baseline_tls_mode == "load_balancer"
+    - grayhaven_tls_mode == "load_balancer"
 
 - name: Keep only web origin ports needed for load-balancer TLS
   ansible.builtin.set_fact:
-    managed_baseline_load_balancer_tls_inbound: >-
-      {{ managed_baseline_load_balancer_tls_inbound + [item] }}
-  loop: "{{ managed_baseline_firewall_role_policy.inbound | default([]) }}"
+    firewalld_policy_load_balancer_tls_inbound: >-
+      {{ firewalld_policy_load_balancer_tls_inbound + [item] }}
+  loop: "{{ firewalld_policy_role_policy.inbound | default([]) }}"
   when:
-    - managed_baseline_firewall_policy_cache.stat.exists
+    - firewalld_policy_cache_stat.stat.exists
     - grayhaven_role == "web"
-    - managed_baseline_tls_mode == "load_balancer"
+    - grayhaven_tls_mode == "load_balancer"
     - not (item.protocol == "tcp" and item.port_range == "443")
 
 - name: Apply load-balancer TLS firewalld policy
   ansible.builtin.set_fact:
-    managed_baseline_firewall_role_policy: >-
+    firewalld_policy_role_policy: >-
       {{
-        managed_baseline_firewall_role_policy
-        | combine({'inbound': managed_baseline_load_balancer_tls_inbound})
+        firewalld_policy_role_policy
+        | combine({'inbound': firewalld_policy_load_balancer_tls_inbound})
       }}
   when:
-    - managed_baseline_firewall_policy_cache.stat.exists
+    - firewalld_policy_cache_stat.stat.exists
     - grayhaven_role == "web"
-    - managed_baseline_tls_mode == "load_balancer"
+    - grayhaven_tls_mode == "load_balancer"
 
 - name: Install grayhaven firewalld zone from policy
   ansible.builtin.template:
@@ -116,7 +116,7 @@
     group: root
     mode: "0644"
   notify: Reload firewalld
-  when: managed_baseline_firewall_policy_cache.stat.exists
+  when: firewalld_policy_cache_stat.stat.exists
 
 - name: Set grayhaven firewalld zone as the configured default
   ansible.builtin.lineinfile:
@@ -125,26 +125,26 @@
     line: DefaultZone=grayhaven
     state: present
   notify: Reload firewalld
-  when: managed_baseline_firewall_policy_cache.stat.exists
+  when: firewalld_policy_cache_stat.stat.exists
 
 - name: Reset SSH connection before firewalld starts
   ansible.builtin.meta: reset_connection
 
 - name: Start and verify firewalld with fresh SSH sessions
   vars:
-    ansible_ssh_args: "{{ managed_baseline_firewalld_ssh_args }}"
+    ansible_ssh_args: "{{ firewalld_policy_ssh_args }}"
   block:
     - name: Check whether firewalld is enabled
       ansible.builtin.command:
         cmd: systemctl is-enabled --quiet firewalld
-      register: managed_baseline_firewalld_enabled
+      register: firewalld_policy_enabled
       changed_when: false
       failed_when: false
 
     - name: Check whether firewalld is active
       ansible.builtin.command:
         cmd: systemctl is-active --quiet firewalld
-      register: managed_baseline_firewalld_running
+      register: firewalld_policy_running
       changed_when: false
       failed_when: false
 
@@ -152,15 +152,15 @@
       ansible.builtin.systemd_service:
         name: firewalld
         enabled: true
-      when: managed_baseline_firewalld_enabled.rc != 0
+      when: firewalld_policy_enabled.rc != 0
 
     - name: Start firewalld outside the active SSH session
       ansible.builtin.raw: |
         nohup systemctl start firewalld >/dev/null 2>&1 </dev/null &
         echo starting
-      changed_when: "'starting' in managed_baseline_firewalld_start.stdout_lines"
-      register: managed_baseline_firewalld_start
-      when: managed_baseline_firewalld_running.rc != 0
+      changed_when: "'starting' in firewalld_policy_start.stdout_lines"
+      register: firewalld_policy_start
+      when: firewalld_policy_running.rc != 0
 
     - name: Wait for SSH after firewalld starts
       ansible.builtin.wait_for_connection:
@@ -171,11 +171,11 @@
     - name: Wait for firewalld to become active
       ansible.builtin.command:
         cmd: systemctl is-active firewalld
-      register: managed_baseline_firewalld_active
+      register: firewalld_policy_active
       changed_when: false
       retries: 10
       delay: 3
-      until: managed_baseline_firewalld_active.stdout == "active"
+      until: firewalld_policy_active.stdout == "active"
 
     - name: Reload firewalld after zone changes
       ansible.builtin.meta: flush_handlers
@@ -189,11 +189,11 @@
     - name: Wait for firewalld to remain active after reload
       ansible.builtin.command:
         cmd: firewall-cmd --state
-      register: managed_baseline_firewalld_reloaded
+      register: firewalld_policy_reloaded
       changed_when: false
       retries: 10
       delay: 3
-      until: managed_baseline_firewalld_reloaded.stdout == "running"
+      until: firewalld_policy_reloaded.stdout == "running"
 
 - name: Reset SSH connection after firewalld settles
   ansible.builtin.meta: reset_connection

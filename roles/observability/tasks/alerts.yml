@@ -46,14 +46,14 @@
         prometheus_datasource_name: "{{ observability_grafana_credentials.prometheus.datasource_name }}"
       labels:
         client: "{{ observability_client }}"
-        environment: "{{ managed_baseline_environment }}"
+        environment: "{{ grayhaven_environment }}"
       thresholds:
         cpu_percent: "{{ observability_cpu_warning_percent }}"
         memory_percent: "{{ observability_memory_warning_percent }}"
         filesystem_percent: "{{ observability_filesystem_warning_percent }}"
         swap_percent: "{{ observability_swap_warning_percent }}"
         restic_stale_seconds: "{{ observability_restic_stale_seconds }}"
-      tls_mode: "{{ managed_baseline_tls_mode }}"
+      tls_mode: "{{ grayhaven_tls_mode }}"
       hosts: "{{ observability_hosts }}"
       sites: "{{ observability_web_sites }}"
       service_units:

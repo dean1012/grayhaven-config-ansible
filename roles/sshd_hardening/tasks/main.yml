@@ -2,19 +2,19 @@
 - name: Check current SELinux enforcement mode
   ansible.builtin.command:
     cmd: getenforce
-  register: managed_baseline_getenforce
+  register: sshd_hardening_getenforce
   changed_when: false
-  failed_when: managed_baseline_getenforce.rc not in [0, 1]
+  failed_when: sshd_hardening_getenforce.rc not in [0, 1]
 
 - name: Set SELinux enforcing mode immediately when available
   ansible.builtin.command:
     cmd: setenforce 1
-  register: managed_baseline_setenforce
+  register: sshd_hardening_setenforce
   changed_when: true
-  failed_when: managed_baseline_setenforce.rc not in [0, 1]
+  failed_when: sshd_hardening_setenforce.rc not in [0, 1]
   when:
     - ansible_facts.selinux.status | default("disabled") != "disabled"
-    - managed_baseline_getenforce.stdout != "Enforcing"
+    - sshd_hardening_getenforce.stdout != "Enforcing"
 
 - name: Persist SELinux enforcing mode
   ansible.builtin.lineinfile:

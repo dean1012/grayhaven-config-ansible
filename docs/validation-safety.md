@@ -36,7 +36,7 @@ Runtime `assert` tasks stop convergence early when required values are missing
 or malformed. These checks cover areas such as:
 
 - OpenTofu/cloud-init bootstrap handoff values;
-- managed baseline vault values and Ansible control key material;
+- vault-provided baseline values and Ansible control key material;
 - web TLS mode and hosted domain structure;
 - host TLS DigitalOcean DNS token availability;
 - backup schedule, restic password availability, and optional GCS remote backup

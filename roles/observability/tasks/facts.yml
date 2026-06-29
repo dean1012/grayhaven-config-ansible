@@ -59,7 +59,7 @@
       role: "{{ observability_loop_role }}"
       project: "{{ observability_loop_project_tag | regex_replace('^project-', '') }}"
       client: "{{ observability_loop_client_tag | regex_replace('^client-', '') }}"
-      environment: "{{ managed_baseline_environment }}"
+      environment: "{{ grayhaven_environment }}"
       control_node: "{{ 'control-node' in observability_loop_tags }}"
   when: observability_loop_role != "unknown"
 
@@ -78,19 +78,19 @@
     observability_site_domain: >-
       {{
         observability_root_domain
-        if managed_baseline_environment == 'prod'
+        if grayhaven_environment == 'prod'
         else 'staging.' ~ observability_root_domain
       }}
     observability_site_www_domain: >-
       {{
         'www.' ~ observability_root_domain
-        if managed_baseline_environment == 'prod'
+        if grayhaven_environment == 'prod'
         else 'www.staging.' ~ observability_root_domain
       }}
     observability_site_dev_domain: >-
       {{
         'dev.' ~ observability_root_domain
-        if managed_baseline_environment == 'prod'
+        if grayhaven_environment == 'prod'
         else 'dev.staging.' ~ observability_root_domain
       }}
     observability_site_entry:
@@ -102,6 +102,6 @@
       cert_name: >-
         {{
           observability_root_domain
-          if managed_baseline_environment == 'prod'
+          if grayhaven_environment == 'prod'
           else 'staging.' ~ observability_root_domain
         }}

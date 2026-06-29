@@ -12,12 +12,12 @@
 
 - name: Install baseline administration packages
   ansible.builtin.dnf:
-    name: "{{ managed_baseline_admin_packages + managed_baseline_required_packages }}"
+    name: "{{ system_packages_admin_packages + system_packages_required_packages }}"
     state: present
 
 - name: Ensure Ansible runtime directory exists on bastion hosts
   ansible.builtin.file:
-    path: "{{ managed_baseline_ansible_runtime_venv | dirname }}"
+    path: "{{ system_packages_ansible_runtime_venv | dirname }}"
     state: directory
     owner: ansible
     group: ansible
@@ -35,7 +35,7 @@
 
 - name: Ensure Ansible collection directory is owned by ansible on bastion hosts
   ansible.builtin.file:
-    path: "{{ managed_baseline_ansible_runtime_venv | dirname }}/collections"
+    path: "{{ system_packages_ansible_runtime_venv | dirname }}/collections"
     state: directory
     owner: ansible
     group: ansible
@@ -44,7 +44,7 @@
 
 - name: Ensure Ansible runner directory is owned by ansible on bastion hosts
   ansible.builtin.file:
-    path: "{{ managed_baseline_ansible_runtime_venv | dirname }}"
+    path: "{{ system_packages_ansible_runtime_venv | dirname }}"
     state: directory
     owner: ansible
     group: ansible
@@ -53,8 +53,8 @@
 
 - name: Create Ansible runtime virtual environment on bastion hosts
   ansible.builtin.command:
-    cmd: /usr/bin/python3 -m venv "{{ managed_baseline_ansible_runtime_venv }}"
-    creates: "{{ managed_baseline_ansible_runtime_venv }}/bin/python"
+    cmd: /usr/bin/python3 -m venv "{{ system_packages_ansible_runtime_venv }}"
+    creates: "{{ system_packages_ansible_runtime_venv }}/bin/python"
   become: true
   become_user: ansible
   when: grayhaven_role == "bastion"
@@ -62,7 +62,7 @@
 - name: Upgrade Ansible runtime virtual environment pip on bastion hosts
   ansible.builtin.command:
     cmd: >-
-      {{ managed_baseline_ansible_runtime_venv }}/bin/python
+      {{ system_packages_ansible_runtime_venv }}/bin/python
       -m pip install --upgrade pip
   become: true
   become_user: ansible
@@ -70,32 +70,32 @@
     HOME: /home/ansible
     USER: ansible
     LOGNAME: ansible
-  register: managed_baseline_ansible_runtime_pip_upgrade
+  register: system_packages_ansible_runtime_pip_upgrade
   changed_when: >-
-    'Successfully installed' in managed_baseline_ansible_runtime_pip_upgrade.stdout
+    'Successfully installed' in system_packages_ansible_runtime_pip_upgrade.stdout
   when: grayhaven_role == "bastion"
 
 - name: Install pinned Ansible runtime on bastion hosts
   ansible.builtin.command:
     cmd: >-
-      {{ managed_baseline_ansible_runtime_venv }}/bin/python
+      {{ system_packages_ansible_runtime_venv }}/bin/python
       -m pip install --upgrade
       --require-hashes
       --requirement
-      {{ managed_baseline_runner_checkout_dir }}/pip3_requirements.txt
+      {{ playbook_dir }}/../pip3_requirements.txt
   become: true
   become_user: ansible
   environment:
     HOME: /home/ansible
     USER: ansible
     LOGNAME: ansible
-  register: managed_baseline_ansible_install
-  changed_when: "'Successfully installed' in managed_baseline_ansible_install.stdout"
+  register: system_packages_ansible_install
+  changed_when: "'Successfully installed' in system_packages_ansible_install.stdout"
   when: grayhaven_role == "bastion"
 
 - name: Link Ansible runtime commands on bastion hosts
   ansible.builtin.file:
-    src: "{{ managed_baseline_ansible_runtime_venv }}/bin/{{ item }}"
+    src: "{{ system_packages_ansible_runtime_venv }}/bin/{{ item }}"
     dest: "/usr/local/bin/{{ item }}"
     state: link
     force: true
@@ -112,7 +112,7 @@
 
 - name: Ensure Ansible runtime virtual environment remains owned by ansible
   ansible.builtin.file:
-    path: "{{ managed_baseline_ansible_runtime_venv }}"
+    path: "{{ system_packages_ansible_runtime_venv }}"
     state: directory
     owner: ansible
     group: ansible
@@ -121,18 +121,18 @@
 
 - name: Install checksum-verified Ansible Galaxy collections on bastion hosts
   ansible.builtin.command:
-    cmd: "{{ managed_baseline_runner_checkout_dir }}/scripts/install-galaxy-collections"
+    cmd: "{{ playbook_dir }}/../scripts/install-galaxy-collections"
   become: true
   become_user: ansible
   environment:
-    ANSIBLE_GALAXY_BIN: "{{ managed_baseline_ansible_runtime_venv }}/bin/ansible-galaxy"
-    ANSIBLE_COLLECTIONS_PATH: "{{ managed_baseline_ansible_runtime_venv | dirname }}/collections"
-    ANSIBLE_COLLECTIONS_PATHS: "{{ managed_baseline_ansible_runtime_venv | dirname }}/collections"
+    ANSIBLE_GALAXY_BIN: "{{ system_packages_ansible_runtime_venv }}/bin/ansible-galaxy"
+    ANSIBLE_COLLECTIONS_PATH: "{{ system_packages_ansible_runtime_venv | dirname }}/collections"
+    ANSIBLE_COLLECTIONS_PATHS: "{{ system_packages_ansible_runtime_venv | dirname }}/collections"
     HOME: /home/ansible
     USER: ansible
     LOGNAME: ansible
-  register: managed_baseline_galaxy_install
-  changed_when: "'Installing collection' in managed_baseline_galaxy_install.stdout"
+  register: system_packages_galaxy_install
+  changed_when: "'Installing collection' in system_packages_galaxy_install.stdout"
   when: grayhaven_role == "bastion"
 
 - name: Remove RPM-managed Ansible runtime from non-bastion hosts
@@ -145,8 +145,8 @@
 - name: Remove pip-managed Ansible runtime from non-bastion hosts
   ansible.builtin.command:
     cmd: /usr/bin/python3 -m pip uninstall --yes ansible ansible-core
-  register: managed_baseline_ansible_uninstall
-  changed_when: "'Successfully uninstalled' in managed_baseline_ansible_uninstall.stdout"
+  register: system_packages_ansible_uninstall
+  changed_when: "'Successfully uninstalled' in system_packages_ansible_uninstall.stdout"
   when: grayhaven_role != "bastion"
 
 - name: Stop and disable unnecessary services
@@ -155,9 +155,9 @@
     state: stopped
     enabled: false
   failed_when: false
-  loop: "{{ managed_baseline_unneeded_services }}"
+  loop: "{{ system_packages_unneeded_services }}"
 
 - name: Remove unnecessary packages
   ansible.builtin.dnf:
-    name: "{{ managed_baseline_unneeded_packages }}"
+    name: "{{ system_packages_unneeded_packages }}"
     state: absent

@@ -103,7 +103,7 @@
         role: "{{ observability_role }}"
         project: "{{ observability_project }}"
         client: "{{ observability_client }}"
-        environment: "{{ managed_baseline_environment }}"
+        environment: "{{ grayhaven_environment }}"
         control_node: "{{ observability_host_is_control_node }}"
       hosts: "{{ observability_hosts }}"
   when: observability_metrics_enabled
