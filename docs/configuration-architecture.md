@@ -215,10 +215,12 @@ inside user-managed shell workflows.
 
 ## Web Hosting
 
-Web hosts install Nginx and serve static placeholder assets for vault-defined
-hosted domains. Existing custom static sites remain in `files/static-sites/`.
-Domains without a custom static-site source are rendered from the generic
-placeholder templates in the web role.
+Web hosts install Nginx and serve vault-defined hosted domains. A hosted domain
+can define `deployment.type: static` with a public HTTPS Git repository. Static
+deployments copy `site/frontend/` from the repository `main` branch to the
+apex and `www` document root, and `site/frontend/` from the `dev` branch to the
+development document root. Domains without deployment configuration are
+rendered from the generic fallback templates in the website deployment role.
 
 Host TLS mode issues certificates with Let's Encrypt through DNS-01 validation
 using the role-specific DigitalOcean DNS token from the vault. Certbot renewals
