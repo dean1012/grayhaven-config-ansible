@@ -8,6 +8,9 @@
 - name: Enforce development basic authentication
   ansible.builtin.import_tasks: auth.yml
 
+- name: Enforce website deployment webhook
+  ansible.builtin.import_tasks: deploy-webhook.yml
+
 - name: Deploy website content
   ansible.builtin.import_tasks: content.yml
 

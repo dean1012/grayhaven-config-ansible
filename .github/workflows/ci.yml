@@ -43,6 +43,7 @@ jobs:
           files/grayhaven-gcs-restic-bucket-cleanup
           files/grayhaven-reboot-notify
           files/grayhaven-refresh-motd
+          roles/deploy_websites/files/grayhaven-website-deploy
           roles/observability/files/grayhaven-grafana-alert-sync
           roles/observability/files/grayhaven-observability-textfile
           scripts/validate-rendered-alloy-config

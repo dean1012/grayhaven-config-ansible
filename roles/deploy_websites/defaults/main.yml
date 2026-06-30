@@ -3,7 +3,13 @@ deploy_websites_environment: prod
 deploy_websites_root: /var/www
 deploy_websites_checkout_root: /home/ansible/website-repos
 deploy_websites_fallback_root: /home/ansible/website-fallbacks
+deploy_websites_rendered_root: /home/ansible/website-rendered
 deploy_websites_frontend_path: site/frontend
+deploy_websites_config_dir: /etc/grayhaven/websites
+deploy_websites_runtime_dir: /run/grayhaven-website-deploy
+deploy_websites_webhook_bind_host: 127.0.0.1
+deploy_websites_webhook_bind_port: 8791
+deploy_websites_github_meta_url: https://api.github.com/meta
 
 deploy_websites_certbot_email: jsmith@grayhavensystems.com
 deploy_websites_certificate_environment: staging

@@ -1,0 +1,475 @@
+#!/usr/bin/env python3
+"""Deploy repository-backed Grayhaven Systems LLC website content."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import hashlib
+import hmac
+import json
+import logging
+import os
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+
+
+# Logging
+
+LOG = logging.getLogger("grayhaven-website-deploy")
+
+
+# Data Models
+
+@dataclass(frozen=True)
+class BranchDeployment:
+    """Filesystem paths for a single deployable branch."""
+
+    name: str
+    checkout: Path
+    source: Path
+    destination: Path
+    render_source: Path | None = None
+
+
+@dataclass(frozen=True)
+class WebsiteDeployment:
+    """A repository-backed website deployment allowed by Ansible config."""
+
+    root_name: str
+    host: str
+    repository_url: str
+    webhook_secret: str
+    branches: dict[str, BranchDeployment]
+
+
+class DeployError(RuntimeError):
+    """Raised when a deployment request is valid but cannot be completed."""
+
+
+# Configuration
+
+def normalize_repository_url(repository_url: str) -> str:
+    """Normalize GitHub HTTPS URLs enough for payload/config comparison."""
+
+    normalized = repository_url.strip().rstrip("/")
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    return normalized.lower()
+
+
+def load_config(config_path: Path) -> list[WebsiteDeployment]:
+    """Load the Ansible-managed deployment allowlist."""
+
+    with config_path.open("r", encoding="utf-8") as config_file:
+        raw_config = json.load(config_file)
+
+    deployments: list[WebsiteDeployment] = []
+    for raw_deployment in raw_config.get("deployments", []):
+        branches = {
+            branch_name: BranchDeployment(
+                name=branch_name,
+                checkout=Path(raw_branch["checkout"]),
+                source=Path(raw_branch["source"]),
+                destination=Path(raw_branch["destination"]),
+                render_source=Path(raw_branch["render_source"]) if raw_branch.get("render_source") else None,
+            )
+            for branch_name, raw_branch in raw_deployment["branches"].items()
+        }
+        deployments.append(
+            WebsiteDeployment(
+                root_name=raw_deployment["root_name"],
+                host=raw_deployment["host"].lower(),
+                repository_url=raw_deployment["repository_url"],
+                webhook_secret=raw_deployment["webhook_secret"],
+                branches=branches,
+            )
+        )
+    return deployments
+
+
+def find_deployment(
+    deployments: list[WebsiteDeployment],
+    *,
+    host: str,
+    repository_url: str,
+    branch_name: str,
+) -> WebsiteDeployment | None:
+    """Find a configured deployment matching host, repository, and branch."""
+
+    requested_host = host.split(":", 1)[0].lower()
+    requested_repository = normalize_repository_url(repository_url)
+
+    for deployment in deployments:
+        configured_repository = normalize_repository_url(deployment.repository_url)
+        if (
+            deployment.host == requested_host
+            and configured_repository == requested_repository
+            and branch_name in deployment.branches
+        ):
+            return deployment
+    return None
+
+
+# HTML Development Cues
+
+TITLE_RE = re.compile(r"(<title>)(.*?)(</title>)", re.IGNORECASE | re.DOTALL)
+HEAD_CLOSE_RE = re.compile(r"</head>", re.IGNORECASE)
+BODY_CLOSE_RE = re.compile(r"</body>", re.IGNORECASE)
+
+DEV_STYLE = """<style id="grayhaven-dev-footer-style">
+.dev-footer {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 999;
+  color: #aab2bf;
+  font: 700 0.78rem/1.2 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 40rem) {
+  .dev-footer {
+    right: 0;
+    bottom: 0.7rem;
+    left: 0;
+    text-align: center;
+  }
+}
+</style>"""
+
+DEV_FOOTER = '<footer class="dev-footer">Development Environment</footer>'
+
+
+def add_dev_cues(html: str) -> str:
+    """Append development title and footer cues to one HTML document."""
+
+    def title_replacement(match: re.Match[str]) -> str:
+        title_text = match.group(2)
+        if title_text.rstrip().endswith("[Dev]"):
+            return match.group(0)
+        return f"{match.group(1)}{title_text} [Dev]{match.group(3)}"
+
+    updated = TITLE_RE.sub(title_replacement, html, count=1)
+
+    if "grayhaven-dev-footer-style" not in updated:
+        updated = HEAD_CLOSE_RE.sub(f"{DEV_STYLE}\n  </head>", updated, count=1)
+
+    if 'class="dev-footer"' not in updated:
+        if BODY_CLOSE_RE.search(updated):
+            updated = BODY_CLOSE_RE.sub(f"  {DEV_FOOTER}\n  </body>", updated, count=1)
+        else:
+            updated = f"{updated.rstrip()}\n{DEV_FOOTER}\n"
+
+    return updated
+
+
+def inject_dev_cues(root: Path) -> bool:
+    """Inject development cues into every HTML file below a document root."""
+
+    changed = False
+    for html_path in sorted(root.rglob("*.html")):
+        original = html_path.read_text(encoding="utf-8")
+        updated = add_dev_cues(original)
+        if updated != original:
+            html_path.write_text(updated, encoding="utf-8")
+            changed = True
+            LOG.info("Injected development cues into %s", html_path)
+    return changed
+
+
+def read_rendered_source(source_path: Path) -> bytes:
+    """Read a source file and apply HTML development cues when needed."""
+
+    if source_path.suffix.lower() != ".html":
+        return source_path.read_bytes()
+    rendered = add_dev_cues(source_path.read_text(encoding="utf-8"))
+    return rendered.encode("utf-8")
+
+
+def render_dev_source(source: Path, target: Path) -> bool:
+    """Render a development source tree with server-side development cues."""
+
+    if not source.is_dir():
+        raise DeployError(f"Source path does not exist: {source}")
+
+    changed = not target.exists()
+    target.mkdir(parents=True, exist_ok=True)
+    expected_paths: set[Path] = set()
+
+    for source_path in sorted(source.rglob("*")):
+        relative_path = source_path.relative_to(source)
+        target_path = target / relative_path
+        expected_paths.add(target_path)
+
+        if source_path.is_dir():
+            if not target_path.is_dir():
+                target_path.mkdir(parents=True, exist_ok=True)
+                changed = True
+            continue
+
+        if not source_path.is_file():
+            continue
+
+        rendered_content = read_rendered_source(source_path)
+        if target_path.exists() and target_path.read_bytes() == rendered_content:
+            continue
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(rendered_content)
+        changed = True
+
+    for target_path in sorted(target.rglob("*"), reverse=True):
+        if target_path in expected_paths:
+            continue
+        if target_path.is_dir():
+            target_path.rmdir()
+        else:
+            target_path.unlink()
+        changed = True
+
+    return changed
+
+
+# Deployment
+
+def run_command(command: list[str], *, user: str | None = None, cwd: Path | None = None) -> None:
+    """Run a command, optionally as another local user."""
+
+    full_command = command
+    if user:
+        full_command = ["runuser", "-u", user, "--", *command]
+
+    LOG.info("Running command: %s", " ".join(full_command))
+    subprocess.run(full_command, cwd=cwd, check=True)
+
+
+def restore_selinux_context(path: Path) -> None:
+    """Restore SELinux context on deployed website content when available."""
+
+    restorecon = shutil.which("restorecon")
+    if not restorecon:
+        LOG.info("restorecon is not available; skipping SELinux context restore")
+        return
+    run_command([restorecon, "-RF", str(path)])
+
+
+def deploy_branch(deployment: WebsiteDeployment, branch_name: str) -> None:
+    """Refresh one configured checkout and synchronize it to its docroot."""
+
+    branch = deployment.branches[branch_name]
+    if not branch.checkout.is_dir():
+        raise DeployError(f"Checkout path does not exist: {branch.checkout}")
+
+    run_command(["git", "-C", str(branch.checkout), "fetch", "--prune", "origin", branch_name], user="ansible")
+    run_command(["git", "-C", str(branch.checkout), "checkout", branch_name], user="ansible")
+    run_command(["git", "-C", str(branch.checkout), "reset", "--hard", f"origin/{branch_name}"], user="ansible")
+    run_command(["git", "-C", str(branch.checkout), "clean", "-fdx"], user="ansible")
+
+    if branch.render_source:
+        if not branch.render_source.is_dir():
+            raise DeployError(f"Repository branch {branch_name} does not contain {branch.render_source}")
+        render_dev_source(branch.render_source, branch.source)
+    elif not branch.source.is_dir():
+        raise DeployError(f"Repository branch {branch_name} does not contain {branch.source}")
+
+    branch.destination.mkdir(parents=True, exist_ok=True)
+    run_command(
+        [
+            "rsync",
+            "-a",
+            "--delete",
+            "--chown=root:root",
+            "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r",
+            f"{branch.source}/",
+            f"{branch.destination}/",
+        ]
+    )
+
+    if branch_name == "dev":
+        inject_dev_cues(branch.destination)
+
+    restore_selinux_context(branch.destination)
+    LOG.info("Deployed %s branch %s to %s", deployment.root_name, branch_name, branch.destination)
+
+
+def deploy_with_lock(deployment: WebsiteDeployment, branch_name: str, runtime_dir: Path) -> None:
+    """Serialize deployments for a single site and branch."""
+
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = runtime_dir / f"{deployment.root_name}-{branch_name}.lock"
+    with lock_path.open("w", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        deploy_branch(deployment, branch_name)
+
+
+# Webhook Handling
+
+def parse_branch(ref: str) -> str | None:
+    """Return a supported branch name from a Git ref."""
+
+    prefix = "refs/heads/"
+    if not ref.startswith(prefix):
+        return None
+    branch_name = ref.removeprefix(prefix)
+    if branch_name not in {"main", "dev"}:
+        return None
+    return branch_name
+
+
+def verify_signature(body: bytes, signature: str, secret: str) -> bool:
+    """Verify a GitHub-style HMAC SHA-256 signature."""
+
+    if not signature.startswith("sha256="):
+        return False
+    expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, f"sha256={expected}")
+
+
+class DeploymentRequestHandler(BaseHTTPRequestHandler):
+    """Handle authenticated repository deployment requests from GitHub."""
+
+    deployments: list[WebsiteDeployment] = []
+    runtime_dir = Path("/run/grayhaven-website-deploy")
+
+    def log_message(self, format_string: str, *args: Any) -> None:  # noqa: A002
+        LOG.info("%s - %s", self.address_string(), format_string % args)
+
+    def send_text(self, status: HTTPStatus, message: str) -> None:
+        """Return a small plaintext response."""
+
+        body = f"{message}\n".encode("utf-8")
+        self.send_response(status.value)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        """Process one deployment webhook request."""
+
+        if self.path != "/deploy":
+            self.send_text(HTTPStatus.NOT_FOUND, "not found")
+            return
+
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_text(HTTPStatus.BAD_REQUEST, "invalid content length")
+            return
+
+        body = self.rfile.read(content_length)
+        signature = self.headers.get("X-Hub-Signature-256", "")
+        host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "")
+
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_text(HTTPStatus.BAD_REQUEST, "invalid json payload")
+            return
+
+        branch_name = parse_branch(str(payload.get("ref", "")))
+        repository = payload.get("repository", {})
+        repository_url = str(repository.get("clone_url") or repository.get("html_url") or "")
+        if not branch_name or not repository_url:
+            self.send_text(HTTPStatus.FORBIDDEN, "unsupported repository or branch")
+            return
+
+        deployment = find_deployment(
+            self.deployments,
+            host=host,
+            repository_url=repository_url,
+            branch_name=branch_name,
+        )
+        if not deployment:
+            self.send_text(HTTPStatus.FORBIDDEN, "unsupported deployment target")
+            return
+
+        if not verify_signature(body, signature, deployment.webhook_secret):
+            self.send_text(HTTPStatus.FORBIDDEN, "invalid signature")
+            return
+
+        try:
+            deploy_with_lock(deployment, branch_name, self.runtime_dir)
+        except (DeployError, subprocess.CalledProcessError, OSError) as exc:
+            LOG.exception("Deployment failed for %s %s", deployment.root_name, branch_name)
+            self.send_text(HTTPStatus.INTERNAL_SERVER_ERROR, f"deployment failed: {exc}")
+            return
+
+        self.send_text(HTTPStatus.OK, "deployment complete")
+
+
+def serve(config_path: Path, host: str, port: int, runtime_dir: Path) -> None:
+    """Start the local webhook HTTP server."""
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    DeploymentRequestHandler.deployments = load_config(config_path)
+    DeploymentRequestHandler.runtime_dir = runtime_dir
+
+    server = ThreadingHTTPServer((host, port), DeploymentRequestHandler)
+    LOG.info("Listening on %s:%s", host, port)
+    server.serve_forever()
+
+
+# Command Line
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    inject_parser = subparsers.add_parser("inject-dev-cues", help="inject development title and footer cues")
+    inject_parser.add_argument("--root", required=True, type=Path, help="development document root")
+
+    render_parser = subparsers.add_parser("render-dev-source", help="render development source to a target tree")
+    render_parser.add_argument("--source", required=True, type=Path, help="source frontend directory")
+    render_parser.add_argument("--target", required=True, type=Path, help="rendered target directory")
+
+    serve_parser = subparsers.add_parser("serve", help="run the local deployment webhook server")
+    serve_parser.add_argument("--config", required=True, type=Path, help="deployment config JSON")
+    serve_parser.add_argument("--host", default="127.0.0.1", help="bind address")
+    serve_parser.add_argument("--port", default=8791, type=int, help="bind port")
+    serve_parser.add_argument(
+        "--runtime-dir",
+        default=Path("/run/grayhaven-website-deploy"),
+        type=Path,
+        help="directory for deployment locks",
+    )
+
+    return parser
+
+
+def main() -> int:
+    """Run the requested command."""
+
+    args = build_parser().parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    if args.command == "inject-dev-cues":
+        changed = inject_dev_cues(args.root)
+        print("changed" if changed else "unchanged")
+        return 0
+
+    if args.command == "render-dev-source":
+        changed = render_dev_source(args.source, args.target)
+        print("changed" if changed else "unchanged")
+        return 0
+
+    if args.command == "serve":
+        serve(args.config, args.host, args.port, args.runtime_dir)
+        return 0
+
+    raise AssertionError(f"Unhandled command: {args.command}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

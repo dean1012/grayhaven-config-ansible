@@ -87,12 +87,15 @@
       root_name: "{{ deploy_websites_domain }}"
       uses_repository: "{{ deploy_websites_uses_repository | bool }}"
       repository_url: "{{ deploy_websites_repository.url | default('') | trim }}"
+      repository_webhook_secret: "{{ deploy_websites_repository.webhook_secret | default('') | trim }}"
       checkout_paths:
         prod: "{{ deploy_websites_checkout_root }}/{{ deploy_websites_domain }}/main"
         dev: "{{ deploy_websites_checkout_root }}/{{ deploy_websites_domain }}/dev"
       fallback_paths:
         prod: "{{ deploy_websites_fallback_root }}/{{ deploy_websites_domain }}/prod"
         dev: "{{ deploy_websites_fallback_root }}/{{ deploy_websites_domain }}/dev"
+      rendered_paths:
+        dev: "{{ deploy_websites_rendered_root }}/{{ deploy_websites_domain }}/dev"
       content_sources:
         prod: >-
           {{

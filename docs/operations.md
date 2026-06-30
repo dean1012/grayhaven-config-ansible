@@ -12,6 +12,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
 - [Backup & Restoration Operations](#backup--restoration-operations)
+- [Website Repository Deployments](#website-repository-deployments)
 - [GCS Restic Bucket Cleanup](#gcs-restic-bucket-cleanup)
 - [Root Command Audit Trail](#root-command-audit-trail)
 - [Operator Tmux Console](#operator-tmux-console)
@@ -225,6 +226,29 @@ Use the `grayhaven-backupctl` operations guide for:
 Restic installation and configuration, installation of the
 `grayhaven-backupctl` utility and its bash completion script, and remote bucket
 management are managed through Ansible by this repository.
+
+[Back to top](#operations)
+
+## Website Repository Deployments
+
+Repository-backed hosted domains deploy `site/frontend/` from the `main` and
+`dev` branches during normal convergence. The `main` branch is copied to the
+apex document root, and the `dev` branch is copied to the protected development
+document root.
+
+The deployment webhook at `/.grayhaven/deploy` is installed only for
+repository-backed domains. GitHub Actions calls this endpoint after validation
+passes. Nginx allows only GitHub source ranges to reach the endpoint, and the
+local deployment service accepts only configured repository URLs, the `main` or
+`dev` branch, and a valid HMAC signature made with the domain's configured
+webhook secret.
+
+Webhook deployment status is recorded in the
+`grayhaven-website-deploy-webhook.service` journal:
+
+```bash
+sudo journalctl -u grayhaven-website-deploy-webhook.service --no-pager
+```
 
 [Back to top](#operations)
 

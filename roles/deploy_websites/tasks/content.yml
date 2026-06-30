@@ -28,6 +28,7 @@
   loop:
     - "{{ deploy_websites_checkout_root }}"
     - "{{ deploy_websites_fallback_root }}"
+    - "{{ deploy_websites_rendered_root }}"
 
 - name: Remove repository checkout cache for fallback domains
   ansible.builtin.file:
@@ -42,6 +43,14 @@
     path: "{{ deploy_websites_fallback_root }}/{{ item.root_name }}"
     state: absent
   loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', true) | list }}"
+  loop_control:
+    label: "{{ item.root_name }}"
+
+- name: Remove rendered source cache for fallback domains
+  ansible.builtin.file:
+    path: "{{ deploy_websites_rendered_root }}/{{ item.root_name }}"
+    state: absent
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', false) | list }}"
   loop_control:
     label: "{{ item.root_name }}"
 
@@ -163,6 +172,23 @@
   loop_control:
     label: "{{ item.0.root_name }} {{ item.1 }}"
 
+- name: Render repository-backed development website content
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/grayhaven-website-deploy
+      - render-dev-source
+      - --source
+      - "{{ item.content_sources.dev }}"
+      - --target
+      - "{{ item.rendered_paths.dev }}"
+  become: true
+  become_user: ansible
+  register: deploy_websites_dev_source_render
+  changed_when: deploy_websites_dev_source_render.stdout | trim == "changed"
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', true) | list }}"
+  loop_control:
+    label: "{{ item.root_name }} dev"
+
 - name: Initialize website content deployment list
   ansible.builtin.set_fact:
     deploy_websites_content_deployments: []
@@ -174,7 +200,9 @@
         deploy_websites_content_deployments
         + [{
           "label": item.0.root_name ~ " " ~ item.1,
-          "src": item.0.content_sources[item.1],
+          "src": item.0.rendered_paths.dev
+            if item.0.uses_repository and item.1 == "dev"
+            else item.0.content_sources[item.1],
           "dest": deploy_websites_root ~ "/" ~ item.0.root_name ~ "/" ~ item.1
         }]
       }}

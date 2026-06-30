@@ -222,6 +222,14 @@ apex and `www` document root, and `site/frontend/` from the `dev` branch to the
 development document root. Domains without repository configuration are rendered
 from the generic fallback templates in the website deployment role.
 
+Repository-backed domains also receive a small deployment webhook at
+`/.grayhaven/deploy` on the apex hostname. The endpoint accepts signed GitHub
+Actions deployment requests only from GitHub source ranges, verifies the
+repository webhook secret from `grayhaven-vault`, and deploys only configured
+repositories and the `main` or `dev` branches. Deployments are locked per
+domain and branch so independent sites or branches can deploy without blocking
+each other.
+
 Host TLS mode issues certificates with Let's Encrypt through DNS-01 validation
 using the role-specific DigitalOcean DNS token from the vault. Certbot renewals
 are handled by the system timer installed by the Certbot package. A deploy hook

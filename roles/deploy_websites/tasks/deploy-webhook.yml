@@ -1,0 +1,149 @@
+---
+- name: Initialize repository-backed website deployment list
+  ansible.builtin.set_fact:
+    deploy_websites_repository_deployments: []
+  no_log: true
+
+- name: Build repository-backed website deployment list
+  ansible.builtin.set_fact:
+    deploy_websites_repository_deployments: >-
+      {{
+        deploy_websites_repository_deployments | default([])
+        + [{
+          "root_name": item.root_name,
+          "host": item.domain,
+          "repository_url": item.repository_url,
+          "webhook_secret": item.repository_webhook_secret,
+          "branches": {
+            "main": {
+              "checkout": item.checkout_paths.prod,
+              "source": item.content_sources.prod,
+              "destination": deploy_websites_root ~ "/" ~ item.root_name ~ "/prod"
+            },
+            "dev": {
+              "checkout": item.checkout_paths.dev,
+              "render_source": item.content_sources.dev,
+              "source": item.rendered_paths.dev,
+              "destination": deploy_websites_root ~ "/" ~ item.root_name ~ "/dev"
+            }
+          }
+        }]
+      }}
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', true) | list }}"
+  loop_control:
+    label: "{{ item.root_name }}"
+  no_log: true
+
+- name: Ensure website deployment configuration directory exists
+  ansible.builtin.file:
+    path: "{{ deploy_websites_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure website deployment runtime directory exists
+  ansible.builtin.file:
+    path: "{{ deploy_websites_runtime_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install website deployment command
+  ansible.builtin.copy:
+    src: grayhaven-website-deploy
+    dest: /usr/local/sbin/grayhaven-website-deploy
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart website deployment webhook
+
+- name: Install website deployment webhook service
+  ansible.builtin.template:
+    src: grayhaven-website-deploy-webhook.service.j2
+    dest: /etc/systemd/system/grayhaven-website-deploy-webhook.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart website deployment webhook
+
+- name: Install website deployment allowlist
+  ansible.builtin.copy:
+    dest: "{{ deploy_websites_config_dir }}/deployments.json"
+    owner: root
+    group: root
+    mode: "0600"
+    content: >-
+      {{
+        {
+          "deployments": deploy_websites_repository_deployments | default([])
+        }
+        | to_nice_json
+      }}
+  no_log: true
+  when: deploy_websites_repository_deployments | default([]) | length > 0
+  notify: Restart website deployment webhook
+
+- name: Remove website deployment allowlist when unused
+  ansible.builtin.file:
+    path: "{{ deploy_websites_config_dir }}/deployments.json"
+    state: absent
+  when: deploy_websites_repository_deployments | default([]) | length == 0
+
+- name: Fetch GitHub network metadata for deployment source allowlist
+  ansible.builtin.uri:
+    url: "{{ deploy_websites_github_meta_url }}"
+    return_content: true
+  register: deploy_websites_github_meta
+  changed_when: false
+  when: deploy_websites_repository_deployments | default([]) | length > 0
+
+- name: Install GitHub deployment source allowlist for nginx
+  ansible.builtin.copy:
+    dest: /etc/nginx/grayhaven-github-deploy-allow.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {% for cidr in deploy_websites_github_deployment_source_ranges %}
+      allow {{ cidr }};
+      {% endfor %}
+  vars:
+    deploy_websites_github_deployment_source_ranges: >-
+      {{
+        (
+          (deploy_websites_github_meta.json.actions | default([]))
+          + (deploy_websites_github_meta.json.hooks | default([]))
+        )
+        | unique
+        | sort
+      }}
+  when: deploy_websites_repository_deployments | default([]) | length > 0
+  notify: Reload nginx
+
+- name: Remove GitHub deployment source allowlist when unused
+  ansible.builtin.file:
+    path: /etc/nginx/grayhaven-github-deploy-allow.conf
+    state: absent
+  when: deploy_websites_repository_deployments | default([]) | length == 0
+  notify: Reload nginx
+
+- name: Enable website deployment webhook when repositories are configured
+  ansible.builtin.systemd_service:
+    name: grayhaven-website-deploy-webhook.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: deploy_websites_repository_deployments | default([]) | length > 0
+
+- name: Disable website deployment webhook when no repositories are configured
+  ansible.builtin.systemd_service:
+    name: grayhaven-website-deploy-webhook.service
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  failed_when: false
+  when: deploy_websites_repository_deployments | default([]) | length == 0
