@@ -22,21 +22,31 @@
       - item.domain is string
       - item.domain | trim | length > 0
       - item.deployment is not defined or item.deployment is mapping
-      - item.deployment is not defined or item.deployment.type is defined
-      - item.deployment is not defined or item.deployment.type == "static"
-      - item.deployment is not defined or item.deployment.repository is defined
-      - item.deployment is not defined or item.deployment.repository is mapping
-      - item.deployment is not defined or item.deployment.repository.url is defined
-      - item.deployment is not defined or item.deployment.repository.url is string
-      - item.deployment is not defined or item.deployment.repository.url is match("^https://")
+      - deploy_websites_domain_deployment | length == 0 or deploy_websites_domain_deployment.type is defined
+      - deploy_websites_domain_deployment | length == 0 or deploy_websites_domain_deployment.type == "static"
+      - >-
+        deploy_websites_domain_deployment.repository is not defined
+        or deploy_websites_domain_deployment.repository is mapping
+      - not deploy_websites_repository_configured or deploy_websites_domain_repository.url is defined
+      - not deploy_websites_repository_configured or deploy_websites_domain_repository.url is string
+      - not deploy_websites_repository_configured or deploy_websites_domain_repository.url is match("^https://")
+      - not deploy_websites_repository_configured or deploy_websites_domain_repository.webhook_secret is defined
+      - not deploy_websites_repository_configured or deploy_websites_domain_repository.webhook_secret is string
+      - >-
+        not deploy_websites_repository_configured
+        or deploy_websites_domain_repository.webhook_secret | trim | length > 0
     fail_msg: >-
       Each hosted domain must define a domain name. If deployment is present,
-      only deployment.type=static with an HTTPS public repository URL is
-      supported.
+      only deployment.type=static is supported. If deployment.repository is
+      present, it must define an HTTPS public repository URL and webhook secret.
     quiet: true
   loop: "{{ hosted_domains }}"
   loop_control:
     label: "{{ item.domain | default('undefined-domain') }}"
+  vars:
+    deploy_websites_domain_deployment: "{{ item.deployment | default({}) }}"
+    deploy_websites_domain_repository: "{{ deploy_websites_domain_deployment.repository | default({}) }}"
+    deploy_websites_repository_configured: "{{ deploy_websites_domain_repository | length > 0 }}"
 
 - name: Validate hosted domain development authentication entries
   ansible.builtin.assert:
@@ -72,7 +82,7 @@
     deploy_websites_domain: "{{ item.domain | trim }}"
     deploy_websites_deployment: "{{ item.deployment | default({}) }}"
     deploy_websites_repository: "{{ deploy_websites_deployment.repository | default({}) }}"
-    deploy_websites_uses_repository: "{{ deploy_websites_deployment | length > 0 }}"
+    deploy_websites_uses_repository: "{{ deploy_websites_repository | length > 0 }}"
     deploy_websites_site:
       root_name: "{{ deploy_websites_domain }}"
       uses_repository: "{{ deploy_websites_uses_repository | bool }}"
