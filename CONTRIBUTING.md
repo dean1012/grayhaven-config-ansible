@@ -84,7 +84,11 @@ ansible-lint .
 find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
   | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
 shellcheck files/grayhaven-ansible-runner files/grayhaven-ansible-poller roles/admin_access/files/gtmux
-python3 -m py_compile files/grayhaven-reboot-notify files/grayhaven-refresh-motd scripts/validate-rendered-alloy-config
+python3 -m py_compile \
+  files/grayhaven-reboot-notify \
+  files/grayhaven-refresh-motd \
+  roles/deploy_websites/files/grayhaven-website-deploy \
+  scripts/validate-rendered-alloy-config
 scripts/validate-rendered-alloy-config
 git ls-files '*.md' | xargs -r markdownlint-cli2
 ```

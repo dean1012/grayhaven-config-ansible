@@ -1,7 +1,7 @@
 ---
 - name: Install web hosting packages
   ansible.builtin.dnf:
-    name: "{{ web_static_packages }}"
+    name: "{{ deploy_websites_packages }}"
     state: present
 
 - name: Create Certbot configuration directories
@@ -15,7 +15,7 @@
     - /etc/letsencrypt
     - /etc/letsencrypt/renewal-hooks
     - /etc/letsencrypt/renewal-hooks/deploy
-  when: web_static_tls_mode == "host"
+  when: deploy_websites_tls_mode == "host"
 
 - name: Remove host certificate material in load balancer TLS mode
   ansible.builtin.file:
@@ -25,7 +25,7 @@
     - /etc/letsencrypt/live
     - /etc/letsencrypt/archive
     - /etc/letsencrypt/renewal
-  when: web_static_tls_mode == "load_balancer"
+  when: deploy_websites_tls_mode == "load_balancer"
   notify: Reload nginx
 
 - name: Disable Certbot renewal timer in load balancer TLS mode
@@ -34,7 +34,7 @@
     enabled: false
     state: stopped
   failed_when: false
-  when: web_static_tls_mode == "load_balancer"
+  when: deploy_websites_tls_mode == "load_balancer"
 
 - name: Validate DigitalOcean DNS token in host TLS mode
   ansible.builtin.assert:
@@ -43,23 +43,23 @@
       - digitalocean_dns_api_token | trim | length > 0
     fail_msg: "digitalocean_dns_api_token is required in host TLS mode."
     quiet: true
-  when: web_static_tls_mode == "host"
+  when: deploy_websites_tls_mode == "host"
   no_log: true
 
 - name: Install Certbot DigitalOcean credentials file
   ansible.builtin.copy:
-    dest: "{{ web_static_certbot_credentials_file }}"
+    dest: "{{ deploy_websites_certbot_credentials_file }}"
     owner: root
     group: root
     mode: "0600"
     content: |
       dns_digitalocean_token = {{ digitalocean_dns_api_token | trim }}
-  when: web_static_tls_mode == "host"
+  when: deploy_websites_tls_mode == "host"
   no_log: true
 
 - name: Remove Certbot DigitalOcean credentials file in load balancer TLS mode
   ansible.builtin.file:
-    path: "{{ web_static_certbot_credentials_file }}"
+    path: "{{ deploy_websites_certbot_credentials_file }}"
     state: absent
-  when: web_static_tls_mode == "load_balancer"
+  when: deploy_websites_tls_mode == "load_balancer"
   no_log: true

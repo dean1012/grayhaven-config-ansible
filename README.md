@@ -39,8 +39,8 @@ on repository-change poller events, or by manual invocation.
   reboots.
 - Optionally publish production metrics, selected logs, and managed alert rules
   to Grafana Cloud.
-- Serve configured static placeholders for hosted domains while dedicated
-  website repositories are being prepared.
+- Deploy repository-backed static websites for hosted domains, or render the
+  generic fallback site when no repository is configured.
 - Manage Nginx, host TLS certificates, load-balancer backend behavior, dev
   basic authentication, per-domain htpasswd files, and certificate renewal on
   web hosts.

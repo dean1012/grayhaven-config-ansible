@@ -1,0 +1,232 @@
+---
+- name: Create website docroot directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ deploy_websites_docroot_directories }}"
+  vars:
+    deploy_websites_docroot_directories: >-
+      {{
+        deploy_websites_sites
+        | map(attribute='root_name')
+        | product(['prod', 'dev'])
+        | map('join', '/')
+        | map('regex_replace', '^', deploy_websites_root ~ '/')
+        | list
+      }}
+
+- name: Create website source cache directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0755"
+  loop:
+    - "{{ deploy_websites_checkout_root }}"
+    - "{{ deploy_websites_fallback_root }}"
+    - "{{ deploy_websites_rendered_root }}"
+
+- name: Remove repository checkout cache for fallback domains
+  ansible.builtin.file:
+    path: "{{ deploy_websites_checkout_root }}/{{ item.root_name }}"
+    state: absent
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', false) | list }}"
+  loop_control:
+    label: "{{ item.root_name }}"
+
+- name: Remove fallback source cache for repository domains
+  ansible.builtin.file:
+    path: "{{ deploy_websites_fallback_root }}/{{ item.root_name }}"
+    state: absent
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', true) | list }}"
+  loop_control:
+    label: "{{ item.root_name }}"
+
+- name: Remove rendered source cache for fallback domains
+  ansible.builtin.file:
+    path: "{{ deploy_websites_rendered_root }}/{{ item.root_name }}"
+    state: absent
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', false) | list }}"
+  loop_control:
+    label: "{{ item.root_name }}"
+
+- name: Checkout production website repositories
+  ansible.builtin.git:
+    repo: "{{ item.repository_url }}"
+    dest: "{{ item.checkout_paths.prod }}"
+    version: main
+    force: true
+  become: true
+  become_user: ansible
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', true) | list }}"
+  loop_control:
+    label: "{{ item.root_name }} main"
+
+- name: Checkout development website repositories
+  ansible.builtin.git:
+    repo: "{{ item.repository_url }}"
+    dest: "{{ item.checkout_paths.dev }}"
+    version: dev
+    force: true
+  become: true
+  become_user: ansible
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', true) | list }}"
+  loop_control:
+    label: "{{ item.root_name }} dev"
+
+- name: Remove untracked files from website repository checkouts
+  ansible.builtin.command:
+    cmd: git clean -fdx
+    chdir: "{{ item.0.checkout_paths[item.1] }}"
+  become: true
+  become_user: ansible
+  register: deploy_websites_git_clean
+  changed_when: deploy_websites_git_clean.stdout | trim | length > 0
+  loop: >-
+    {{
+      deploy_websites_sites
+      | selectattr('uses_repository', 'equalto', true)
+      | product(['prod', 'dev'])
+      | list
+    }}
+  loop_control:
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+
+- name: Verify repository frontend source directories
+  ansible.builtin.stat:
+    path: "{{ item.0.content_sources[item.1] }}"
+  register: deploy_websites_repository_source_stats
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', true) | product(['prod', 'dev']) | list }}"
+  loop_control:
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+
+- name: Require repository frontend source directories
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+    fail_msg: >-
+      Website repository {{ item.item.0.repository_url }} branch
+      {{ 'main' if item.item.1 == 'prod' else 'dev' }} must contain
+      {{ deploy_websites_frontend_path }}/.
+    quiet: true
+  loop: "{{ deploy_websites_repository_source_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.0.root_name }} {{ item.item.1 }}"
+
+- name: Create generic fallback source directories
+  ansible.builtin.file:
+    path: "{{ item.0.content_sources[item.1] }}/assets"
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0755"
+  loop: >-
+    {{
+      deploy_websites_sites
+      | selectattr('uses_repository', 'equalto', false)
+      | product(['prod', 'dev'])
+      | list
+    }}
+  loop_control:
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+
+- name: Render generic fallback website content
+  ansible.builtin.template:
+    src: "generic-static-site-{{ item.1 }}.html.j2"
+    dest: "{{ item.0.content_sources[item.1] }}/index.html"
+    owner: ansible
+    group: ansible
+    mode: "0644"
+  loop: >-
+    {{
+      deploy_websites_sites
+      | selectattr('uses_repository', 'equalto', false)
+      | product(['prod', 'dev'])
+      | list
+    }}
+  loop_control:
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+  vars:
+    deploy_websites_generic_domain: "{{ item.0.root_name }}"
+
+- name: Install generic fallback assets
+  ansible.builtin.copy:
+    src: generic-assets/
+    dest: "{{ item.0.content_sources[item.1] }}/assets/"
+    owner: ansible
+    group: ansible
+    directory_mode: "0755"
+    mode: "0644"
+  loop: >-
+    {{
+      deploy_websites_sites
+      | selectattr('uses_repository', 'equalto', false)
+      | product(['prod', 'dev'])
+      | list
+    }}
+  loop_control:
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+
+- name: Render repository-backed development website content
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/grayhaven-website-deploy
+      - render-dev-source
+      - --source
+      - "{{ item.content_sources.dev }}"
+      - --target
+      - "{{ item.rendered_paths.dev }}"
+  become: true
+  become_user: ansible
+  register: deploy_websites_dev_source_render
+  changed_when: deploy_websites_dev_source_render.stdout | trim == "changed"
+  loop: "{{ deploy_websites_sites | selectattr('uses_repository', 'equalto', true) | list }}"
+  loop_control:
+    label: "{{ item.root_name }} dev"
+
+- name: Initialize website content deployment list
+  ansible.builtin.set_fact:
+    deploy_websites_content_deployments: []
+
+- name: Build website content deployment list
+  ansible.builtin.set_fact:
+    deploy_websites_content_deployments: >-
+      {{
+        deploy_websites_content_deployments
+        + [{
+          "label": item.0.root_name ~ " " ~ item.1,
+          "src": item.0.rendered_paths.dev
+            if item.0.uses_repository and item.1 == "dev"
+            else item.0.content_sources[item.1],
+          "dest": deploy_websites_root ~ "/" ~ item.0.root_name ~ "/" ~ item.1
+        }]
+      }}
+  loop: "{{ deploy_websites_sites | product(['prod', 'dev']) | list }}"
+  loop_control:
+    label: "{{ item.0.root_name }} {{ item.1 }}"
+
+- name: Synchronize website content to docroots
+  ansible.posix.synchronize:
+    src: "{{ item.src }}/"
+    dest: "{{ item.dest }}/"
+    archive: true
+    delete: true
+    rsync_opts:
+      - "--chown=root:root"
+      - "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r"
+  delegate_to: "{{ inventory_hostname }}"
+  loop: "{{ deploy_websites_content_deployments | default([]) }}"
+  loop_control:
+    label: "{{ item.label }}"
+  notify: Reload nginx
+
+- name: Restore SELinux contexts for website content
+  ansible.builtin.command:
+    cmd: "restorecon -RFv {{ deploy_websites_root }}"
+  register: deploy_websites_restorecon
+  changed_when: deploy_websites_restorecon.stdout | trim | length > 0
