@@ -45,6 +45,7 @@
     mode: "{{ item.mode }}"
   loop:
     - path: "{{ observability_config_dir }}"
+      group: alloy
       mode: "0750"
     - path: /var/lib/grayhaven/observability
       owner: ansible
