@@ -64,7 +64,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --require-hashes --requirement pip3_requirements.txt
-          python -m pip install ansible-lint
+          python -m pip install ansible-lint==26.4.0
 
       - name: Validate rendered Alloy config
         run: scripts/validate-rendered-alloy-config
