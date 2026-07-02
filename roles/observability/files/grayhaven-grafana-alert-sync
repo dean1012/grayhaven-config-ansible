@@ -141,17 +141,6 @@ class GrafanaClient:
 
         return silence_id
 
-    def silences(self) -> list[dict[str, Any]]:
-        return self.request("GET", "/api/alertmanager/grafana/api/v2/silences")
-
-    def delete_silence(self, silence_id: str) -> None:
-        encoded_silence_id = urllib.parse.quote(silence_id, safe="")
-        self.request(
-            "DELETE",
-            f"/api/alertmanager/grafana/api/v2/silence/{encoded_silence_id}",
-            expected=(200, 202, 204),
-        )
-
 
 def stable_uid(title: str) -> str:
     digest = hashlib.sha1(title.encode("utf-8")).hexdigest()[:24]
@@ -689,36 +678,6 @@ def create_initial_silence(config: dict[str, Any], duration_minutes: int) -> str
     return client.create_silence(payload)
 
 
-def is_initial_silence(silence: dict[str, Any]) -> bool:
-    if silence.get("createdBy") != INITIAL_SILENCE_CREATED_BY:
-        return False
-
-    if silence.get("comment") != INITIAL_SILENCE_COMMENT:
-        return False
-
-    for matcher in silence.get("matchers", []):
-        if matcher.get("name") == MANAGED_LABEL and matcher.get("value") == MANAGED_VALUE:
-            return True
-
-    return False
-
-
-def cleanup_expired_initial_silences(config: dict[str, Any]) -> int:
-    client = GrafanaClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
-    deleted = 0
-
-    for silence in client.silences():
-        silence_id = silence.get("id")
-        state = silence.get("status", {}).get("state")
-        if not isinstance(silence_id, str) or state != "expired" or not is_initial_silence(silence):
-            continue
-
-        client.delete_silence(silence_id)
-        deleted += 1
-
-    return deleted
-
-
 def sync(config: dict[str, Any]) -> tuple[int, int, int]:
     client = GrafanaClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
     datasource_uid = client.datasource_uid(config["grafana"]["prometheus_datasource_name"])
@@ -770,15 +729,7 @@ def main() -> int:
         default=15,
         help="Initial convergence silence duration in minutes",
     )
-    parser.add_argument(
-        "--cleanup-expired-initial-silences",
-        action="store_true",
-        help="Delete expired initial convergence silences created by this helper",
-    )
     args = parser.parse_args()
-
-    if args.create_initial_silence and args.cleanup_expired_initial_silences:
-        parser.error("--create-initial-silence and --cleanup-expired-initial-silences are mutually exclusive")
 
     with open(args.config, encoding="utf-8") as config_file:
         config = json.load(config_file)
@@ -786,11 +737,6 @@ def main() -> int:
     if args.create_initial_silence:
         silence_id = create_initial_silence(config, args.silence_minutes)
         print(f"changed=true silence_id={silence_id}")
-        return 0
-
-    if args.cleanup_expired_initial_silences:
-        deleted = cleanup_expired_initial_silences(config)
-        print(f"changed={str(deleted > 0).lower()} deleted={deleted}")
         return 0
 
     created, updated, deleted = sync(config)
