@@ -615,6 +615,35 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                     **common,
                 )
             )
+            rules.append(
+                alert_rule(
+                    title=f"{site['domain']} using untrusted SSL certificate",
+                    expression=(
+                        "max by (domain, environment, role, project, client) "
+                        f'(probe_success{{domain="{promql_string(site["domain"])}",'
+                        'check="ssl_certificate_trusted"})'
+                    ),
+                    evaluator_type="lt",
+                    threshold=1,
+                    labels=base_labels(
+                        config,
+                        {
+                            "check": "ssl_certificate_trusted",
+                            "domain": site["domain"],
+                            "project": web_host["project"],
+                            "role": "web",
+                        },
+                    ),
+                    annotations={
+                        "summary": "SSL certificate is not publicly trusted",
+                        "description": (
+                            f"{site['domain']} is presenting an SSL certificate "
+                            "that the external probe does not trust."
+                        ),
+                    },
+                    **common,
+                )
+            )
 
     return rules
 
