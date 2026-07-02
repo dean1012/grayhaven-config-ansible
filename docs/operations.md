@@ -7,6 +7,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 
 - [Manual Runner Invocation](#manual-runner-invocation)
 - [Runner And Poller Status](#runner-and-poller-status)
+- [Switching Deployed Configuration Branches](#switching-deployed-configuration-branches)
 - [Manual Discord Notification Test](#manual-discord-notification-test)
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
@@ -73,6 +74,46 @@ Managed hosts send one informational `Server Rebooted` Discord notification
 after each boot. The local `grayhaven-reboot-notify.service` records the current
 boot ID after a successful notification so repeated service checks do not resend
 the same reboot event.
+
+[Back to top](#operations)
+
+## Switching Deployed Configuration Branches
+
+An environment can be switched between deployed configuration branches without
+rebuilding infrastructure. This is mainly useful for staging branch testing, but
+the procedure is environment agnostic. The target branch must already exist in
+the public configuration repository.
+
+Connect to the active control bastion and update the runner environment:
+
+```bash
+TARGET_BRANCH="<target-branch>"
+
+sudo sed -i "s|^REPO_REF=.*|REPO_REF='${TARGET_BRANCH}'|" \
+  /etc/grayhaven/ansible/runner.env
+```
+
+Start the poller so it records the new tracked ref and triggers convergence:
+
+```bash
+sudo systemctl start grayhaven-ansible-poller.service
+sudo journalctl -u grayhaven-ansible-poller.service -n 80 --no-pager
+sudo journalctl -u grayhaven-ansible-runner.service -f --no-pager
+```
+
+After convergence succeeds, verify the active checkout and poller state:
+
+```bash
+sudo grep '^REPO_REF=' /etc/grayhaven/ansible/runner.env
+sudo -iu ansible \
+  git -C /home/ansible/grayhaven-config-ansible rev-parse --abbrev-ref HEAD
+sudo -iu ansible \
+  git -C /home/ansible/grayhaven-config-ansible rev-parse --short HEAD
+sudo cat /var/lib/grayhaven/ansible-poller/config.ref
+```
+
+Do not delete the previously deployed branch until the environment has
+successfully converged from the new branch.
 
 [Back to top](#operations)
 
