@@ -119,6 +119,11 @@ basic-auth behavior, certificate expiration, and certificate trust. CPU alerts
 use a five-minute rate window and require five minutes above threshold before
 firing. Alert rules send to the configured Grafana IRM contact point.
 
+Normal threshold and probe alerts treat missing query data as OK so a telemetry
+gap does not make every managed alert fire at once. Missing host metrics are
+handled by dedicated metrics-data alerts that compare the expected managed host
+inventory with telemetry received by Grafana Cloud.
+
 [Back to top](#observability-architecture)
 
 ## Operational Boundaries
