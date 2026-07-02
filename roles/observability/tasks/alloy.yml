@@ -191,3 +191,33 @@
     state: started
     daemon_reload: true
   when: observability_metrics_enabled
+
+- name: Apply pending Alloy configuration changes before alert sync
+  ansible.builtin.meta: flush_handlers
+  when: observability_metrics_enabled
+
+- name: Wait for Grafana Alloy readiness
+  ansible.builtin.uri:
+    url: "{{ observability_alloy_http_url }}/-/ready"
+    return_content: true
+  register: observability_alloy_ready
+  retries: "{{ observability_alloy_ready_retries }}"
+  delay: "{{ observability_alloy_ready_delay }}"
+  until:
+    - observability_alloy_ready.status == 200
+    - "'Alloy is ready' in observability_alloy_ready.content"
+  changed_when: false
+  when: observability_metrics_enabled
+
+- name: Wait for Grafana Alloy remote-write success
+  ansible.builtin.uri:
+    url: "{{ observability_alloy_http_url }}/metrics"
+    return_content: true
+  register: observability_alloy_metrics
+  retries: "{{ observability_alloy_remote_write_retries }}"
+  delay: "{{ observability_alloy_remote_write_delay }}"
+  until: >-
+    observability_alloy_metrics.content is
+    regex('(?m)^prometheus_remote_storage_succeeded_samples_total(?:\\{[^}]*\\})?\\s+[1-9][0-9]*(?:\\.0+)?$')
+  changed_when: false
+  when: observability_metrics_enabled
