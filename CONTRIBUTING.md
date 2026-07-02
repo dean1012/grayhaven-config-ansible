@@ -21,7 +21,7 @@ Install Ansible runtime and validation dependencies:
 ```bash
 sudo dnf install ShellCheck
 python3 -m pip install --require-hashes --requirement pip3_requirements.txt
-python3 -m pip install ansible-lint yamllint
+python3 -m pip install ansible-lint==26.4.0 yamllint
 npm install --global markdownlint-cli2
 scripts/install-galaxy-collections
 ```
@@ -85,9 +85,12 @@ find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
   | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
 shellcheck files/grayhaven-ansible-runner files/grayhaven-ansible-poller roles/admin_access/files/gtmux
 python3 -m py_compile \
+  files/grayhaven-gcs-restic-bucket-cleanup \
   files/grayhaven-reboot-notify \
   files/grayhaven-refresh-motd \
   roles/deploy_websites/files/grayhaven-website-deploy \
+  roles/observability/files/grayhaven-grafana-alert-sync \
+  roles/observability/files/grayhaven-observability-textfile \
   scripts/validate-rendered-alloy-config
 scripts/validate-rendered-alloy-config
 git ls-files '*.md' | xargs -r markdownlint-cli2

@@ -1,7 +1,3 @@
 ---
-managed_inventory_environment_vpc_cidrs:
-  staging: 10.20.0.0/16
-  prod: 10.30.0.0/16
-
-managed_inventory_fallback_vpc_cidr: >-
-  {{ managed_inventory_environment_vpc_cidrs.get(grayhaven_environment, '10.10.0.0/16') }}
+grayhaven_network_vpc_cidr: ""
+managed_inventory_fallback_vpc_cidr: "{{ grayhaven_network_vpc_cidr }}"

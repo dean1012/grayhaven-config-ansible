@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import re
@@ -16,6 +17,11 @@ from typing import Any
 
 MANAGED_LABEL = "configured_by"
 MANAGED_VALUE = "ansible"
+INITIAL_SILENCE_CREATED_BY = "grayhaven-grafana-alert-sync"
+INITIAL_SILENCE_COMMENT = (
+    "Initial Grayhaven Systems LLC convergence silence while new hosts "
+    "settle and Alloy sends initial telemetry."
+)
 
 
 class GrafanaError(RuntimeError):
@@ -119,6 +125,22 @@ class GrafanaClient:
     def delete_rule(self, uid: str) -> None:
         self.request("DELETE", f"/api/v1/provisioning/alert-rules/{uid}", expected=(200, 202, 204))
 
+    def create_silence(self, payload: dict[str, Any]) -> str:
+        response = self.request(
+            "POST",
+            "/api/alertmanager/grafana/api/v2/silences",
+            payload,
+            expected=(200, 201, 202),
+        )
+        if not isinstance(response, dict):
+            raise GrafanaError("Grafana silence create returned an unexpected response")
+
+        silence_id = response.get("silenceID") or response.get("id")
+        if not isinstance(silence_id, str) or not silence_id:
+            raise GrafanaError("Grafana silence create did not return a silence ID")
+
+        return silence_id
+
 
 def stable_uid(title: str) -> str:
     digest = hashlib.sha1(title.encode("utf-8")).hexdigest()[:24]
@@ -130,7 +152,7 @@ def promql_string(value: str) -> str:
 
 
 def domain_regex(values: list[str]) -> str:
-    return "|".join(re.escape(value) for value in values)
+    return promql_string("|".join(re.escape(value) for value in values))
 
 
 def duration_seconds(value: str | int) -> int:
@@ -330,17 +352,17 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 title=f"{host['short_hostname']} CPU utilization",
                 expression=(
                     "100 * (1 - avg by (host, environment, role, project, client) "
-                    f'(rate(node_cpu_seconds_total{{{host_selector(host["fqdn"])},mode="idle"}}[1m])))'
+                    f'(rate(node_cpu_seconds_total{{{host_selector(host["fqdn"])},mode="idle"}}[5m])))'
                 ),
                 evaluator_type="gt",
                 threshold=float(thresholds["cpu_percent"]),
-                duration="2m",
+                duration="5m",
                 labels=host_labels(config, host, "cpu_utilization"),
                 annotations={
                     "summary": "CPU utilization is high",
                     "description": (
-                        f"{host['fqdn']} CPU utilization is >= {thresholds['cpu_percent']}% "
-                        "for >= 2 minutes."
+                        f"{host['fqdn']} 5-minute average CPU utilization is >= "
+                        f"{thresholds['cpu_percent']}% for >= 5 minutes."
                     ),
                     "check_value": "{{ humanize $values.A.Value }}%",
                 },
@@ -379,9 +401,9 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 expression=(
                     "100 * (1 - max by (host, environment, role, project, client, mountpoint) "
                     f'(node_filesystem_avail_bytes{{{host_selector(host["fqdn"])},mountpoint="/",'
-                    'fstype!~"tmpfs|overlay"}}) / max by (host, environment, role, project, client, mountpoint) '
+                    'fstype!~"tmpfs|overlay"}) / max by (host, environment, role, project, client, mountpoint) '
                     f'(node_filesystem_size_bytes{{{host_selector(host["fqdn"])},mountpoint="/",'
-                    'fstype!~"tmpfs|overlay"}}))'
+                    'fstype!~"tmpfs|overlay"}))'
                 ),
                 evaluator_type="gt",
                 threshold=float(thresholds["filesystem_percent"]),
@@ -514,7 +536,7 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                 expression=(
                     "max by (domain, environment, role, project, client) "
                     f'(probe_success{{domain="{promql_string(site["dev_domain"])}",'
-                    'check="dev_basic_auth_401"}})'
+                    'check="dev_basic_auth_401"})'
                 ),
                 evaluator_type="lt",
                 threshold=1,
@@ -542,7 +564,7 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                 expression=(
                     "min by (domain, environment, role, project, client) "
                     f'(probe_success{{domain=~"{domain_regex(redirect_domains)}",'
-                    'check="http_https_redirect"}})'
+                    'check="http_https_redirect"})'
                 ),
                 evaluator_type="lt",
                 threshold=1,
@@ -573,7 +595,7 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                     expression=(
                         "max by (domain, environment, role, project, client) "
                         f'(probe_ssl_earliest_cert_expiry{{domain="{promql_string(site["domain"])}",'
-                        'check="ssl_certificate"}} - time())'
+                        'check="ssl_certificate"} - time())'
                     ),
                     evaluator_type="lt",
                     threshold=0,
@@ -589,6 +611,35 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                     annotations={
                         "summary": "SSL certificate is expired",
                         "description": f"{site['domain']} SSL certificate is expired.",
+                    },
+                    **common,
+                )
+            )
+            rules.append(
+                alert_rule(
+                    title=f"{site['domain']} using untrusted SSL certificate",
+                    expression=(
+                        "max by (domain, environment, role, project, client) "
+                        f'(probe_success{{domain="{promql_string(site["domain"])}",'
+                        'check="ssl_certificate_trusted"})'
+                    ),
+                    evaluator_type="lt",
+                    threshold=1,
+                    labels=base_labels(
+                        config,
+                        {
+                            "check": "ssl_certificate_trusted",
+                            "domain": site["domain"],
+                            "project": web_host["project"],
+                            "role": "web",
+                        },
+                    ),
+                    annotations={
+                        "summary": "SSL certificate is not publicly trusted",
+                        "description": (
+                            f"{site['domain']} is presenting an SSL certificate "
+                            "that the external probe does not trust."
+                        ),
                     },
                     **common,
                 )
@@ -627,6 +678,46 @@ def comparable(rule: dict[str, Any]) -> dict[str, Any]:
 def is_managed(rule: dict[str, Any], client: str) -> bool:
     labels = rule.get("labels", {})
     return labels.get(MANAGED_LABEL) == MANAGED_VALUE and labels.get("client") == client
+
+
+def timestamp(value: datetime) -> str:
+    return value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def create_initial_silence(config: dict[str, Any], duration_minutes: int) -> str:
+    if duration_minutes < 1:
+        raise GrafanaError("initial silence duration must be at least one minute")
+
+    client = GrafanaClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
+    labels = config["labels"]
+    now = datetime.now(timezone.utc)
+    payload = {
+        "matchers": [
+            {
+                "name": MANAGED_LABEL,
+                "value": MANAGED_VALUE,
+                "isRegex": False,
+                "isEqual": True,
+            },
+            {
+                "name": "client",
+                "value": labels["client"],
+                "isRegex": False,
+                "isEqual": True,
+            },
+            {
+                "name": "environment",
+                "value": labels["environment"],
+                "isRegex": False,
+                "isEqual": True,
+            },
+        ],
+        "startsAt": timestamp(now),
+        "endsAt": timestamp(now + timedelta(minutes=duration_minutes)),
+        "createdBy": INITIAL_SILENCE_CREATED_BY,
+        "comment": INITIAL_SILENCE_COMMENT,
+    }
+    return client.create_silence(payload)
 
 
 def sync(config: dict[str, Any]) -> tuple[int, int, int]:
@@ -669,10 +760,26 @@ def sync(config: dict[str, Any]) -> tuple[int, int, int]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, help="Path to Grafana alert sync JSON configuration")
+    parser.add_argument(
+        "--create-initial-silence",
+        action="store_true",
+        help="Create the initial convergence silence and exit without syncing alert rules",
+    )
+    parser.add_argument(
+        "--silence-minutes",
+        type=int,
+        default=15,
+        help="Initial convergence silence duration in minutes",
+    )
     args = parser.parse_args()
 
     with open(args.config, encoding="utf-8") as config_file:
         config = json.load(config_file)
+
+    if args.create_initial_silence:
+        silence_id = create_initial_silence(config, args.silence_minutes)
+        print(f"changed=true silence_id={silence_id}")
+        return 0
 
     created, updated, deleted = sync(config)
     changed = created + updated + deleted > 0

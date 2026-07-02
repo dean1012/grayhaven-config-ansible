@@ -90,23 +90,53 @@
     USER: ansible
     LOGNAME: ansible
 
+- name: Create grayhaven-backupctl virtual environment
+  ansible.builtin.command:
+    cmd: >-
+      /usr/bin/python3 -m venv
+      --system-site-packages
+      {{ backupctl_venv_dir | quote }}
+    creates: "{{ backupctl_venv_dir }}/bin/python"
+
 - name: Install grayhaven-backupctl Python requirements
   ansible.builtin.pip:
-    executable: /usr/bin/pip3
+    virtualenv: "{{ backupctl_venv_dir }}"
     requirements: "{{ backupctl_checkout_dir }}/requirements.txt"
+    extra_args: --require-hashes
 
-- name: Install grayhaven-backupctl command
+- name: Ensure grayhaven-backupctl libexec directory exists
+  ansible.builtin.file:
+    path: "{{ backupctl_libexec_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install grayhaven-backupctl implementation
   ansible.builtin.copy:
     src: "{{ backupctl_checkout_dir }}/grayhaven-backupctl"
-    dest: /usr/local/sbin/grayhaven-backupctl
+    dest: "{{ backupctl_libexec_dir }}/grayhaven-backupctl"
     owner: root
     group: root
     mode: "0755"
     remote_src: true
 
+- name: Install grayhaven-backupctl command wrapper
+  ansible.builtin.copy:
+    dest: "{{ backupctl_command_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+      PYTHON={{ (backupctl_venv_dir ~ '/bin/python') | quote }}
+      BACKUPCTL={{ (backupctl_libexec_dir ~ '/grayhaven-backupctl') | quote }}
+      exec "$PYTHON" "$BACKUPCTL" "$@"
+
 - name: Generate grayhaven-backupctl bash completion
   ansible.builtin.command:
-    cmd: /usr/local/sbin/grayhaven-backupctl completion bash
+    cmd: "{{ backupctl_command_path }} completion bash"
   register: backupctl_completion
   changed_when: false
 

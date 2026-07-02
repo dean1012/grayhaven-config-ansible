@@ -61,6 +61,12 @@ Metrics include:
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
   domains.
 
+HTTPS availability, development basic-auth, and certificate-expiry probes check
+site behavior while allowing untrusted certificate chains. Separate
+certificate-trust probes validate whether the presented certificate is trusted
+by the external probe. This keeps staging-certificate deployments from looking
+unavailable while still surfacing explicit untrusted-certificate alerts.
+
 The active control node publishes the full known-host inventory as textfile
 metrics so dashboards and alert rules can reason about all expected hosts.
 
@@ -99,10 +105,19 @@ Managed alert rules are labeled `configured_by=ansible`; Ansible only creates,
 updates, or deletes rules carrying that label for the configured client. Manual
 Grafana Cloud alert rules are left alone as long as they do not use that label.
 
+On first convergence for a new control node, Ansible creates a short Grafana
+Cloud silence matching the managed alert labels `configured_by=ansible`,
+`client=grayhaven`, and `environment=prod` before syncing managed alert rules.
+The silence gives new hosts time to settle and gives Alloy time to send initial
+telemetry before alert evaluation begins. A local marker prevents normal
+convergence from creating the silence again on the same control node.
+
 Managed alerts cover the same operational checks surfaced by the Grafana
 dashboards where alerting is useful, including host metrics, service state,
-backup freshness, Ansible convergence, and web availability checks. Alert rules
-send to the configured Grafana IRM contact point.
+backup freshness, Ansible convergence, web availability, development
+basic-auth behavior, certificate expiration, and certificate trust. CPU alerts
+use a five-minute rate window and require five minutes above threshold before
+firing. Alert rules send to the configured Grafana IRM contact point.
 
 [Back to top](#observability-architecture)
 

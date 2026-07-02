@@ -60,7 +60,14 @@ sudo journalctl -u grayhaven-reboot-notify.service
 The poller checks the tracked configuration and vault refs every five minutes.
 When it detects a change, it starts the runner and then records the observed
 refs. If the runner trigger fails, the ref state is not advanced so the next
-poll can retry the same change.
+poll can retry the same change. Pushing to the deployed configuration branch or
+deployed vault branch can therefore start convergence automatically within the
+next poll interval.
+
+The poller is not a convergence queue. If another repository change is pushed
+while convergence is already running, that change may not be applied by the
+active run. In that case, run manual convergence or wait for the next scheduled
+runner pass.
 
 Managed hosts send one informational `Server Rebooted` Discord notification
 after each boot. The local `grayhaven-reboot-notify.service` records the current
@@ -224,8 +231,9 @@ Use the `grayhaven-backupctl` operations guide for:
 - [restoring in place](https://github.com/dean1012/grayhaven-backupctl/blob/main/docs/operations.md#restoring-in-place).
 
 Restic installation and configuration, installation of the
-`grayhaven-backupctl` utility and its bash completion script, and remote bucket
-management are managed through Ansible by this repository.
+`grayhaven-backupctl` utility, its isolated Python runtime, and its bash
+completion script, as well as remote bucket management, are managed through
+Ansible by this repository.
 
 [Back to top](#operations)
 
@@ -366,9 +374,34 @@ sudo journalctl -u alloy.service
 sudo journalctl -u grayhaven-ansible-runner.service
 ```
 
-Ansible-managed Grafana alert rules are labeled `configured_by=ansible`.
-Manual Grafana Cloud alert rules should not use that label because Ansible uses
-it to identify rules it owns.
+Ansible-managed Grafana alert rules use the managed label set
+`configured_by=ansible`, `client=grayhaven`, and `environment=prod`. The
+`client` value is derived from the managed host `client-*` inventory tag, and
+Grafana Cloud alerting is currently supported only in `prod`. Manual Grafana
+Cloud alert rules should not use that managed label set because Ansible uses it
+to identify rules it owns.
+
+Before planned maintenance, including managed host reboots, create a Grafana
+Cloud silence for the affected managed alerts when Grafana Cloud is enabled.
+Set the silence to expire at the planned end of the maintenance window. If the
+window must be extended, extend the silence before it expires. If maintenance
+finishes early, revoke the silence early so new issues are reported normally.
+While silenced, matching alert groups and notifications are not created in
+Grafana Cloud.
+
+Useful silence matcher examples:
+
+- All Ansible-managed production alerts:
+  `configured_by=ansible`, `client=grayhaven`, `environment=prod`.
+- All managed web server alerts:
+  `configured_by=ansible`, `client=grayhaven`, `environment=prod`,
+  `role=web`.
+- A single managed web server:
+  `configured_by=ansible`, `client=grayhaven`, `environment=prod`,
+  `host=grayhaven-core-prod-web-01.grayhavensystems.com`.
+- A single managed domain:
+  `configured_by=ansible`, `client=grayhaven`, `environment=prod`,
+  `domain=grayhavensystems.com`.
 
 Grafana Cloud integration is supported only for the `prod` environment. The
 [observability architecture](observability-architecture.md) documentation

@@ -38,6 +38,8 @@
       Banner /etc/issue
       ClientAliveInterval 60
       ClientAliveCountMax 5
+      LoginGraceTime 30
+      MaxAuthTries 3
       UseDNS no
   notify: Restart sshd
 

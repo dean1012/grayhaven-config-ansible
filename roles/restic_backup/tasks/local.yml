@@ -181,6 +181,86 @@
       Type=oneshot
       ExecStart=/usr/local/sbin/grayhaven-restic-backup
 
+- name: Install restic integrity check script
+  ansible.builtin.copy:
+    dest: /usr/local/sbin/grayhaven-restic-check
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+
+      LOCAL_REPOSITORY={{ restic_backup_repository_path | quote }}
+      REMOTE_ENABLED={{ 'true' if restic_backup_remote_gcs_enabled else 'false' }}
+      REMOTE_REPOSITORY={{ restic_backup_remote_gcs_repository | default('') | quote }}
+      PASSWORD_FILE=/etc/grayhaven/backup/restic-password
+      RESTIC_CACHE_DIR=/var/cache/restic
+      GCS_CREDENTIALS_FILE=/etc/grayhaven/backup/gcs-credentials.json
+      GCS_PROJECT_ID={{ restic_backup_remote_gcs_project_id | default('') | quote }}
+
+      export RESTIC_CACHE_DIR
+
+      check_repository() {
+        local repository=$1
+
+        restic \
+          --repo "$repository" \
+          --password-file "$PASSWORD_FILE" \
+          check \
+          --read-data-subset=5%
+      }
+
+      check_repository "$LOCAL_REPOSITORY"
+
+      if [[ "$REMOTE_ENABLED" == "true" ]]; then
+        export GOOGLE_PROJECT_ID="$GCS_PROJECT_ID"
+        export GOOGLE_APPLICATION_CREDENTIALS="$GCS_CREDENTIALS_FILE"
+        check_repository "$REMOTE_REPOSITORY"
+      fi
+
+- name: Install restic integrity check service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-restic-check.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Grayhaven Systems LLC restic integrity check
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/grayhaven-restic-check
+
+- name: Install restic integrity check timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-restic-check.timer
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Run Grayhaven Systems LLC restic integrity check weekly
+
+      [Timer]
+      OnCalendar=Sun *-*-* 03:37:00
+      RandomizedDelaySec=30m
+      Persistent=true
+      Unit=grayhaven-restic-check.service
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Enable restic integrity check timer
+  ansible.builtin.systemd_service:
+    name: grayhaven-restic-check.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
 - name: Install local restic backup timer
   ansible.builtin.copy:
     dest: /etc/systemd/system/grayhaven-restic-backup.timer

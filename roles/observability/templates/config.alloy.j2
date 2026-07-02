@@ -10,7 +10,7 @@ prometheus.exporter.unix "node" {
   enable_collectors        = ["systemd"]
 
   systemd {
-    unit_include = "(sshd|firewalld|fail2ban|nginx|grayhaven-restic-backup|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
+    unit_include = "(sshd|firewalld|fail2ban|nginx|grayhaven-restic-backup|grayhaven-restic-check|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
     start_time   = true
   }
 
@@ -43,6 +43,24 @@ modules:
       preferred_ip_protocol: ip4
       valid_status_codes:
         - 401
+  http_2xx_skip_tls_verify:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4
+      tls_config:
+        insecure_skip_verify: true
+      valid_status_codes:
+        - 200
+  http_401_skip_tls_verify:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4
+      tls_config:
+        insecure_skip_verify: true
+      valid_status_codes:
+        - 401
   http_redirect_https:
     prober: http
     timeout: 5s
@@ -64,7 +82,7 @@ modules:
   target {
     name    = {{ (site_id ~ "_apex_200") | to_json }}
     address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
-    module  = "http_2xx"
+    module  = "http_2xx_skip_tls_verify"
     labels  = {
       check       = "https_200",
       client      = {{ observability_client | to_json }},
@@ -79,7 +97,7 @@ modules:
   target {
     name    = {{ (site_id ~ "_www_200") | to_json }}
     address = {{ ("https://" ~ site.aliases[0] ~ "/") | to_json }}
-    module  = "http_2xx"
+    module  = "http_2xx_skip_tls_verify"
     labels  = {
       check       = "https_200",
       client      = {{ observability_client | to_json }},
@@ -94,7 +112,7 @@ modules:
   target {
     name    = {{ (site_id ~ "_dev_401") | to_json }}
     address = {{ ("https://" ~ site.dev_domain ~ "/") | to_json }}
-    module  = "http_401"
+    module  = "http_401_skip_tls_verify"
     labels  = {
       check       = "dev_basic_auth_401",
       client      = {{ observability_client | to_json }},
@@ -109,9 +127,24 @@ modules:
   target {
     name    = {{ (site_id ~ "_cert") | to_json }}
     address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
-    module  = "http_2xx"
+    module  = "http_2xx_skip_tls_verify"
     labels  = {
       check       = "ssl_certificate",
+      client      = {{ observability_client | to_json }},
+      domain      = {{ site.domain | to_json }},
+      environment = {{ grayhaven_environment | to_json }},
+      host        = {{ inventory_hostname | to_json }},
+      project     = {{ observability_project | to_json }},
+      role        = {{ observability_role | to_json }},
+    }
+  }
+
+  target {
+    name    = {{ (site_id ~ "_cert_trust") | to_json }}
+    address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
+    module  = "http_2xx"
+    labels  = {
+      check       = "ssl_certificate_trusted",
       client      = {{ observability_client | to_json }},
       domain      = {{ site.domain | to_json }},
       environment = {{ grayhaven_environment | to_json }},
