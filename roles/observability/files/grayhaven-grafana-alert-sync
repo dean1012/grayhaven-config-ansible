@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import re
@@ -16,6 +17,11 @@ from typing import Any
 
 MANAGED_LABEL = "configured_by"
 MANAGED_VALUE = "ansible"
+INITIAL_SILENCE_CREATED_BY = "grayhaven-grafana-alert-sync"
+INITIAL_SILENCE_COMMENT = (
+    "Initial Grayhaven Systems LLC convergence silence while new hosts "
+    "settle and Alloy sends initial telemetry."
+)
 
 
 class GrafanaError(RuntimeError):
@@ -118,6 +124,33 @@ class GrafanaClient:
 
     def delete_rule(self, uid: str) -> None:
         self.request("DELETE", f"/api/v1/provisioning/alert-rules/{uid}", expected=(200, 202, 204))
+
+    def create_silence(self, payload: dict[str, Any]) -> str:
+        response = self.request(
+            "POST",
+            "/api/alertmanager/grafana/api/v2/silences",
+            payload,
+            expected=(200, 201, 202),
+        )
+        if not isinstance(response, dict):
+            raise GrafanaError("Grafana silence create returned an unexpected response")
+
+        silence_id = response.get("silenceID") or response.get("id")
+        if not isinstance(silence_id, str) or not silence_id:
+            raise GrafanaError("Grafana silence create did not return a silence ID")
+
+        return silence_id
+
+    def silences(self) -> list[dict[str, Any]]:
+        return self.request("GET", "/api/alertmanager/grafana/api/v2/silences")
+
+    def delete_silence(self, silence_id: str) -> None:
+        encoded_silence_id = urllib.parse.quote(silence_id, safe="")
+        self.request(
+            "DELETE",
+            f"/api/alertmanager/grafana/api/v2/silence/{encoded_silence_id}",
+            expected=(200, 202, 204),
+        )
 
 
 def stable_uid(title: str) -> str:
@@ -629,6 +662,63 @@ def is_managed(rule: dict[str, Any], client: str) -> bool:
     return labels.get(MANAGED_LABEL) == MANAGED_VALUE and labels.get("client") == client
 
 
+def timestamp(value: datetime) -> str:
+    return value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def create_initial_silence(config: dict[str, Any], duration_minutes: int) -> str:
+    if duration_minutes < 1:
+        raise GrafanaError("initial silence duration must be at least one minute")
+
+    client = GrafanaClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
+    now = datetime.now(timezone.utc)
+    payload = {
+        "matchers": [
+            {
+                "name": MANAGED_LABEL,
+                "value": MANAGED_VALUE,
+                "isRegex": False,
+                "isEqual": True,
+            }
+        ],
+        "startsAt": timestamp(now),
+        "endsAt": timestamp(now + timedelta(minutes=duration_minutes)),
+        "createdBy": INITIAL_SILENCE_CREATED_BY,
+        "comment": INITIAL_SILENCE_COMMENT,
+    }
+    return client.create_silence(payload)
+
+
+def is_initial_silence(silence: dict[str, Any]) -> bool:
+    if silence.get("createdBy") != INITIAL_SILENCE_CREATED_BY:
+        return False
+
+    if silence.get("comment") != INITIAL_SILENCE_COMMENT:
+        return False
+
+    for matcher in silence.get("matchers", []):
+        if matcher.get("name") == MANAGED_LABEL and matcher.get("value") == MANAGED_VALUE:
+            return True
+
+    return False
+
+
+def cleanup_expired_initial_silences(config: dict[str, Any]) -> int:
+    client = GrafanaClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
+    deleted = 0
+
+    for silence in client.silences():
+        silence_id = silence.get("id")
+        state = silence.get("status", {}).get("state")
+        if not isinstance(silence_id, str) or state != "expired" or not is_initial_silence(silence):
+            continue
+
+        client.delete_silence(silence_id)
+        deleted += 1
+
+    return deleted
+
+
 def sync(config: dict[str, Any]) -> tuple[int, int, int]:
     client = GrafanaClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
     datasource_uid = client.datasource_uid(config["grafana"]["prometheus_datasource_name"])
@@ -669,10 +759,39 @@ def sync(config: dict[str, Any]) -> tuple[int, int, int]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, help="Path to Grafana alert sync JSON configuration")
+    parser.add_argument(
+        "--create-initial-silence",
+        action="store_true",
+        help="Create the initial convergence silence and exit without syncing alert rules",
+    )
+    parser.add_argument(
+        "--silence-minutes",
+        type=int,
+        default=15,
+        help="Initial convergence silence duration in minutes",
+    )
+    parser.add_argument(
+        "--cleanup-expired-initial-silences",
+        action="store_true",
+        help="Delete expired initial convergence silences created by this helper",
+    )
     args = parser.parse_args()
+
+    if args.create_initial_silence and args.cleanup_expired_initial_silences:
+        parser.error("--create-initial-silence and --cleanup-expired-initial-silences are mutually exclusive")
 
     with open(args.config, encoding="utf-8") as config_file:
         config = json.load(config_file)
+
+    if args.create_initial_silence:
+        silence_id = create_initial_silence(config, args.silence_minutes)
+        print(f"changed=true silence_id={silence_id}")
+        return 0
+
+    if args.cleanup_expired_initial_silences:
+        deleted = cleanup_expired_initial_silences(config)
+        print(f"changed={str(deleted > 0).lower()} deleted={deleted}")
+        return 0
 
     created, updated, deleted = sync(config)
     changed = created + updated + deleted > 0

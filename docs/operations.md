@@ -371,6 +371,11 @@ Ansible-managed Grafana alert rules are labeled `configured_by=ansible`.
 Manual Grafana Cloud alert rules should not use that label because Ansible uses
 it to identify rules it owns.
 
+On first convergence for a new control node, Ansible creates a short Grafana
+Cloud silence matching `configured_by=ansible` before syncing managed alert
+rules. The silence expires automatically and is not recreated on normal
+convergence for the same control node.
+
 Grafana Cloud integration is supported only for the `prod` environment. The
 [observability architecture](observability-architecture.md) documentation
 describes what Ansible manages and what remains manual in Grafana Cloud.

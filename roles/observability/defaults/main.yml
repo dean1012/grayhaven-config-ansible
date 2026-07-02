@@ -7,6 +7,7 @@ observability_alloy_repo_gpgkey: https://rpm.grafana.com/gpg.key
 observability_config_dir: /etc/grayhaven/observability
 observability_alloy_token_file: "{{ observability_config_dir }}/grafana-alloy-token"
 observability_alert_sync_config_file: "{{ observability_config_dir }}/grafana-alert-sync.json"
+observability_alert_initial_silence_marker_file: "{{ observability_config_dir }}/initial-alert-silence-created"
 observability_textfile_config_file: "{{ observability_config_dir }}/textfile-metrics.json"
 observability_textfile_dir: /var/lib/grayhaven/observability/textfile
 observability_alloy_http_url: http://127.0.0.1:12345
@@ -14,6 +15,7 @@ observability_alloy_ready_retries: 30
 observability_alloy_ready_delay: 2
 observability_alloy_remote_write_retries: 60
 observability_alloy_remote_write_delay: 5
+observability_alert_initial_silence_minutes: 15
 
 observability_grafana_default_folder: Grayhaven Systems LLC
 observability_grafana_default_evaluation_group: grayhaven-production-1m
