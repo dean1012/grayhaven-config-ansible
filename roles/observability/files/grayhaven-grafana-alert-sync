@@ -660,6 +660,7 @@ def create_initial_silence(config: dict[str, Any], duration_minutes: int) -> str
         raise GrafanaError("initial silence duration must be at least one minute")
 
     client = GrafanaClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
+    labels = config["labels"]
     now = datetime.now(timezone.utc)
     payload = {
         "matchers": [
@@ -668,7 +669,19 @@ def create_initial_silence(config: dict[str, Any], duration_minutes: int) -> str
                 "value": MANAGED_VALUE,
                 "isRegex": False,
                 "isEqual": True,
-            }
+            },
+            {
+                "name": "client",
+                "value": labels["client"],
+                "isRegex": False,
+                "isEqual": True,
+            },
+            {
+                "name": "environment",
+                "value": labels["environment"],
+                "isRegex": False,
+                "isEqual": True,
+            },
         ],
         "startsAt": timestamp(now),
         "endsAt": timestamp(now + timedelta(minutes=duration_minutes)),

@@ -100,10 +100,11 @@ updates, or deletes rules carrying that label for the configured client. Manual
 Grafana Cloud alert rules are left alone as long as they do not use that label.
 
 On first convergence for a new control node, Ansible creates a short Grafana
-Cloud silence matching `configured_by=ansible` before syncing managed alert
-rules. The silence gives new hosts time to settle and gives Alloy time to send
-initial telemetry before alert evaluation begins. A local marker prevents
-normal convergence from creating the silence again on the same control node.
+Cloud silence matching the managed alert labels for `configured_by`, `client`,
+and `environment` before syncing managed alert rules. The silence gives new
+hosts time to settle and gives Alloy time to send initial telemetry before
+alert evaluation begins. A local marker prevents normal convergence from
+creating the silence again on the same control node.
 
 Managed alerts cover the same operational checks surfaced by the Grafana
 dashboards where alerting is useful, including host metrics, service state,
