@@ -352,17 +352,17 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 title=f"{host['short_hostname']} CPU utilization",
                 expression=(
                     "100 * (1 - avg by (host, environment, role, project, client) "
-                    f'(rate(node_cpu_seconds_total{{{host_selector(host["fqdn"])},mode="idle"}}[1m])))'
+                    f'(rate(node_cpu_seconds_total{{{host_selector(host["fqdn"])},mode="idle"}}[5m])))'
                 ),
                 evaluator_type="gt",
                 threshold=float(thresholds["cpu_percent"]),
-                duration="2m",
+                duration="5m",
                 labels=host_labels(config, host, "cpu_utilization"),
                 annotations={
                     "summary": "CPU utilization is high",
                     "description": (
-                        f"{host['fqdn']} CPU utilization is >= {thresholds['cpu_percent']}% "
-                        "for >= 2 minutes."
+                        f"{host['fqdn']} 5-minute average CPU utilization is >= "
+                        f"{thresholds['cpu_percent']}% for >= 5 minutes."
                     ),
                     "check_value": "{{ humanize $values.A.Value }}%",
                 },
