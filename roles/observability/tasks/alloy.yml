@@ -69,6 +69,56 @@
     - observability_logs_enabled
   notify: Restart Alloy
 
+- name: Allow Alloy to traverse audit log directory
+  ansible.posix.acl:
+    path: /var/log/audit
+    entity: alloy
+    etype: user
+    permissions: rx
+    state: present
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+  notify: Restart Alloy
+
+- name: Allow future audit logs to be readable by Alloy
+  ansible.posix.acl:
+    path: /var/log/audit
+    entity: alloy
+    etype: user
+    default: true
+    permissions: r
+    state: present
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+  notify: Restart Alloy
+
+- name: Find existing audit log files for Alloy access
+  ansible.builtin.find:
+    paths: /var/log/audit
+    patterns: "audit.log*"
+    file_type: file
+  register: observability_audit_log_files
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+
+- name: Allow Alloy to read existing audit log files
+  ansible.posix.acl:
+    path: "{{ item.path }}"
+    entity: alloy
+    etype: user
+    permissions: r
+    state: present
+  loop: "{{ observability_audit_log_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+  notify: Restart Alloy
+
 - name: Store Grafana Alloy API key
   ansible.builtin.copy:
     dest: "{{ observability_alloy_token_file }}"

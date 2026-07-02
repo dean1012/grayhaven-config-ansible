@@ -16,6 +16,7 @@ system_packages_admin_packages:
   - vim
 
 system_packages_required_packages:
+  - acl
   - audit
   - chrony
   - curl
