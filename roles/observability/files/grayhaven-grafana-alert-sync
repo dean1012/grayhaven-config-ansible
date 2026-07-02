@@ -152,7 +152,7 @@ def promql_string(value: str) -> str:
 
 
 def domain_regex(values: list[str]) -> str:
-    return "|".join(re.escape(value) for value in values)
+    return promql_string("|".join(re.escape(value) for value in values))
 
 
 def duration_seconds(value: str | int) -> int:
@@ -401,9 +401,9 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 expression=(
                     "100 * (1 - max by (host, environment, role, project, client, mountpoint) "
                     f'(node_filesystem_avail_bytes{{{host_selector(host["fqdn"])},mountpoint="/",'
-                    'fstype!~"tmpfs|overlay"}}) / max by (host, environment, role, project, client, mountpoint) '
+                    'fstype!~"tmpfs|overlay"}) / max by (host, environment, role, project, client, mountpoint) '
                     f'(node_filesystem_size_bytes{{{host_selector(host["fqdn"])},mountpoint="/",'
-                    'fstype!~"tmpfs|overlay"}}))'
+                    'fstype!~"tmpfs|overlay"}))'
                 ),
                 evaluator_type="gt",
                 threshold=float(thresholds["filesystem_percent"]),
@@ -536,7 +536,7 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                 expression=(
                     "max by (domain, environment, role, project, client) "
                     f'(probe_success{{domain="{promql_string(site["dev_domain"])}",'
-                    'check="dev_basic_auth_401"}})'
+                    'check="dev_basic_auth_401"})'
                 ),
                 evaluator_type="lt",
                 threshold=1,
@@ -564,7 +564,7 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                 expression=(
                     "min by (domain, environment, role, project, client) "
                     f'(probe_success{{domain=~"{domain_regex(redirect_domains)}",'
-                    'check="http_https_redirect"}})'
+                    'check="http_https_redirect"})'
                 ),
                 evaluator_type="lt",
                 threshold=1,
@@ -595,7 +595,7 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                     expression=(
                         "max by (domain, environment, role, project, client) "
                         f'(probe_ssl_earliest_cert_expiry{{domain="{promql_string(site["domain"])}",'
-                        'check="ssl_certificate"}} - time())'
+                        'check="ssl_certificate"} - time())'
                     ),
                     evaluator_type="lt",
                     threshold=0,
