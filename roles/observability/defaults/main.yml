@@ -34,6 +34,9 @@ observability_service_units_common:
   - name: grayhaven-restic-backup.timer
     check: restic_timer
     summary: Restic backup timer is down
+  - name: grayhaven-restic-check.timer
+    check: restic_check_timer
+    summary: Restic integrity check timer is down
 
 observability_service_units_web:
   - name: nginx.service
