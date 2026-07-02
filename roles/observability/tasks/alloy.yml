@@ -69,26 +69,35 @@
     - observability_logs_enabled
   notify: Restart Alloy
 
-- name: Allow Alloy to traverse audit log directory
-  ansible.posix.acl:
-    path: /var/log/audit
-    entity: alloy
-    etype: user
-    permissions: rx
-    state: present
+- name: Keep auditd log files in the Alloy group
+  ansible.builtin.lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: '^log_group\s*='
+    line: log_group = alloy
+    owner: root
+    group: root
+    mode: "0640"
+  register: observability_auditd_log_group
   when:
     - observability_metrics_enabled
     - observability_logs_enabled
-  notify: Restart Alloy
 
-- name: Allow future audit logs to be readable by Alloy
-  ansible.posix.acl:
+- name: Reload auditd after log group changes
+  ansible.builtin.command:
+    cmd: /usr/bin/systemctl kill -s HUP auditd.service
+  changed_when: false
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+    - observability_auditd_log_group is changed
+
+- name: Allow Alloy group to traverse audit log directory
+  ansible.builtin.file:
     path: /var/log/audit
-    entity: alloy
-    etype: user
-    default: true
-    permissions: r
-    state: present
+    state: directory
+    owner: root
+    group: alloy
+    mode: "0750"
   when:
     - observability_metrics_enabled
     - observability_logs_enabled
@@ -105,12 +114,11 @@
     - observability_logs_enabled
 
 - name: Allow Alloy to read existing audit log files
-  ansible.posix.acl:
+  ansible.builtin.file:
     path: "{{ item.path }}"
-    entity: alloy
-    etype: user
-    permissions: r
-    state: present
+    owner: root
+    group: alloy
+    mode: "0640"
   loop: "{{ observability_audit_log_files.files | default([]) }}"
   loop_control:
     label: "{{ item.path }}"
@@ -268,7 +276,7 @@
   delay: "{{ observability_alloy_remote_write_delay }}"
   until: >-
     observability_alloy_metrics.content is
-    regex('(?m)^prometheus_remote_storage_bytes_total\\{[^}]*component_id="prometheus\\.remote_write\\.grafana"[^}]*\\}\\s+[1-9][0-9]*(?:\\.0+)?$')
+    regex('(?m)^prometheus_remote_storage_bytes_total\\{[^}]*component_id="prometheus\\.remote_write\\.grafana"[^}]*\\}\\s+(?!(?:0+(?:\\.0*)?(?:[eE][+-]?0+)?$))(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$')
   changed_when: false
   no_log: true
   when: observability_metrics_enabled
