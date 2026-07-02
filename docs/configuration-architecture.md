@@ -125,7 +125,8 @@ smaller task boundaries. The baseline covers:
 
 - root password hash and root SSH authorized-key removal;
 - `ansible` automation user, sudo policy, and SSH key state;
-- SSH daemon hardening for public-key-only access and idle-session keepalives;
+- SSH daemon hardening for public-key-only access, login timing, authentication
+  attempt limits, and idle-session keepalives;
 - fail2ban SSH intrusion-prevention jails;
 - managed SSH known-host entries on bastion;
 - SELinux enforcing mode;
@@ -239,10 +240,10 @@ In host TLS mode, Nginx rejects hostnames that are not explicitly configured so
 unknown hostnames do not fall through to a managed web site.
 
 Ansible records which certificate environment last issued each host TLS
-certificate. If `certificate_environment` changes, Ansible reissues the
-certificate for the new environment. This should be changed deliberately and
-infrequently because production certificate issuance is rate limited by the
-certificate authority.
+certificate. If `certificate.environment` changes in `grayhaven-vault`,
+Ansible reissues the certificate for the new environment. This should be
+changed deliberately and infrequently because production certificate issuance
+is rate limited by the certificate authority.
 
 Load balancer TLS mode configures web hosts as HTTP backends. Certbot renewal
 is disabled, local host certificate material is removed, and TLS is terminated
@@ -296,10 +297,11 @@ origin HTTPS access. Ansible applies the matching host-side behavior by keeping
 only the local web origin ports needed for backend service.
 
 For SSH from bastion to managed hosts, local firewalld allows the environment
-VPC CIDR as well as known bastion private addresses. This prevents active
-control-node failover from locking the new control bastion out of existing
-managed hosts. DigitalOcean cloud firewalls still enforce the tighter
-bastion source-tag boundary before traffic reaches the host.
+VPC CIDR from `grayhaven-vault` `network.vpc_cidr` as well as known bastion
+private addresses. This prevents active control-node failover from locking the
+new control bastion out of existing managed hosts. DigitalOcean cloud firewalls
+still enforce the tighter bastion source-tag boundary before traffic reaches
+the host.
 
 [Back to top](#configuration-architecture)
 
@@ -341,6 +343,10 @@ The remote repository uses the same restic encryption password as the local
 repository. Remote backup credentials come from `grayhaven-vault` and are
 stored on managed hosts only in the root-readable backup configuration needed
 by restic.
+
+Ansible installs daily backup and weekly integrity-check timers. The integrity
+check validates the local restic repository and, when configured, the remote
+GCS repository.
 
 Remote backups can be enabled or disabled during normal convergence. Enabling
 remote backups creates any missing buckets and updates restic configuration.

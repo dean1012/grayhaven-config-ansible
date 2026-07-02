@@ -224,8 +224,9 @@ Use the `grayhaven-backupctl` operations guide for:
 - [restoring in place](https://github.com/dean1012/grayhaven-backupctl/blob/main/docs/operations.md#restoring-in-place).
 
 Restic installation and configuration, installation of the
-`grayhaven-backupctl` utility and its bash completion script, and remote bucket
-management are managed through Ansible by this repository.
+`grayhaven-backupctl` utility, its isolated Python runtime, and its bash
+completion script, as well as remote bucket management, are managed through
+Ansible by this repository.
 
 [Back to top](#operations)
 
