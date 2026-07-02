@@ -218,6 +218,7 @@
   delay: "{{ observability_alloy_remote_write_delay }}"
   until: >-
     observability_alloy_metrics.content is
-    regex('(?m)^prometheus_remote_storage_succeeded_samples_total(?:\\{[^}]*\\})?\\s+[1-9][0-9]*(?:\\.0+)?$')
+    regex('(?m)^prometheus_remote_storage_bytes_total\\{[^}]*component_id="prometheus\\.remote_write\\.grafana"[^}]*\\}\\s+[1-9][0-9]*(?:\\.0+)?$')
   changed_when: false
+  no_log: true
   when: observability_metrics_enabled
