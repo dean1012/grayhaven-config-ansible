@@ -368,9 +368,11 @@ sudo journalctl -u grayhaven-ansible-runner.service
 ```
 
 Ansible-managed Grafana alert rules use the managed label set
-`configured_by=ansible`, `client`, and `environment`. Manual Grafana Cloud
-alert rules should not use that managed label set because Ansible uses it to
-identify rules it owns.
+`configured_by=ansible`, `client=grayhaven`, and `environment=prod`. The
+`client` value is derived from the managed host `client-*` inventory tag, and
+Grafana Cloud alerting is currently supported only in `prod`. Manual Grafana
+Cloud alert rules should not use that managed label set because Ansible uses it
+to identify rules it owns.
 
 Grafana Cloud integration is supported only for the `prod` environment. The
 [observability architecture](observability-architecture.md) documentation
