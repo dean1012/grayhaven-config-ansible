@@ -1,4 +1,15 @@
 ---
+- name: Validate managed inventory variables
+  ansible.builtin.assert:
+    that:
+      - managed_inventory_fallback_vpc_cidr is string
+      - managed_inventory_fallback_vpc_cidr | trim | length > 0
+      - >-
+        managed_inventory_fallback_vpc_cidr
+        is match('^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$')
+    fail_msg: "network.vpc_cidr must be provided as a valid IPv4 CIDR block."
+    quiet: true
+
 - name: Build managed host metadata from inventory
   ansible.builtin.set_fact:
     managed_inventory_hosts: "{{ managed_inventory_hosts | default([]) + [managed_inventory_host_entry] }}"
