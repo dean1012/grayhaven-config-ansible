@@ -20,6 +20,23 @@
     state: absent
   notify: Reload nginx
 
+- name: Remove nginx package default HTTP server block
+  ansible.builtin.replace:
+    path: /etc/nginx/nginx.conf
+    regexp: |-
+      (?msx)
+      \n\s*server\s*\{
+      \n\s*listen\s+80;
+      \n\s*listen\s+\[::\]:80;
+      \n\s*server_name\s+_;
+      \n\s*root\s+/usr/share/nginx/html;
+      \n\s*
+      \n\s*\#[^\n]*
+      \n\s*include\s+/etc/nginx/default\.d/\*\.conf;
+      \n\s*\}\n?
+    replace: ""
+  notify: Reload nginx
+
 - name: Install Certbot renewal deploy hook
   ansible.builtin.copy:
     dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
