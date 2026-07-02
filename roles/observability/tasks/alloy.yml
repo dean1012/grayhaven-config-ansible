@@ -157,7 +157,7 @@
     content: "{{ observability_restic_seed_metric }}"
   when: observability_metrics_enabled
   vars:
-    observability_now_epoch: "{{ ansible_date_time.epoch }}"
+    observability_now_epoch: "{{ ansible_facts['date_time']['epoch'] }}"
     observability_restic_seed_metric_line: >-
       grayhaven_restic_backup_last_success_timestamp_seconds{host="{{ inventory_hostname }}"}
       {{ observability_now_epoch }}
