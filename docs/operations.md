@@ -422,6 +422,11 @@ Grafana Cloud alerting is currently supported only in `prod`. Manual Grafana
 Cloud alert rules should not use that managed label set because Ansible uses it
 to identify rules it owns.
 
+Managed threshold and probe alerts treat missing query data as OK. Dedicated
+metrics-data alerts compare expected managed hosts with telemetry received by
+Grafana Cloud, so telemetry gaps are reported separately instead of causing
+every CPU, memory, service, backup, and web check to fire at once.
+
 Before planned maintenance, including managed host reboots, create a Grafana
 Cloud silence for the affected managed alerts when Grafana Cloud is enabled.
 Set the silence to expire at the planned end of the maintenance window. If the

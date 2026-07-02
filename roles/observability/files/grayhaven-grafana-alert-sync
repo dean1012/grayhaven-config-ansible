@@ -233,7 +233,7 @@ def alert_rule(
     annotations: dict[str, str],
     contact_point: str,
     duration: str = "0s",
-    no_data_state: str = "Alerting",
+    no_data_state: str = "OK",
 ) -> dict[str, Any]:
     return {
         "uid": stable_uid(title),
@@ -334,10 +334,14 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 title=f"{host['short_hostname']} metrics data",
                 expression=(
                     "max by (host, environment, role, project, client) "
-                    f'(up{{{host_selector(host["fqdn"])},job="integrations/unix"}})'
+                    f'(grayhaven_host_info{{{host_selector(host["fqdn"])}}}) '
+                    "unless on (host, environment, role, project, client) "
+                    "max by (host, environment, role, project, client) "
+                    f'(up{{{host_selector(host["fqdn"])},job="integrations/unix"}} == 1)'
                 ),
-                evaluator_type="lt",
-                threshold=1,
+                evaluator_type="gt",
+                threshold=0,
+                no_data_state="NoData",
                 labels=host_labels(config, host, "metrics_data"),
                 annotations={
                     "summary": "Metrics data is missing",
