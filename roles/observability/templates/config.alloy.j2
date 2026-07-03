@@ -720,6 +720,14 @@ loki.process "grayhaven_dashboard_system_errors" {
     action   = "drop"
   }
 
+  stage.drop {
+    expression = ".*SELinux is preventing.*"
+  }
+
+  stage.drop {
+    expression = ".*type=(AVC|USER_AVC|SELINUX_ERR).*"
+  }
+
   stage.match {
     selector = `{syslog_identifier=~"sudo|su|su-l"}`
     action   = "drop"
