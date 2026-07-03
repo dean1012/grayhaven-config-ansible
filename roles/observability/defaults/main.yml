@@ -25,6 +25,7 @@ observability_grafana_default_evaluation_interval: 1m
 observability_cpu_warning_percent: 80
 observability_memory_warning_percent: 80
 observability_filesystem_warning_percent: 80
+observability_filesystem_inode_warning_percent: 80
 observability_swap_warning_percent: 80
 observability_restic_stale_seconds: 129600
 
