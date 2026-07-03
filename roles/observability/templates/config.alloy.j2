@@ -408,7 +408,7 @@ loki.process "grayhaven_dashboard_superuser" {
   }
 
   stage.match {
-    selector = `{syslog_identifier="sudo"} |= " ; COMMAND=" != " ansible :" != "a password is required" != "incorrect password attempts" != "conversation failed" != "auth could not identify password"`
+    selector = `{syslog_identifier="sudo"} |= " ; COMMAND=" != " ansible :" != "a password is required" != "incorrect password attempts" != "incorrect password attempt" != "conversation failed" != "auth could not identify password"`
 
     stage.static_labels {
       values = {
