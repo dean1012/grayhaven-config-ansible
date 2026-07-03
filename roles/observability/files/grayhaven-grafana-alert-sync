@@ -424,6 +424,32 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
 
         rules.append(
             alert_rule(
+                title=f"{host['short_hostname']} filesystem inode",
+                expression=(
+                    "100 * (1 - max by (host, environment, role, project, client, mountpoint) "
+                    f'(node_filesystem_files_free{{{host_selector(host["fqdn"])},mountpoint="/",'
+                    'fstype!~"tmpfs|overlay"}) / max by (host, environment, role, project, client, mountpoint) '
+                    f'(node_filesystem_files{{{host_selector(host["fqdn"])},mountpoint="/",'
+                    'fstype!~"tmpfs|overlay"}))'
+                ),
+                evaluator_type="gt",
+                threshold=float(thresholds["filesystem_inode_percent"]),
+                labels=host_labels(config, host, "filesystem_inode"),
+                annotations={
+                    "summary": "Filesystem inode utilization is high",
+                    "description": (
+                        f"{host['fqdn']} filesystem / inode utilization is >= "
+                        f"{thresholds['filesystem_inode_percent']}%."
+                    ),
+                    "check_value": "{{ humanize $values.A.Value }}%",
+                    "mount_point": "/",
+                },
+                **common,
+            )
+        )
+
+        rules.append(
+            alert_rule(
                 title=f"{host['short_hostname']} swap utilization",
                 expression=(
                     "100 * (1 - max by (host, environment, role, project, client) "

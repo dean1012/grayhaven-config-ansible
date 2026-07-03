@@ -51,6 +51,7 @@
         cpu_percent: "{{ observability_cpu_warning_percent }}"
         memory_percent: "{{ observability_memory_warning_percent }}"
         filesystem_percent: "{{ observability_filesystem_warning_percent }}"
+        filesystem_inode_percent: "{{ observability_filesystem_inode_warning_percent }}"
         swap_percent: "{{ observability_swap_warning_percent }}"
         restic_stale_seconds: "{{ observability_restic_stale_seconds }}"
       tls_mode: "{{ grayhaven_tls_mode }}"
