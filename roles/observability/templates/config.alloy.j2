@@ -321,6 +321,56 @@ loki.process "grayhaven" {
     expression = ".*pam_unix\\(sudo:session\\): session (opened|closed).*"
   }
 
+  stage.match {
+    selector = `{job="systemd_journal"} |= "grayhaven-ansible-runner"`
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_ansible_runner = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{job="systemd_journal"} |~ "COMMAND=|grayhaven-root-command"`
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_superuser_audit = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{job="audit"} |~ "type=USER_(LOGIN|LOGOUT|AUTH|ERR|START|END)|type=CRED_(ACQ|DISP)|exe=\"/usr/(bin/(sudo|su)|libexec/openssh/sshd-session)\""`
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_authentication = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{job="audit"} |~ "type=(AVC|USER_AVC|SELINUX_ERR)"`
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_selinux_avc = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{job="systemd_journal"} |~ "(?i)(level=error|level=critical|level=fatal|\\bfailed\\b|\\bfailure\\b|\\bcritical\\b|\\bpanic\\b)"`
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_system_error = "true",
+      }
+    }
+  }
+
   stage.replace {
     expression = "(?i)(?:password|passwd|token|secret|private_key)\\s*[:=]\\s*(\\S+)"
     replace    = "<redacted>"
