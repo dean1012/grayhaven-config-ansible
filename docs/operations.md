@@ -423,9 +423,10 @@ Cloud alert rules should not use that managed label set because Ansible uses it
 to identify rules it owns.
 
 Managed threshold and probe alerts treat missing query data as OK. Dedicated
-metrics-data alerts compare expected managed hosts with telemetry received by
-Grafana Cloud, so telemetry gaps are reported separately instead of causing
-every CPU, memory, service, backup, and web check to fire at once.
+metrics-data alerts fire when an expected host stops sending its `up` metric to
+Grafana Cloud, such as when Alloy is stopped, blocked, or unable to ship host
+metrics. This keeps telemetry gaps separate from CPU, memory, service, backup,
+and web check alerts.
 
 Before planned maintenance, including managed host reboots, create a Grafana
 Cloud silence for the affected managed alerts when Grafana Cloud is enabled.
