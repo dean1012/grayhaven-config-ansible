@@ -436,6 +436,10 @@ loki.process "grayhaven_dashboard_superuser" {
 }
 
 loki.process "grayhaven_dashboard_auth" {
+  stage.drop {
+    expression = ".*(?:acct|AUID|ID)=\"ansible\".*"
+  }
+
   stage.static_labels {
     values = {
       grayhaven_log_authentication = "false",
@@ -444,10 +448,10 @@ loki.process "grayhaven_dashboard_auth" {
   }
 
   stage.match {
-    selector = `{job="audit"} |= "type=USER_LOGIN"`
+    selector = `{job="audit"} |= "type=USER_LOGIN" |= "acct="`
 
     stage.regex {
-      expression = ".*acct=\"?(?P<auth_user>[^\" ]+)\"?.*addr=(?P<auth_addr>[^ ]+).*res=(?P<auth_result>success|failed).*"
+      expression = ".*acct=\"?(?P<auth_user>[^\" ]+)\"?.*addr=(?P<auth_addr>[^ ?][^ ]*).*res=(?P<auth_result>success|failed).*"
     }
 
     stage.template {
@@ -467,10 +471,56 @@ loki.process "grayhaven_dashboard_auth" {
   }
 
   stage.match {
-    selector = `{job="audit"} |= "type=USER_LOGOUT"`
+    selector = `{job="audit"} |= "type=USER_LOGIN" |= " id="`
+
+    stage.regex {
+      expression = ".* id=[^ ]+ .*addr=(?P<auth_addr>[^ ?][^ ]*).*res=(?P<auth_result>success|failed).*ID=\"(?P<auth_user>[^\"]+)\".*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"{{ if eq .auth_result \"success\" }}User {{ .auth_user }} logged in{{ else }}Failed login for user {{ .auth_user }}{{ end }}{{ if and .auth_addr (ne .auth_addr \"?\") }} from {{ .auth_addr }}{{ end }}"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_authentication = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{job="audit"} |= "type=USER_LOGOUT" |= "acct="`
 
     stage.regex {
       expression = ".*acct=\"?(?P<auth_user>[^\" ]+)\"?.*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"User {{ .auth_user }} logged out"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_authentication = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{job="audit"} |= "type=USER_LOGOUT" |= " id="`
+
+    stage.regex {
+      expression = ".* id=[^ ]+ .*ID=\"(?P<auth_user>[^\"]+)\".*"
     }
 
     stage.template {
