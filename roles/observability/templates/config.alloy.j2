@@ -256,7 +256,7 @@ local.file_match "nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]
 
 loki.source.file "nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]', '_') }}" {
   targets    = local.file_match.nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]', '_') }}.targets
-  forward_to = [loki.process.grayhaven.receiver]
+  forward_to = [loki.process.grayhaven_raw.receiver]
 }
 
 {% endfor %}
@@ -275,7 +275,11 @@ local.file_match "audit" {
 
 loki.source.file "audit" {
   targets    = local.file_match.audit.targets
-  forward_to = [loki.process.grayhaven.receiver]
+  forward_to = [
+    loki.process.grayhaven_raw.receiver,
+    loki.process.grayhaven_dashboard_auth.receiver,
+    loki.process.grayhaven_dashboard_selinux.receiver,
+  ]
 }
 
 local.file_match "certbot" {
@@ -292,7 +296,26 @@ local.file_match "certbot" {
 
 loki.source.file "certbot" {
   targets    = local.file_match.certbot.targets
-  forward_to = [loki.process.grayhaven.receiver]
+  forward_to = [loki.process.grayhaven_raw.receiver]
+}
+
+loki.relabel "journal_dashboard" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "systemd_unit"
+  }
+
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label  = "syslog_identifier"
+  }
+
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "journal_priority"
+  }
 }
 
 loki.source.journal "system" {
@@ -305,34 +328,79 @@ loki.source.journal "system" {
     "project"     = {{ observability_project | to_json }},
     "role"        = {{ observability_role | to_json }},
   }
-  forward_to = [loki.process.grayhaven.receiver]
+  forward_to = [loki.process.grayhaven_raw.receiver]
 }
 
-loki.process "grayhaven" {
+loki.source.journal "system_dashboard" {
+  max_age       = "24h"
+  relabel_rules = loki.relabel.journal_dashboard.rules
+  labels        = {
+    "client"      = {{ observability_client | to_json }},
+    "environment" = {{ grayhaven_environment | to_json }},
+    "host"        = {{ inventory_hostname | to_json }},
+    "job"         = "systemd_journal",
+    "project"     = {{ observability_project | to_json }},
+    "role"        = {{ observability_role | to_json }},
+  }
+  forward_to = [
+    loki.process.grayhaven_dashboard_runner.receiver,
+    loki.process.grayhaven_dashboard_auth.receiver,
+    loki.process.grayhaven_dashboard_superuser.receiver,
+    loki.process.grayhaven_dashboard_fail2ban.receiver,
+    loki.process.grayhaven_dashboard_system_errors.receiver,
+  ]
+}
+
+loki.process "grayhaven_raw" {
   stage.drop {
     expression = ".*cloud-init.*"
   }
 
-  stage.drop {
-    expression = ".*sudo\\[[0-9]+\\]:\\s+ansible\\s+:.*"
-  }
+  forward_to = [loki.process.grayhaven_redact.receiver]
+}
 
-  stage.drop {
-    expression = ".*pam_unix\\(sudo:session\\): session (opened|closed).*"
-  }
-
+loki.process "grayhaven_dashboard_runner" {
   stage.match {
-    selector = `{job="systemd_journal"} |= "grayhaven-ansible-runner"`
+    selector = `{systemd_unit!="grayhaven-ansible-runner.service"}`
+    action   = "drop"
+  }
 
-    stage.static_labels {
-      values = {
-        grayhaven_log_ansible_runner = "true",
-      }
+  stage.static_labels {
+    values = {
+      grayhaven_log_ansible_runner = "true",
+      grayhaven_log_view           = "dashboard",
+    }
+  }
+
+  forward_to = [loki.process.grayhaven_redact.receiver]
+}
+
+loki.process "grayhaven_dashboard_fail2ban" {
+  stage.match {
+    selector = `{systemd_unit!="fail2ban.service"}`
+    action   = "drop"
+  }
+
+  stage.static_labels {
+    values = {
+      grayhaven_log_fail2ban = "true",
+      grayhaven_log_view     = "dashboard",
+    }
+  }
+
+  forward_to = [loki.process.grayhaven_redact.receiver]
+}
+
+loki.process "grayhaven_dashboard_superuser" {
+  stage.static_labels {
+    values = {
+      grayhaven_log_superuser_audit = "false",
+      grayhaven_log_view            = "dashboard",
     }
   }
 
   stage.match {
-    selector = `{job="systemd_journal"} |~ "COMMAND=|grayhaven-root-command"`
+    selector = `{syslog_identifier="sudo"} |= " ; COMMAND=" != " ansible :" != "a password is required" != "incorrect password attempts" != "conversation failed" != "auth could not identify password"`
 
     stage.static_labels {
       values = {
@@ -342,7 +410,46 @@ loki.process "grayhaven" {
   }
 
   stage.match {
-    selector = `{job="audit"} |~ "type=USER_(LOGIN|LOGOUT|AUTH|ERR|START|END)|type=CRED_(ACQ|DISP)|exe=\"/usr/(bin/(sudo|su)|libexec/openssh/sshd-session)\""`
+    selector = `{job="systemd_journal"} |= "grayhaven-root-command"`
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_superuser_audit = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{grayhaven_log_superuser_audit!="true"}`
+    action   = "drop"
+  }
+
+  forward_to = [loki.process.grayhaven_redact.receiver]
+}
+
+loki.process "grayhaven_dashboard_auth" {
+  stage.static_labels {
+    values = {
+      grayhaven_log_authentication = "false",
+      grayhaven_log_view           = "dashboard",
+    }
+  }
+
+  stage.match {
+    selector = `{job="audit"} |= "type=USER_LOGIN"`
+
+    stage.regex {
+      expression = ".*acct=\"(?P<auth_user>[^\"]+)\".*addr=(?P<auth_addr>[^ ]+).*res=(?P<auth_result>success|failed).*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"{{ if eq .auth_result \"success\" }}User {{ .auth_user }} logged in{{ else }}Failed login for user {{ .auth_user }}{{ end }}{{ if and .auth_addr (ne .auth_addr \"?\") }} from {{ .auth_addr }}{{ end }}"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
 
     stage.static_labels {
       values = {
@@ -352,25 +459,226 @@ loki.process "grayhaven" {
   }
 
   stage.match {
-    selector = `{job="audit"} |~ "type=(AVC|USER_AVC|SELINUX_ERR)"`
+    selector = `{job="audit"} |= "type=USER_LOGOUT"`
+
+    stage.regex {
+      expression = ".*acct=\"(?P<auth_user>[^\"]+)\".*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"User {{ .auth_user }} logged out"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
 
     stage.static_labels {
       values = {
-        grayhaven_log_selinux_avc = "true",
+        grayhaven_log_authentication = "true",
       }
     }
   }
 
   stage.match {
-    selector = `{job="systemd_journal"} |~ "(?i)(level=error|level=critical|level=fatal|\\bfailed\\b|\\bfailure\\b|\\bcritical\\b|\\bpanic\\b)"`
+    selector = `{syslog_identifier="sudo"} |= " ; COMMAND=" != " ansible :" != "a password is required" != "incorrect password attempts" != "conversation failed" != "auth could not identify password"`
+
+    stage.regex {
+      expression = ".*sudo\\[[0-9]+\\]:\\s+(?P<auth_user>[^\\s:]+)\\s+:.*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"User {{ .auth_user }} used sudo"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
 
     stage.static_labels {
       values = {
-        grayhaven_log_system_error = "true",
+        grayhaven_log_authentication = "true",
       }
     }
   }
 
+  stage.match {
+    selector = `{syslog_identifier="sudo"} |= "auth could not identify password for ["`
+
+    stage.regex {
+      expression = ".*auth could not identify password for \\[(?P<auth_user>[^\\]]+)\\].*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"User {{ .auth_user }} failed to use sudo"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_authentication = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{syslog_identifier="sudo"} |= "a password is required"`
+
+    stage.regex {
+      expression = ".*sudo\\[[0-9]+\\]:\\s+(?P<auth_user>[^\\s:]+)\\s+:.*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"User {{ .auth_user }} failed to use sudo"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_authentication = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{syslog_identifier="sudo"} |= "incorrect password attempts"`
+
+    stage.regex {
+      expression = ".*sudo\\[[0-9]+\\]:\\s+(?P<auth_user>[^\\s:]+)\\s+:.*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"User {{ .auth_user }} failed to use sudo"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_authentication = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{syslog_identifier=~"su|su-l"} |~ "session opened for user"`
+
+    stage.regex {
+      expression = ".*session opened for user (?P<target_user>[^\\(]+).* by (?P<auth_user>[^\\(]+).*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"User {{ .auth_user }} used su to become {{ .target_user }}"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_authentication = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{syslog_identifier=~"su|su-l"} |= "authentication failure"`
+
+    stage.regex {
+      expression = ".*ruser=(?P<auth_user>\\S+).*user=(?P<target_user>\\S+).*"
+    }
+
+    stage.template {
+      source   = "grayhaven_dashboard_line"
+      template = {% raw %}"User {{ .auth_user }} failed to use su to become {{ .target_user }}"{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_dashboard_line"
+    }
+
+    stage.static_labels {
+      values = {
+        grayhaven_log_authentication = "true",
+      }
+    }
+  }
+
+  stage.match {
+    selector = `{grayhaven_log_authentication!="true"}`
+    action   = "drop"
+  }
+
+  forward_to = [loki.process.grayhaven_redact.receiver]
+}
+
+loki.process "grayhaven_dashboard_selinux" {
+  stage.match {
+    selector = `{job="audit"} !~ "type=(AVC|USER_AVC|SELINUX_ERR)"`
+    action   = "drop"
+  }
+
+  stage.static_labels {
+    values = {
+      grayhaven_log_selinux_avc = "true",
+      grayhaven_log_view        = "dashboard",
+    }
+  }
+
+  forward_to = [loki.process.grayhaven_redact.receiver]
+}
+
+loki.process "grayhaven_dashboard_system_errors" {
+  stage.drop {
+    expression = ".*service=remotecfg.*err=\"noop client\".*"
+  }
+
+  stage.match {
+    selector = `{systemd_unit="grayhaven-ansible-runner.service"}`
+    action   = "drop"
+  }
+
+  stage.match {
+    selector = `{systemd_unit="fail2ban.service"}`
+    action   = "drop"
+  }
+
+  stage.match {
+    selector = `{syslog_identifier=~"sudo|su|su-l"}`
+    action   = "drop"
+  }
+
+  stage.match {
+    selector = `{journal_priority!~"emerg|alert|crit|error"}`
+    action   = "drop"
+  }
+
+  stage.static_labels {
+    values = {
+      grayhaven_log_system_error = "true",
+      grayhaven_log_view         = "dashboard",
+    }
+  }
+
+  forward_to = [loki.process.grayhaven_redact.receiver]
+}
+
+loki.process "grayhaven_redact" {
   stage.replace {
     expression = "(?i)(?:password|passwd|token|secret|private_key)\\s*[:=]\\s*(\\S+)"
     replace    = "<redacted>"

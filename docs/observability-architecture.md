@@ -85,15 +85,17 @@ The log set is intentionally targeted:
 - systemd journal entries, including sudo and `grayhaven-root-command` command
   audit entries.
 
-Cloud-init logs are excluded. Log lines pass through a defensive redaction
-stage for common secret-like key names before leaving the host, but redaction is
-a safeguard, not a handling procedure. Administrators should still avoid placing
-secrets directly on command lines or in log output. If a secret is exposed,
-rotate it immediately.
+Cloud-init logs are excluded. Shipped log lines pass through a defensive
+redaction stage for common secret-like key names before leaving the host, but
+redaction is a safeguard, not a handling procedure. Administrators should still
+avoid placing secrets directly on command lines or in log output. If a secret
+is exposed, rotate it immediately.
 
-Sudo session-open/session-close noise and Ansible automation sudo command lines
-are filtered from shipped logs so the audit stream stays focused on human
-operator activity. Ansible runner service logs are still shipped when log
+Some log streams are duplicated into derived operational views with additional
+labels or concise line formatting while preserving the original selected log
+streams. Sudo session-open/session-close noise and Ansible automation sudo
+command lines are filtered from human-focused helper views so operator activity
+remains easier to review. Ansible runner service logs are still shipped when log
 shipping is enabled.
 
 [Back to top](#observability-architecture)
