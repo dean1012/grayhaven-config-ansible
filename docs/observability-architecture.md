@@ -104,6 +104,11 @@ The active control node syncs Grafana Cloud alert rules during convergence.
 Managed alert rules are labeled `configured_by=ansible`; Ansible only creates,
 updates, or deletes rules carrying that label for the configured client. Manual
 Grafana Cloud alert rules are left alone as long as they do not use that label.
+Grafana Cloud does not allow API-provisioned alert rules to be modified or
+deleted through the Grafana Cloud web interface, so managed alert rule changes
+must go through Ansible. For planned maintenance, use Grafana Cloud silences as
+documented in
+[Operations](operations.md#grafana-cloud-observability).
 
 On first convergence for a new control node, Ansible creates a short Grafana
 Cloud silence matching the managed alert labels `configured_by=ansible`,
@@ -124,6 +129,11 @@ gap does not make every managed alert fire at once. Per-host metrics-data
 alerts are the dedicated reachability and telemetry health checks. They fire
 when the expected host `up` metric is missing or below threshold, such as when
 Alloy is stopped, blocked, or unable to send host metrics to Grafana Cloud.
+While a host is not sending usable metrics, that host's other managed threshold
+alerts remain normal on missing data. A metrics-data alert therefore means the
+on-call operator should first restore or investigate the host telemetry path;
+it has priority over downstream host-specific checks until metrics are flowing
+again.
 
 [Back to top](#observability-architecture)
 

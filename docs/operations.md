@@ -428,6 +428,11 @@ Grafana Cloud, such as when Alloy is stopped, blocked, or unable to ship host
 metrics. This keeps telemetry gaps separate from CPU, memory, service, backup,
 and web check alerts.
 
+Treat a metrics-data alert as the primary incident for the affected host. Until
+the host is sending usable metrics again, the affected host's other threshold
+alerts remain normal on missing data and cannot be relied on to describe the
+underlying failure.
+
 Before planned maintenance, including managed host reboots, create a Grafana
 Cloud silence for the affected managed alerts when Grafana Cloud is enabled.
 Set the silence to expire at the planned end of the maintenance window. If the
