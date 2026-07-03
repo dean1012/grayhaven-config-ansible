@@ -55,6 +55,7 @@ def fixture_context() -> dict[str, object]:
         "observability_logs_enabled": True,
         "observability_project": "core",
         "observability_role": "web",
+        "observability_short_hostname": "grayhaven-core-prod-web-01",
         "observability_textfile_dir": "/var/lib/grayhaven/observability/textfile",
         "observability_web_sites": [
             {
