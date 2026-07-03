@@ -36,7 +36,7 @@
     state: present
   when: observability_metrics_enabled
 
-- name: Configure Grafana Alloy service arguments
+- name: Configure Grafana Alloy service defaults
   ansible.builtin.copy:
     dest: /etc/sysconfig/alloy
     owner: root
@@ -44,7 +44,7 @@
     mode: "0644"
     content: |
       CONFIG_FILE="/etc/alloy/config.alloy"
-      CUSTOM_ARGS="--disable-reporting"
+      CUSTOM_ARGS=""
       RESTART_ON_UPGRADE=true
   when: observability_metrics_enabled
   notify: Restart Alloy
