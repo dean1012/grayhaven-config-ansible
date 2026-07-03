@@ -84,6 +84,10 @@ runner service and stores the observed refs under the ansible-owned
 `/var/lib/grayhaven/ansible-poller` state directory. The daily runner timer
 remains in place as a convergence safety net.
 
+The poller retries transient GitHub metadata lookup failures before failing the
+poller service. Persistent lookup failures remain visible in systemd and the
+poller journal.
+
 Only the active control bastion runs the scheduled runner and poller. Other
 bastions are configured as SSH jump points and are managed over SSH by the
 active control bastion.

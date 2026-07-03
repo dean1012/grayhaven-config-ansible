@@ -65,6 +65,10 @@ poll can retry the same change. Pushing to the deployed configuration branch or
 deployed vault branch can therefore start convergence automatically within the
 next poll interval.
 
+The poller also retries transient GitHub metadata lookup failures before
+failing the poller service. Persistent lookup failures still surface as service
+failures and should be investigated through the poller journal.
+
 The poller is not a convergence queue. If another repository change is pushed
 while convergence is already running, that change may not be applied by the
 active run. In that case, run manual convergence or wait for the next scheduled
