@@ -54,6 +54,10 @@ prepare_github_known_hosts() {
   github_known_hosts="$(mktemp)"
 
   curl -fsSL \
+    --retry 5 \
+    --retry-all-errors \
+    --retry-delay 3 \
+    --retry-max-time 60 \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2026-03-10" \
     "$GITHUB_META_URL" > "$github_meta_json"
