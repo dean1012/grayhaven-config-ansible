@@ -120,9 +120,10 @@ use a five-minute rate window and require five minutes above threshold before
 firing. Alert rules send to the configured Grafana IRM contact point.
 
 Normal threshold and probe alerts treat missing query data as OK so a telemetry
-gap does not make every managed alert fire at once. Missing host metrics are
-handled by dedicated metrics-data alerts that compare the expected managed host
-inventory with telemetry received by Grafana Cloud.
+gap does not make every managed alert fire at once. Per-host metrics-data
+alerts are the dedicated reachability and telemetry health checks. They fire
+when the expected host `up` metric is missing or below threshold, such as when
+Alloy is stopped, blocked, or unable to send host metrics to Grafana Cloud.
 
 [Back to top](#observability-architecture)
 
