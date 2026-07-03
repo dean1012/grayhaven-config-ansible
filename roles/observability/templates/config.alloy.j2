@@ -185,26 +185,36 @@ prometheus.relabel "grayhaven" {
   forward_to = [prometheus.remote_write.grafana.receiver]
 
   rule {
+    source_labels = ["client"]
+    regex         = "^$"
     target_label = "client"
     replacement  = {{ observability_client | to_json }}
   }
 
   rule {
+    source_labels = ["environment"]
+    regex         = "^$"
     target_label = "environment"
     replacement  = {{ grayhaven_environment | to_json }}
   }
 
   rule {
+    source_labels = ["host"]
+    regex         = "^$"
     target_label = "host"
     replacement  = {{ inventory_hostname | to_json }}
   }
 
   rule {
+    source_labels = ["project"]
+    regex         = "^$"
     target_label = "project"
     replacement  = {{ observability_project | to_json }}
   }
 
   rule {
+    source_labels = ["role"]
+    regex         = "^$"
     target_label = "role"
     replacement  = {{ observability_role | to_json }}
   }
