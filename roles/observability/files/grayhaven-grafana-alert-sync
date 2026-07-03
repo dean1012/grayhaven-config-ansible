@@ -328,17 +328,25 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
             "datasource_uid": datasource_uid,
             "contact_point": config["grafana"]["contact_point"],
         }
+        expected_host_metric = (
+            "max by (host, environment, role, project, client) "
+            f'(grayhaven_host_info{{{host_selector(host["fqdn"])}}})'
+        )
+        active_host_metric = (
+            "max by (host, environment, role, project, client) "
+            f'(up{{{host_selector(host["fqdn"])},job="integrations/unix"}} == 1)'
+        )
+        missing_metrics_expression = (
+            f"({expected_host_metric} unless on (host, environment, role, project, client) "
+            f"{active_host_metric}) "
+            "or on (host, environment, role, project, client) "
+            f"(0 * {expected_host_metric})"
+        )
 
         rules.append(
             alert_rule(
                 title=f"{host['short_hostname']} metrics data",
-                expression=(
-                    "max by (host, environment, role, project, client) "
-                    f'(grayhaven_host_info{{{host_selector(host["fqdn"])}}}) '
-                    "unless on (host, environment, role, project, client) "
-                    "max by (host, environment, role, project, client) "
-                    f'(up{{{host_selector(host["fqdn"])},job="integrations/unix"}} == 1)'
-                ),
+                expression=missing_metrics_expression,
                 evaluator_type="gt",
                 threshold=0,
                 no_data_state="NoData",
