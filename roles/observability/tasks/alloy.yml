@@ -140,6 +140,60 @@
     - observability_logs_enabled
   notify: Restart Alloy
 
+- name: Check nginx log directory for Alloy access
+  ansible.builtin.stat:
+    path: /var/log/nginx
+  register: observability_nginx_log_directory
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+    - grayhaven_role == "web"
+
+- name: Keep rotated nginx logs in the Alloy group
+  ansible.builtin.lineinfile:
+    path: /etc/logrotate.d/nginx
+    regexp: '^\s*create\s+0640\s+nginx\s+\S+'
+    line: "    create 0640 nginx alloy"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+    - grayhaven_role == "web"
+    - observability_nginx_log_directory.stat.isdir | default(false)
+
+- name: Find existing managed nginx log files for Alloy access
+  ansible.builtin.find:
+    paths: /var/log/nginx
+    patterns:
+      - "*.prod.access.log"
+      - "*.prod.error.log"
+      - "*.dev.access.log"
+      - "*.dev.error.log"
+    file_type: file
+  register: observability_nginx_log_files
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+    - grayhaven_role == "web"
+    - observability_nginx_log_directory.stat.isdir | default(false)
+
+- name: Allow Alloy to read existing managed nginx log files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: nginx
+    group: alloy
+    mode: "0640"
+  loop: "{{ observability_nginx_log_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - observability_metrics_enabled
+    - observability_logs_enabled
+    - grayhaven_role == "web"
+  notify: Restart Alloy
+
 - name: Store Grafana Alloy API key
   ansible.builtin.copy:
     dest: "{{ observability_alloy_token_file }}"
