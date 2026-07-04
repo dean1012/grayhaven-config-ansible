@@ -101,7 +101,8 @@ labels or concise line formatting while preserving the original selected log
 streams. Sudo session-open/session-close noise and Ansible automation sudo
 command lines are filtered from human-focused helper views so operator activity
 remains easier to review. Ansible runner service logs are still shipped when log
-shipping is enabled.
+shipping is enabled, and the runner also writes an ordered dashboard log stream
+whose line numbers preserve playbook output order for Grafana log views.
 Some textfile metrics are similarly derived from external operational state to
 support concise status reporting without exposing raw service payloads.
 
