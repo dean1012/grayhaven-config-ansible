@@ -479,10 +479,6 @@ loki.process "grayhaven_dashboard_superuser" {
 }
 
 loki.process "grayhaven_dashboard_auth" {
-  stage.drop {
-    expression = ".*(?:acct|AUID|ID)=\"ansible\".*"
-  }
-
   stage.static_labels {
     values = {
       grayhaven_log_authentication        = "false",
