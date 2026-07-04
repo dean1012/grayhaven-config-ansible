@@ -613,7 +613,7 @@ loki.process "grayhaven_dashboard_auth" {
     stage.static_labels {
       values = {
         grayhaven_log_authentication        = "true",
-        grayhaven_log_authentication_result = "failed",
+        grayhaven_log_authentication_result = "success",
       }
     }
   }
@@ -685,7 +685,7 @@ loki.process "grayhaven_dashboard_auth" {
     stage.static_labels {
       values = {
         grayhaven_log_authentication        = "true",
-        grayhaven_log_authentication_result = "success",
+        grayhaven_log_authentication_result = "failed",
       }
     }
   }
@@ -709,7 +709,7 @@ loki.process "grayhaven_dashboard_auth" {
     stage.static_labels {
       values = {
         grayhaven_log_authentication        = "true",
-        grayhaven_log_authentication_result = "failed",
+        grayhaven_log_authentication_result = "success",
       }
     }
   }
@@ -732,7 +732,8 @@ loki.process "grayhaven_dashboard_auth" {
 
     stage.static_labels {
       values = {
-        grayhaven_log_authentication = "true",
+        grayhaven_log_authentication        = "true",
+        grayhaven_log_authentication_result = "failed",
       }
     }
   }
