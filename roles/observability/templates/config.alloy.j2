@@ -743,7 +743,7 @@ loki.process "grayhaven_dashboard_auth" {
   }
 
   stage.drop {
-    expression = ".*<no value>.*"
+    expression = ".*(<no value>|\\(unknown\\)).*"
   }
 
   forward_to = [loki.process.grayhaven_redact.receiver]
