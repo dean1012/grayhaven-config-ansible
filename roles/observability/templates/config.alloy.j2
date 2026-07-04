@@ -598,7 +598,7 @@ loki.process "grayhaven_dashboard_auth" {
     selector = `{syslog_identifier="sudo"} |= " ; COMMAND=" != " ansible :" != "a password is required" != "incorrect password attempts" != "conversation failed" != "auth could not identify password"`
 
     stage.regex {
-      expression = ".*sudo\\[[0-9]+\\]:\\s+(?P<auth_user>[^\\s:]+)\\s+:.*"
+      expression = "^\\s*(?P<auth_user>[^\\s:]+)\\s+:.*"
     }
 
     stage.template {
@@ -646,7 +646,7 @@ loki.process "grayhaven_dashboard_auth" {
     selector = `{syslog_identifier="sudo"} |= "a password is required"`
 
     stage.regex {
-      expression = ".*sudo\\[[0-9]+\\]:\\s+(?P<auth_user>[^\\s:]+)\\s+:.*"
+      expression = "^\\s*(?P<auth_user>[^\\s:]+)\\s+:.*"
     }
 
     stage.template {
@@ -670,7 +670,7 @@ loki.process "grayhaven_dashboard_auth" {
     selector = `{syslog_identifier="sudo"} |= "incorrect password attempts"`
 
     stage.regex {
-      expression = ".*sudo\\[[0-9]+\\]:\\s+(?P<auth_user>[^\\s:]+)\\s+:.*"
+      expression = "^\\s*(?P<auth_user>[^\\s:]+)\\s+:.*"
     }
 
     stage.template {
