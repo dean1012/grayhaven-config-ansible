@@ -58,6 +58,7 @@ Metrics include:
 - active control-node metadata;
 - Ansible convergence status;
 - restic backup status;
+- sanitized active Grafana IRM alert-group state;
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
   domains.
 
@@ -69,6 +70,10 @@ unavailable while still surfacing explicit untrusted-certificate alerts.
 
 The active control node publishes the full known-host inventory as textfile
 metrics so dashboards and alert rules can reason about all expected hosts.
+When Grafana Cloud is enabled, the active control node also publishes sanitized
+Grafana IRM alert-group state as textfile metrics for operational reporting.
+The collector reads only current alert-group metadata and does not expose the
+API token or raw IRM payloads in generated metrics.
 
 [Back to top](#observability-architecture)
 
@@ -97,6 +102,8 @@ streams. Sudo session-open/session-close noise and Ansible automation sudo
 command lines are filtered from human-focused helper views so operator activity
 remains easier to review. Ansible runner service logs are still shipped when log
 shipping is enabled.
+Some textfile metrics are similarly derived from external operational state to
+support concise status reporting without exposing raw service payloads.
 
 [Back to top](#observability-architecture)
 

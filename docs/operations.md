@@ -415,6 +415,7 @@ Useful local status commands:
 ```bash
 sudo systemctl status alloy.service
 sudo systemctl status grayhaven-observability-textfile.timer
+sudo systemctl status grayhaven-irm-alert-groups-textfile.timer
 sudo journalctl -u alloy.service
 sudo journalctl -u grayhaven-ansible-runner.service
 ```

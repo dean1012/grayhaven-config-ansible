@@ -365,6 +365,11 @@ loki.process "grayhaven_dashboard_runner" {
     action   = "drop"
   }
 
+  stage.match {
+    selector = `{syslog_identifier="sudo"}`
+    action   = "drop"
+  }
+
   stage.static_labels {
     values = {
       grayhaven_log_ansible_runner = "true",

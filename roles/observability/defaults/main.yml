@@ -8,6 +8,7 @@ observability_config_dir: /etc/grayhaven/observability
 observability_alloy_token_file: "{{ observability_config_dir }}/grafana-alloy-token"
 observability_alert_sync_config_file: "{{ observability_config_dir }}/grafana-alert-sync.json"
 observability_alert_initial_silence_marker_file: "{{ observability_config_dir }}/initial-alert-silence-created"
+observability_irm_alert_groups_config_file: "{{ observability_config_dir }}/irm-alert-groups.json"
 observability_textfile_config_file: "{{ observability_config_dir }}/textfile-metrics.json"
 observability_textfile_dir: /var/lib/grayhaven/observability/textfile
 observability_alloy_http_url: http://127.0.0.1:12345

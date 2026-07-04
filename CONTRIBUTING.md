@@ -90,6 +90,7 @@ python3 -m py_compile \
   files/grayhaven-refresh-motd \
   roles/deploy_websites/files/grayhaven-website-deploy \
   roles/observability/files/grayhaven-grafana-alert-sync \
+  roles/observability/files/grayhaven-irm-alert-groups-textfile \
   roles/observability/files/grayhaven-observability-textfile \
   scripts/validate-rendered-alloy-config
 scripts/validate-rendered-alloy-config
