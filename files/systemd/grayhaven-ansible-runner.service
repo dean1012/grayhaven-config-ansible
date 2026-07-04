@@ -9,6 +9,6 @@ User=ansible
 Group=ansible
 WorkingDirectory=/home/ansible/ansible-runner
 ExecStart=/usr/local/sbin/grayhaven-ansible-runner
-# Keep convergence comfortably below the Grafana CPU alert threshold.
+# Keep convergence near or below 70% total CPU on the bastion.
 CPUAccounting=yes
-CPUQuota=65%
+CPUQuota=55%
