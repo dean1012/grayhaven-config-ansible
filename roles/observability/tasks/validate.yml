@@ -92,3 +92,16 @@
     - observability_metrics_enabled
     - observability_host_is_control_node
   no_log: true
+
+- name: Validate Grafana Cloud IRM alert-group reporting configuration
+  ansible.builtin.assert:
+    that:
+      - observability_grafana_credentials.irm_alert_groups is defined
+      - observability_grafana_credentials.irm_alert_groups.api_token is string
+      - observability_grafana_credentials.irm_alert_groups.api_token | trim | length > 0
+    fail_msg: "Grafana Cloud IRM alert-group reporting configuration is incomplete."
+    quiet: true
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node
+  no_log: true

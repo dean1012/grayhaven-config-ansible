@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Publish sanitized Grafana IRM alert-group state as textfile metrics."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any
+
+DEFAULT_CONFIG_PATH = pathlib.Path("/etc/grayhaven/observability/irm-alert-groups.json")
+DEFAULT_STATES = ("new", "acknowledged", "silenced")
+
+
+class GrafanaIrmError(RuntimeError):
+    """Raised when Grafana IRM cannot return usable alert-group state."""
+
+
+class GrafanaIrmClient:
+    """Minimal Grafana IRM API client for read-only alert-group collection."""
+
+    def __init__(self, stack_url: str, api_token: str) -> None:
+        self.stack_url = stack_url.rstrip("/")
+        self.api_token = api_token
+        self.oncall_api_url: str | None = None
+
+    def _request(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        expected: tuple[int, ...] = (200,),
+    ) -> Any:
+        request_headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.api_token}",
+        }
+        if headers:
+            request_headers.update(headers)
+
+        for attempt in range(5):
+            request = urllib.request.Request(url, headers=request_headers, method="GET")
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    status = response.getcode()
+                    body = response.read().decode("utf-8")
+            except urllib.error.HTTPError as error:
+                if error.code == 429 or 500 <= error.code <= 599:
+                    retry_after = error.headers.get("Retry-After")
+                    delay = int(retry_after) if retry_after and retry_after.isdigit() else min(2**attempt, 30)
+                    time.sleep(delay)
+                    continue
+
+                message = error.read().decode("utf-8", errors="replace")
+                raise GrafanaIrmError(f"GET {url} failed with HTTP {error.code}: {message}") from error
+            except urllib.error.URLError as error:
+                if attempt < 4:
+                    time.sleep(min(2**attempt, 30))
+                    continue
+                raise GrafanaIrmError(f"GET {url} failed: {error.reason}") from error
+
+            if status not in expected:
+                raise GrafanaIrmError(f"GET {url} returned unexpected HTTP status {status}")
+
+            if not body:
+                return None
+
+            return json.loads(body)
+
+        raise GrafanaIrmError(f"GET {url} exceeded retry budget")
+
+    def discover_oncall_api_url(self) -> str:
+        if self.oncall_api_url:
+            return self.oncall_api_url
+
+        settings_url = f"{self.stack_url}/api/plugins/grafana-irm-app/settings"
+        settings = self._request(settings_url)
+        if not isinstance(settings, dict):
+            raise GrafanaIrmError("Grafana IRM settings response was not an object")
+
+        json_data = settings.get("jsonData")
+        api_url = settings.get("onCallApiUrl")
+        if not isinstance(api_url, str) and isinstance(json_data, dict):
+            api_url = json_data.get("onCallApiUrl")
+        if not isinstance(api_url, str) or not api_url.strip():
+            raise GrafanaIrmError("Grafana IRM settings did not include onCallApiUrl")
+
+        self.oncall_api_url = api_url.rstrip("/")
+        return self.oncall_api_url
+
+    def alert_groups(self, state: str) -> list[dict[str, Any]]:
+        api_url = self.discover_oncall_api_url()
+        params = urllib.parse.urlencode({"state": state})
+        next_url: str | None = f"{api_url}/api/v1/alert_groups/?{params}"
+        results: list[dict[str, Any]] = []
+
+        while next_url:
+            page = self._request(
+                next_url,
+                headers={"Content-Type": "application/json", "X-Grafana-URL": self.stack_url},
+            )
+            if not isinstance(page, dict):
+                raise GrafanaIrmError("Grafana IRM alert groups response was not an object")
+
+            page_results = page.get("results")
+            if not isinstance(page_results, list):
+                raise GrafanaIrmError("Grafana IRM alert groups response did not include results")
+
+            results.extend(item for item in page_results if isinstance(item, dict))
+            next_value = page.get("next")
+            next_url = next_value if isinstance(next_value, str) and next_value else None
+
+        return results
+
+
+def label_value(value: object) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def labels(values: dict[str, object]) -> str:
+    rendered = ",".join(f'{key}="{label_value(value)}"' for key, value in sorted(values.items()))
+    return f"{{{rendered}}}"
+
+
+def metric_line(name: str, metric_labels: dict[str, object], value: object) -> str:
+    return f"{name}{labels(metric_labels)} {value}"
+
+
+def safe_string(value: object, *, max_length: int = 160) -> str:
+    if value is None:
+        return ""
+
+    text = str(value).replace("\r", " ").replace("\n", " ").strip()
+    if len(text) <= max_length:
+        return text
+
+    return f"{text[: max_length - 3]}..."
+
+
+def group_label(group: dict[str, Any], key: str) -> str:
+    return safe_string(group.get(key))
+
+
+def render(config: dict[str, Any], groups_by_state: dict[str, list[dict[str, Any]]]) -> str:
+    metric_labels = {
+        "client": config["labels"]["client"],
+        "environment": config["labels"]["environment"],
+    }
+    output = [
+        "# HELP grayhaven_irm_alert_groups_active Active Grafana IRM alert groups by state.",
+        "# TYPE grayhaven_irm_alert_groups_active gauge",
+    ]
+
+    for state in DEFAULT_STATES:
+        state_groups = groups_by_state.get(state, [])
+        output.append(metric_line("grayhaven_irm_alert_groups_active", {**metric_labels, "state": state}, len(state_groups)))
+
+    output.extend(
+        [
+            "# HELP grayhaven_irm_alert_group_info Sanitized active Grafana IRM alert-group metadata.",
+            "# TYPE grayhaven_irm_alert_group_info gauge",
+        ]
+    )
+
+    for state in DEFAULT_STATES:
+        for group in groups_by_state.get(state, []):
+            alert_group_id = group_label(group, "id")
+            if not alert_group_id:
+                continue
+
+            group_labels = {
+                **metric_labels,
+                "acknowledged_by": group_label(group, "acknowledged_by"),
+                "alert_group_id": alert_group_id,
+                "alert_group_number": group_label(group, "alert_group_number"),
+                "created_at": group_label(group, "created_at"),
+                "state": group_label(group, "state") or state,
+                "title": group_label(group, "title"),
+            }
+            output.append(metric_line("grayhaven_irm_alert_group_info", group_labels, 1))
+
+    return "\n".join(output) + "\n"
+
+
+def atomic_write(path: pathlib.Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            tmp_file.write(content)
+        os.chmod(tmp_name, 0o644)
+        os.replace(tmp_name, path)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+
+
+def collect(config: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    client = GrafanaIrmClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
+    return {state: client.alert_groups(state) for state in DEFAULT_STATES}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Publish Grafana IRM alert-group state as textfile metrics.")
+    parser.add_argument("--config", type=pathlib.Path, default=DEFAULT_CONFIG_PATH)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    with args.config.open(encoding="utf-8") as config_file:
+        config = json.load(config_file)
+
+    output_path = pathlib.Path(config["output_path"])
+    atomic_write(output_path, render(config, collect(config)))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except GrafanaIrmError as error:
+        print(f"grayhaven-irm-alert-groups-textfile: {error}", file=sys.stderr)
+        raise SystemExit(1) from error

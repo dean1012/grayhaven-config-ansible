@@ -180,6 +180,38 @@
       hosts: "{{ observability_hosts }}"
   when: observability_metrics_enabled
 
+- name: Install Grafana IRM alert-group textfile helper
+  ansible.builtin.copy:
+    src: grayhaven-irm-alert-groups-textfile
+    dest: /usr/local/sbin/grayhaven-irm-alert-groups-textfile
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node
+
+- name: Store Grafana IRM alert-group reporting configuration
+  ansible.builtin.copy:
+    dest: "{{ observability_irm_alert_groups_config_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    content: "{{ observability_irm_alert_groups_config | to_nice_json }}\n"
+  vars:
+    observability_irm_alert_groups_config:
+      grafana:
+        stack_url: "{{ observability_grafana_credentials.stack_url }}"
+        api_token: "{{ observability_grafana_credentials.irm_alert_groups.api_token }}"
+      labels:
+        client: "{{ observability_client }}"
+        environment: "{{ grayhaven_environment }}"
+      output_path: "{{ observability_textfile_dir }}/irm-alert-groups.prom"
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node
+  no_log: true
+
 - name: Install Grayhaven observability textfile service
   ansible.builtin.copy:
     dest: /etc/systemd/system/grayhaven-observability-textfile.service
@@ -194,6 +226,48 @@
       Type=oneshot
       ExecStart=/usr/local/sbin/grayhaven-observability-textfile
   when: observability_metrics_enabled
+  notify: Reload systemd
+
+- name: Install Grafana IRM alert-group textfile service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-irm-alert-groups-textfile.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Grayhaven Systems LLC Grafana IRM alert-group textfile metrics
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/grayhaven-irm-alert-groups-textfile
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node
+  notify: Reload systemd
+
+- name: Install Grafana IRM alert-group textfile timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-irm-alert-groups-textfile.timer
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Refresh Grayhaven Systems LLC Grafana IRM alert-group textfile metrics
+
+      [Timer]
+      OnBootSec=1m
+      OnUnitActiveSec=1m
+      AccuracySec=15s
+      Persistent=true
+      Unit=grayhaven-irm-alert-groups-textfile.service
+
+      [Install]
+      WantedBy=timers.target
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node
   notify: Reload systemd
 
 - name: Install Grayhaven observability textfile timer
@@ -244,6 +318,16 @@
     state: started
     daemon_reload: true
   when: observability_metrics_enabled
+
+- name: Enable Grafana IRM alert-group textfile timer
+  ansible.builtin.systemd_service:
+    name: grayhaven-irm-alert-groups-textfile.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - observability_metrics_enabled
+    - observability_host_is_control_node
 
 - name: Render Grafana Alloy configuration
   ansible.builtin.template:
