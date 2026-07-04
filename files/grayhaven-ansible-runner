@@ -253,7 +253,7 @@ write_convergence_metric() {
 }
 
 write_ordered_runner_log() {
-  /usr/bin/python3 - "$OBSERVABILITY_RUNNER_LOG" <<'PY'
+  /usr/bin/python3 -c '
 from __future__ import annotations
 
 import datetime
@@ -269,7 +269,7 @@ run_start_ns = time.time_ns()
 
 
 def logfmt_value(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
 
 
 def timestamp_from_ns(timestamp_ns: int) -> str:
@@ -305,7 +305,7 @@ with log_path.open("a", encoding="utf-8") as log_file:
             + "\n"
         )
         log_file.flush()
-PY
+' "$OBSERVABILITY_RUNNER_LOG"
 }
 
 ###############################################################################
