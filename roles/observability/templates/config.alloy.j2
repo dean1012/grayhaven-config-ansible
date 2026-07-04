@@ -299,6 +299,25 @@ loki.source.file "certbot" {
   forward_to = [loki.process.grayhaven_raw.receiver]
 }
 
+{% if observability_role == "bastion" %}
+local.file_match "ansible_runner_dashboard" {
+  path_targets = [{
+    "__path__"   = "/var/lib/grayhaven/observability/ansible-runner-dashboard.log",
+    "client"     = {{ observability_client | to_json }},
+    "environment" = {{ grayhaven_environment | to_json }},
+    "host"       = {{ inventory_hostname | to_json }},
+    "job"        = "ansible_runner_dashboard",
+    "project"    = {{ observability_project | to_json }},
+    "role"       = {{ observability_role | to_json }},
+  }]
+}
+
+loki.source.file "ansible_runner_dashboard" {
+  targets    = local.file_match.ansible_runner_dashboard.targets
+  forward_to = [loki.process.grayhaven_dashboard_runner.receiver]
+}
+
+{% endif %}
 loki.relabel "journal_dashboard" {
   forward_to = []
 
@@ -343,7 +362,6 @@ loki.source.journal "system_dashboard" {
     "role"        = {{ observability_role | to_json }},
   }
   forward_to = [
-    loki.process.grayhaven_dashboard_runner.receiver,
     loki.process.grayhaven_dashboard_auth.receiver,
     loki.process.grayhaven_dashboard_superuser.receiver,
     loki.process.grayhaven_dashboard_fail2ban.receiver,
@@ -360,14 +378,31 @@ loki.process "grayhaven_raw" {
 }
 
 loki.process "grayhaven_dashboard_runner" {
-  stage.match {
-    selector = `{systemd_unit!="grayhaven-ansible-runner.service"}`
-    action   = "drop"
+  stage.logfmt {
+    mapping = {
+      "line"        = "",
+      "observed_at" = "",
+      "ordered_at"  = "",
+      "run_id"      = "",
+      "sequence"    = "",
+    }
   }
 
-  stage.match {
-    selector = `{syslog_identifier="sudo"}`
-    action   = "drop"
+  stage.timestamp {
+    source = "ordered_at"
+    format = "RFC3339Nano"
+  }
+
+  stage.structured_metadata {
+    values = {
+      "observed_at" = "",
+      "run_id"      = "",
+      "sequence"    = "",
+    }
+  }
+
+  stage.output {
+    source = "line"
   }
 
   stage.static_labels {

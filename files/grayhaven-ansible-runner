@@ -11,6 +11,7 @@ RUNNER_SECRET_ENV="${RUNNER_RUNTIME_DIR}/secrets.env"
 RUNNER_PLAYBOOK_LOG="${RUNNER_RUNTIME_DIR}/playbook.log"
 ROTATE_VAULT_PASSWORD_FILE=""
 OBSERVABILITY_TEXTFILE_DIR="/var/lib/grayhaven/observability/textfile"
+OBSERVABILITY_RUNNER_LOG="/var/lib/grayhaven/observability/ansible-runner-dashboard.log"
 ANSIBLE_HOME="/home/ansible"
 RUNNER_WORK_DIR="${ANSIBLE_HOME}/ansible-runner"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
@@ -249,6 +250,62 @@ write_convergence_metric() {
   } > "$tmp_file"
   chmod 0644 "$tmp_file"
   mv "$tmp_file" "${OBSERVABILITY_TEXTFILE_DIR}/ansible-convergence.prom"
+}
+
+write_ordered_runner_log() {
+  /usr/bin/python3 - "$OBSERVABILITY_RUNNER_LOG" <<'PY'
+from __future__ import annotations
+
+import datetime
+import os
+import pathlib
+import sys
+import time
+import uuid
+
+log_path = pathlib.Path(sys.argv[1])
+run_id = uuid.uuid4().hex
+run_start_ns = time.time_ns()
+
+
+def logfmt_value(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+
+
+def timestamp_from_ns(timestamp_ns: int) -> str:
+    seconds, nanoseconds = divmod(timestamp_ns, 1_000_000_000)
+    rendered = datetime.datetime.fromtimestamp(seconds, datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    return f"{rendered}.{nanoseconds:09d}Z"
+
+
+log_path.parent.mkdir(parents=True, exist_ok=True)
+with log_path.open("a", encoding="utf-8") as log_file:
+    os.chmod(log_path, 0o644)
+    for sequence, raw_line in enumerate(sys.stdin, start=1):
+        sys.stdout.write(raw_line)
+        sys.stdout.flush()
+
+        line = raw_line.rstrip("\n")
+        # Loki and Grafana order log rows by timestamp. This dashboard-only
+        # stream derives its timestamp from the playbook line number so the
+        # Ansible output order is preserved even when many lines are emitted in
+        # the same wall-clock instant.
+        ordered_timestamp_ns = run_start_ns + sequence
+
+        log_file.write(
+            " ".join(
+                [
+                    f"ordered_at={logfmt_value(timestamp_from_ns(ordered_timestamp_ns))}",
+                    f"observed_at={logfmt_value(timestamp_from_ns(time.time_ns()))}",
+                    f"run_id={logfmt_value(run_id)}",
+                    f"sequence={sequence}",
+                    f"line={logfmt_value(line)}",
+                ]
+            )
+            + "\n"
+        )
+        log_file.flush()
+PY
 }
 
 ###############################################################################
@@ -809,7 +866,7 @@ run_convergence() {
     --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/common.yml" \
     --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/bastion.yml" \
     --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/web.yml" \
-    --extra-vars "@${RUNNER_VARS}" 2>&1 | tee "$RUNNER_PLAYBOOK_LOG"
+    --extra-vars "@${RUNNER_VARS}" 2>&1 | tee "$RUNNER_PLAYBOOK_LOG" | write_ordered_runner_log
 }
 
 run_gcs_restic_bucket_cleanup() {
