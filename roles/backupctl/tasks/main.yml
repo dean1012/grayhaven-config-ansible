@@ -98,11 +98,42 @@
       {{ backupctl_venv_dir | quote }}
     creates: "{{ backupctl_venv_dir }}/bin/python"
 
+- name: Check grayhaven-backupctl command in virtual environment
+  ansible.builtin.stat:
+    path: "{{ backupctl_venv_dir }}/bin/python"
+  register: backupctl_venv_python
+
+- name: Check grayhaven-backupctl requirements checksum
+  ansible.builtin.stat:
+    path: "{{ backupctl_checkout_dir }}/requirements.txt"
+    checksum_algorithm: sha256
+  register: backupctl_requirements
+
+- name: Read grayhaven-backupctl requirements marker
+  ansible.builtin.command:
+    cmd: cat "{{ backupctl_venv_dir }}/.grayhaven-requirements.sha256"
+  register: backupctl_requirements_marker
+  changed_when: false
+  failed_when: false
+
 - name: Install grayhaven-backupctl Python requirements
   ansible.builtin.pip:
     virtualenv: "{{ backupctl_venv_dir }}"
     requirements: "{{ backupctl_checkout_dir }}/requirements.txt"
     extra_args: --require-hashes
+  when: >-
+    not backupctl_venv_python.stat.exists or
+    backupctl_requirements_marker.rc != 0 or
+    backupctl_requirements_marker.stdout | default("") !=
+    backupctl_requirements.stat.checksum
+
+- name: Store grayhaven-backupctl requirements marker
+  ansible.builtin.copy:
+    dest: "{{ backupctl_venv_dir }}/.grayhaven-requirements.sha256"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ backupctl_requirements.stat.checksum }}\n"
 
 - name: Ensure grayhaven-backupctl libexec directory exists
   ansible.builtin.file:

@@ -24,16 +24,26 @@
     mode: "0750"
   when: grayhaven_role == "bastion"
 
-- name: Ensure Ansible cache directory is owned by ansible on bastion hosts
+- name: Check Ansible cache directory ownership on bastion hosts
+  ansible.builtin.command:
+    cmd: find /home/ansible/.ansible \( ! -user ansible -o ! -group ansible \) -print -quit
+  register: system_packages_ansible_cache_ownership_drift
+  changed_when: false
+  failed_when: false
+  when: grayhaven_role == "bastion"
+
+- name: Repair Ansible cache directory ownership on bastion hosts
   ansible.builtin.file:
     path: /home/ansible/.ansible
     state: directory
     owner: ansible
     group: ansible
     recurse: true
-  when: grayhaven_role == "bastion"
+  when:
+    - grayhaven_role == "bastion"
+    - system_packages_ansible_cache_ownership_drift.stdout | default("") | length > 0
 
-- name: Ensure Ansible collection directory is owned by ansible on bastion hosts
+- name: Ensure Ansible collection directory exists on bastion hosts
   ansible.builtin.file:
     path: "{{ system_packages_ansible_runtime_venv | dirname }}/collections"
     state: directory
@@ -42,13 +52,46 @@
     mode: "0755"
   when: grayhaven_role == "bastion"
 
-- name: Ensure Ansible runner directory is owned by ansible on bastion hosts
+- name: Check Ansible runner directory ownership on bastion hosts
+  ansible.builtin.command:
+    cmd: >-
+      find {{ system_packages_ansible_runtime_venv | dirname }}
+      \( ! -user ansible -o ! -group ansible \) -print -quit
+  register: system_packages_ansible_runner_ownership_drift
+  changed_when: false
+  failed_when: false
+  when: grayhaven_role == "bastion"
+
+- name: Repair Ansible runner directory ownership on bastion hosts
   ansible.builtin.file:
     path: "{{ system_packages_ansible_runtime_venv | dirname }}"
     state: directory
     owner: ansible
     group: ansible
     recurse: true
+  when:
+    - grayhaven_role == "bastion"
+    - system_packages_ansible_runner_ownership_drift.stdout | default("") | length > 0
+
+- name: Check Ansible runtime command on bastion hosts
+  ansible.builtin.stat:
+    path: "{{ system_packages_ansible_runtime_venv }}/bin/ansible"
+  register: system_packages_ansible_runtime_command
+  when: grayhaven_role == "bastion"
+
+- name: Check Ansible runtime requirements checksum on bastion hosts
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../pip3_requirements.txt"
+    checksum_algorithm: sha256
+  register: system_packages_ansible_runtime_requirements
+  when: grayhaven_role == "bastion"
+
+- name: Read Ansible runtime requirements marker on bastion hosts
+  ansible.builtin.command:
+    cmd: cat "{{ system_packages_ansible_runtime_venv }}/.grayhaven-pip3-requirements.sha256"
+  register: system_packages_ansible_runtime_requirements_marker
+  changed_when: false
+  failed_when: false
   when: grayhaven_role == "bastion"
 
 - name: Create Ansible runtime virtual environment on bastion hosts
@@ -73,7 +116,13 @@
   register: system_packages_ansible_runtime_pip_upgrade
   changed_when: >-
     'Successfully installed' in system_packages_ansible_runtime_pip_upgrade.stdout
-  when: grayhaven_role == "bastion"
+  when:
+    - grayhaven_role == "bastion"
+    - >-
+      not system_packages_ansible_runtime_command.stat.exists or
+      system_packages_ansible_runtime_requirements_marker.rc != 0 or
+      system_packages_ansible_runtime_requirements_marker.stdout | default("") !=
+      system_packages_ansible_runtime_requirements.stat.checksum
 
 - name: Install pinned Ansible runtime on bastion hosts
   ansible.builtin.command:
@@ -91,6 +140,21 @@
     LOGNAME: ansible
   register: system_packages_ansible_install
   changed_when: "'Successfully installed' in system_packages_ansible_install.stdout"
+  when:
+    - grayhaven_role == "bastion"
+    - >-
+      not system_packages_ansible_runtime_command.stat.exists or
+      system_packages_ansible_runtime_requirements_marker.rc != 0 or
+      system_packages_ansible_runtime_requirements_marker.stdout | default("") !=
+      system_packages_ansible_runtime_requirements.stat.checksum
+
+- name: Store Ansible runtime requirements marker on bastion hosts
+  ansible.builtin.copy:
+    dest: "{{ system_packages_ansible_runtime_venv }}/.grayhaven-pip3-requirements.sha256"
+    content: "{{ system_packages_ansible_runtime_requirements.stat.checksum }}\n"
+    owner: ansible
+    group: ansible
+    mode: "0644"
   when: grayhaven_role == "bastion"
 
 - name: Link Ansible runtime commands on bastion hosts
@@ -110,13 +174,54 @@
     - ansible-vault
   when: grayhaven_role == "bastion"
 
-- name: Ensure Ansible runtime virtual environment remains owned by ansible
+- name: Check Ansible runtime virtual environment ownership on bastion hosts
+  ansible.builtin.command:
+    cmd: >-
+      find {{ system_packages_ansible_runtime_venv }}
+      \( ! -user ansible -o ! -group ansible \) -print -quit
+  register: system_packages_ansible_runtime_ownership_drift
+  changed_when: false
+  failed_when: false
+  when: grayhaven_role == "bastion"
+
+- name: Repair Ansible runtime virtual environment ownership on bastion hosts
   ansible.builtin.file:
     path: "{{ system_packages_ansible_runtime_venv }}"
     state: directory
     owner: ansible
     group: ansible
     recurse: true
+  when:
+    - grayhaven_role == "bastion"
+    - system_packages_ansible_runtime_ownership_drift.stdout | default("") | length > 0
+
+- name: Check Ansible Galaxy requirements checksums on bastion hosts
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - "{{ playbook_dir }}/../galaxy_requirements.yml"
+    - "{{ playbook_dir }}/../galaxy_requirements.sha256"
+  register: system_packages_galaxy_requirements
+  when: grayhaven_role == "bastion"
+
+- name: Build Ansible Galaxy requirements marker value on bastion hosts
+  ansible.builtin.set_fact:
+    system_packages_galaxy_requirements_checksum: >-
+      {{
+        system_packages_galaxy_requirements.results
+        | map(attribute='stat.checksum')
+        | join(':')
+        | hash('sha256')
+      }}
+  when: grayhaven_role == "bastion"
+
+- name: Read Ansible Galaxy requirements marker on bastion hosts
+  ansible.builtin.command:
+    cmd: cat "{{ system_packages_ansible_runtime_venv | dirname }}/collections/.grayhaven-galaxy-requirements.sha256"
+  register: system_packages_galaxy_requirements_marker
+  changed_when: false
+  failed_when: false
   when: grayhaven_role == "bastion"
 
 - name: Install checksum-verified Ansible Galaxy collections on bastion hosts
@@ -133,6 +238,20 @@
     LOGNAME: ansible
   register: system_packages_galaxy_install
   changed_when: "'Installing collection' in system_packages_galaxy_install.stdout"
+  when:
+    - grayhaven_role == "bastion"
+    - >-
+      system_packages_galaxy_requirements_marker.rc != 0 or
+      system_packages_galaxy_requirements_marker.stdout | default("") !=
+      system_packages_galaxy_requirements_checksum
+
+- name: Store Ansible Galaxy requirements marker on bastion hosts
+  ansible.builtin.copy:
+    dest: "{{ system_packages_ansible_runtime_venv | dirname }}/collections/.grayhaven-galaxy-requirements.sha256"
+    content: "{{ system_packages_galaxy_requirements_checksum }}\n"
+    owner: ansible
+    group: ansible
+    mode: "0644"
   when: grayhaven_role == "bastion"
 
 - name: Remove RPM-managed Ansible runtime from non-bastion hosts
