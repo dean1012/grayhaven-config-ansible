@@ -57,7 +57,9 @@ Metrics include:
 - Grayhaven Systems LLC host inventory metadata;
 - active control-node metadata;
 - Ansible convergence status;
-- restic backup status;
+- restic backup, integrity-check, retention, and restore-size status;
+- Google Cloud Storage restic bucket usage, stale-bucket state, and public
+  service-health status;
 - sanitized active Grafana IRM alert-group state;
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
   domains.

@@ -28,7 +28,7 @@ observability_memory_warning_percent: 80
 observability_filesystem_warning_percent: 80
 observability_filesystem_inode_warning_percent: 80
 observability_swap_warning_percent: 80
-observability_restic_stale_seconds: 129600
+observability_restic_stale_seconds: 100800
 
 observability_service_units_common:
   - name: sshd.service

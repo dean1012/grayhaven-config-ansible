@@ -232,6 +232,17 @@
         environment: "{{ grayhaven_environment }}"
         control_node: "{{ observability_host_is_control_node }}"
       hosts: "{{ observability_hosts }}"
+      restic:
+        repositories: >-
+          {{
+            ['local']
+            + (['remote'] if (restic_backup_remote_gcs_enabled | default(false) | bool) else [])
+          }}
+      gcs:
+        enabled: "{{ restic_backup_remote_gcs_enabled | default(false) | bool }}"
+        project_id: "{{ restic_backup_remote_gcs_project_id | default('') }}"
+        location: "{{ restic_backup_remote_gcs_location | default('') }}"
+        credentials_file: /etc/grayhaven/backup/gcs-credentials.json
   when: observability_metrics_enabled
 
 - name: Install Grafana IRM alert-group textfile helper
