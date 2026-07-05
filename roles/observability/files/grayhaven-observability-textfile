@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import pathlib
+import subprocess
 import tempfile
 import time
 from typing import Any
@@ -248,6 +249,44 @@ def render_status(status: str) -> str:
     return status.replace("_", " ").title() if status else "Unknown"
 
 
+# fail2ban helpers
+
+def fail2ban_status(jail: str) -> tuple[int, int, int, list[str]]:
+    def parse_count(value: str) -> int:
+        try:
+            return int(value.strip() or "0")
+        except ValueError:
+            return 0
+
+    try:
+        result = subprocess.run(
+            ["/usr/bin/fail2ban-client", "status", jail],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return 0, 0, 0, []
+
+    if result.returncode != 0:
+        return 0, 0, 0, []
+
+    current_banned = 0
+    total_banned = 0
+    banned_ips: list[str] = []
+    for raw_line in result.stdout.splitlines():
+        status_line = raw_line.strip()
+        if status_line.startswith("Currently banned:"):
+            current_banned = parse_count(status_line.split(":", 1)[1])
+        elif status_line.startswith("Total banned:"):
+            total_banned = parse_count(status_line.split(":", 1)[1])
+        elif status_line.startswith("Banned IP list:"):
+            banned_ips = status_line.split(":", 1)[1].split()
+
+    return 1, current_banned, total_banned, banned_ips
+
+
 # Metric rendering
 
 def render_expected_restic_repositories(config: dict[str, Any]) -> list[str]:
@@ -398,6 +437,51 @@ def render_proton_metrics(config: dict[str, Any]) -> list[str]:
     return output
 
 
+def render_fail2ban_metrics(config: dict[str, Any]) -> list[str]:
+    current_host = config["host"]
+    jails = config.get("fail2ban", {}).get("jails", [])
+    if not jails:
+        return []
+
+    output = [
+        "# HELP grayhaven_fail2ban_jail_status fail2ban jail status collection success.",
+        "# TYPE grayhaven_fail2ban_jail_status gauge",
+        "# HELP grayhaven_fail2ban_jail_currently_banned fail2ban currently banned IP count by jail.",
+        "# TYPE grayhaven_fail2ban_jail_currently_banned gauge",
+        "# HELP grayhaven_fail2ban_jail_total_banned fail2ban total banned IP count by jail since service start.",
+        "# TYPE grayhaven_fail2ban_jail_total_banned gauge",
+        "# HELP grayhaven_fail2ban_jail_banned_ip_info fail2ban currently banned IP marker by jail.",
+        "# TYPE grayhaven_fail2ban_jail_banned_ip_info gauge",
+    ]
+    metric_base = host_labels(
+        {
+            "client": current_host["client"],
+            "environment": current_host["environment"],
+            "fqdn": current_host["fqdn"],
+            "project": current_host["project"],
+            "role": current_host["role"],
+        }
+    )
+
+    for jail in jails:
+        status, current_banned, total_banned, banned_ips = fail2ban_status(str(jail["name"]))
+        jail_labels = dict(metric_base)
+        jail_labels["jail"] = jail["name"]
+        jail_labels["display_name"] = jail.get("display_name", jail["name"])
+        jail_labels["domain"] = jail.get("domain", "")
+        jail_labels["category"] = jail.get("category", "")
+        output.append(line("grayhaven_fail2ban_jail_status", jail_labels, status))
+        output.append(line("grayhaven_fail2ban_jail_currently_banned", jail_labels, current_banned))
+        output.append(line("grayhaven_fail2ban_jail_total_banned", jail_labels, total_banned))
+
+        for banned_ip in banned_ips:
+            ip_labels = dict(jail_labels)
+            ip_labels["ip"] = banned_ip
+            output.append(line("grayhaven_fail2ban_jail_banned_ip_info", ip_labels, 1))
+
+    return output
+
+
 def render(config: dict[str, Any]) -> str:
     current_host = config["host"]
     output = [
@@ -433,6 +517,7 @@ def render(config: dict[str, Any]) -> str:
         output.append(line("grayhaven_control_node_info", metric_labels, 1))
 
     output.extend(render_expected_restic_repositories(config))
+    output.extend(render_fail2ban_metrics(config))
     output.extend(render_gcs_metrics(config))
     output.extend(render_proton_metrics(config))
 

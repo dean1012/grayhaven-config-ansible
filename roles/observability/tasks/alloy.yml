@@ -243,6 +243,8 @@
         project_id: "{{ restic_backup_remote_gcs_project_id | default('') }}"
         location: "{{ restic_backup_remote_gcs_location | default('') }}"
         credentials_file: /etc/grayhaven/backup/gcs-credentials.json
+      fail2ban:
+        jails: "{{ observability_fail2ban_jails }}"
       proton:
         enabled: "{{ observability_host_is_control_node }}"
         services:

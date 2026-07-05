@@ -10,7 +10,7 @@ prometheus.exporter.unix "node" {
   enable_collectors        = ["systemd"]
 
   systemd {
-    unit_include = "(sshd|firewalld|fail2ban|nginx|grayhaven-restic-backup|grayhaven-restic-check|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
+    unit_include = "(sshd|firewalld|fail2ban|chronyd|auditd|do-agent|nginx|certbot-renew|grayhaven-website-deploy-webhook|grayhaven-restic-backup|grayhaven-restic-check|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
     start_time   = true
   }
 
@@ -490,6 +490,19 @@ loki.process "grayhaven_dashboard_superuser" {
 
   stage.match {
     selector = `{syslog_identifier="sudo"} |= " ; COMMAND=" != " ansible :" != "a password is required" != "incorrect password attempts" != "incorrect password attempt" != "conversation failed" != "auth could not identify password"`
+
+    stage.regex {
+      expression = "^\\s*(?P<sudo_user>[^\\s:]+)\\s+:\\s+TTY=[^;]+\\s*;\\s*PWD=(?P<sudo_pwd>[^;]+?)\\s*;\\s*USER=(?P<sudo_euser>[^;]+?)\\s*;\\s*COMMAND=(?P<sudo_command>.*)$"
+    }
+
+    stage.template {
+      source   = "grayhaven_superuser_line"
+      template = {% raw %}"grayhaven-sudo-command user=\"{{ .sudo_user }}\" euser=\"{{ .sudo_euser }}\" PWD=\"{{ .sudo_pwd }}\" command=\"{{ .sudo_command }}\""{% endraw %}
+    }
+
+    stage.output {
+      source = "grayhaven_superuser_line"
+    }
 
     stage.static_labels {
       values = {

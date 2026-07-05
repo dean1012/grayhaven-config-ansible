@@ -28,6 +28,7 @@ observability_memory_warning_percent: 80
 observability_filesystem_warning_percent: 80
 observability_filesystem_inode_warning_percent: 80
 observability_swap_warning_percent: 80
+observability_certificate_expiring_seconds: 1209600
 observability_restic_stale_seconds: 100800
 
 observability_service_units_common:
@@ -40,6 +41,15 @@ observability_service_units_common:
   - name: fail2ban.service
     check: fail2ban_service
     summary: fail2ban service is down
+  - name: chronyd.service
+    check: chrony_service
+    summary: Chrony service is down
+  - name: auditd.service
+    check: auditd_service
+    summary: auditd service is down
+  - name: do-agent.service
+    check: digitalocean_agent_service
+    summary: DigitalOcean agent service is down
   - name: grayhaven-restic-backup.timer
     check: restic_timer
     summary: Restic backup timer is down
@@ -51,6 +61,12 @@ observability_service_units_web:
   - name: nginx.service
     check: nginx_service
     summary: Nginx service is down
+  - name: certbot-renew.timer
+    check: certbot_renew_timer
+    summary: Certbot renewal timer is down
+  - name: grayhaven-website-deploy-webhook.service
+    check: website_deploy_webhook_service
+    summary: Website deploy webhook service is down
 
 observability_service_units_control_node:
   - name: grayhaven-ansible-runner.timer

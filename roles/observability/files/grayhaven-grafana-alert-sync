@@ -652,6 +652,39 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
             )
             rules.append(
                 alert_rule(
+                    title=f"{site['domain']} SSL certificate expiring within 14 days",
+                    expression=(
+                        "max by (domain, environment, role, project, client) "
+                        "("
+                        f'(probe_ssl_earliest_cert_expiry{{domain="{promql_string(site["domain"])}",'
+                        'check="ssl_certificate"} - time() '
+                        f'< {float(config["thresholds"]["certificate_expiring_seconds"])}) '
+                        "and "
+                        f'(probe_ssl_earliest_cert_expiry{{domain="{promql_string(site["domain"])}",'
+                        'check="ssl_certificate"} - time() > 0)'
+                        ")"
+                    ),
+                    evaluator_type="gt",
+                    threshold=0,
+                    labels=base_labels(
+                        config,
+                        {
+                            "check": "ssl_certificate_expiring",
+                            "domain": site["domain"],
+                            "project": web_host["project"],
+                            "role": "web",
+                        },
+                    ),
+                    annotations={
+                        "summary": "SSL certificate is expiring soon",
+                        "description": f"{site['domain']} SSL certificate expires within 14 days.",
+                        "check_value": "{{ humanizeDuration $values.A.Value }}",
+                    },
+                    **common,
+                )
+            )
+            rules.append(
+                alert_rule(
                     title=f"{site['domain']} using untrusted SSL certificate",
                     expression=(
                         "max by (domain, environment, role, project, client) "
