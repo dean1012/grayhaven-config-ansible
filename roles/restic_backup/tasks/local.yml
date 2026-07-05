@@ -111,10 +111,17 @@
       export RESTIC_CACHE_DIR
 
       successful_repositories=()
+      declare -A repository_backup_duration_seconds
+      declare -A repository_restore_size_bytes
+      declare -A repository_snapshot_count
 
       backup_repository() {
         local repository=$1
         local label=$2
+        local backup_start
+        local backup_end
+
+        backup_start="$(date +%s)"
 
         restic \
           --repo "$repository" \
@@ -132,6 +139,25 @@
           --keep-daily "$KEEP_DAILY" \
           --prune
 
+        backup_end="$(date +%s)"
+        repository_backup_duration_seconds["$label"]=$((backup_end - backup_start))
+        repository_restore_size_bytes["$label"]="$(
+          restic \
+            --repo "$repository" \
+            --password-file "$PASSWORD_FILE" \
+            stats latest \
+            --mode restore-size \
+            --json \
+            | python3 -c 'import json, sys; print(int(json.load(sys.stdin).get("total_size", 0)))'
+        )"
+        repository_snapshot_count["$label"]="$(
+          restic \
+            --repo "$repository" \
+            --password-file "$PASSWORD_FILE" \
+            snapshots \
+            --json \
+            | python3 -c 'import json, sys; print(len(json.load(sys.stdin)))'
+        )"
         successful_repositories+=("$label")
       }
 
@@ -159,6 +185,30 @@
               "$(hostname -f)" \
               "$repository_label" \
               "$backup_timestamp"
+          done
+          printf '# HELP grayhaven_restic_repository_backup_duration_seconds Last backup duration by repository.\n'
+          printf '# TYPE grayhaven_restic_repository_backup_duration_seconds gauge\n'
+          for repository_label in "${successful_repositories[@]}"; do
+            printf 'grayhaven_restic_repository_backup_duration_seconds{host="%s",repository="%s"} %s\n' \
+              "$(hostname -f)" \
+              "$repository_label" \
+              "${repository_backup_duration_seconds[$repository_label]}"
+          done
+          printf '# HELP grayhaven_restic_repository_restore_size_bytes Latest restore-size bytes by repository.\n'
+          printf '# TYPE grayhaven_restic_repository_restore_size_bytes gauge\n'
+          for repository_label in "${successful_repositories[@]}"; do
+            printf 'grayhaven_restic_repository_restore_size_bytes{host="%s",repository="%s"} %s\n' \
+              "$(hostname -f)" \
+              "$repository_label" \
+              "${repository_restore_size_bytes[$repository_label]}"
+          done
+          printf '# HELP grayhaven_restic_repository_snapshot_count Restic snapshot count by repository.\n'
+          printf '# TYPE grayhaven_restic_repository_snapshot_count gauge\n'
+          for repository_label in "${successful_repositories[@]}"; do
+            printf 'grayhaven_restic_repository_snapshot_count{host="%s",repository="%s"} %s\n' \
+              "$(hostname -f)" \
+              "$repository_label" \
+              "${repository_snapshot_count[$repository_label]}"
           done
         } > "$tmp_file"
         chmod 0644 "$tmp_file"
@@ -196,27 +246,65 @@
       REMOTE_REPOSITORY={{ restic_backup_remote_gcs_repository | default('') | quote }}
       PASSWORD_FILE=/etc/grayhaven/backup/restic-password
       RESTIC_CACHE_DIR=/var/cache/restic
+      TEXTFILE_DIR=/var/lib/grayhaven/observability/textfile
       GCS_CREDENTIALS_FILE=/etc/grayhaven/backup/gcs-credentials.json
       GCS_PROJECT_ID={{ restic_backup_remote_gcs_project_id | default('') | quote }}
 
       export RESTIC_CACHE_DIR
 
+      successful_repositories=()
+      declare -A repository_check_duration_seconds
+
       check_repository() {
         local repository=$1
+        local label=$2
+        local check_start
+        local check_end
+
+        check_start="$(date +%s)"
 
         restic \
           --repo "$repository" \
           --password-file "$PASSWORD_FILE" \
           check \
           --read-data-subset=5%
+
+        check_end="$(date +%s)"
+        repository_check_duration_seconds["$label"]=$((check_end - check_start))
+        successful_repositories+=("$label")
       }
 
-      check_repository "$LOCAL_REPOSITORY"
+      check_repository "$LOCAL_REPOSITORY" local
 
       if [[ "$REMOTE_ENABLED" == "true" ]]; then
         export GOOGLE_PROJECT_ID="$GCS_PROJECT_ID"
         export GOOGLE_APPLICATION_CREDENTIALS="$GCS_CREDENTIALS_FILE"
-        check_repository "$REMOTE_REPOSITORY"
+        check_repository "$REMOTE_REPOSITORY" remote
+      fi
+
+      if [[ -d "$TEXTFILE_DIR" ]]; then
+        tmp_file="$(mktemp "${TEXTFILE_DIR}/restic-check.XXXXXX")"
+        check_timestamp="$(date +%s)"
+        {
+          printf '# HELP grayhaven_restic_repository_check_last_success_timestamp_seconds Last check by repository.\n'
+          printf '# TYPE grayhaven_restic_repository_check_last_success_timestamp_seconds gauge\n'
+          for repository_label in "${successful_repositories[@]}"; do
+            printf 'grayhaven_restic_repository_check_last_success_timestamp_seconds{host="%s",repository="%s"} %s\n' \
+              "$(hostname -f)" \
+              "$repository_label" \
+              "$check_timestamp"
+          done
+          printf '# HELP grayhaven_restic_repository_check_duration_seconds Last check duration by repository.\n'
+          printf '# TYPE grayhaven_restic_repository_check_duration_seconds gauge\n'
+          for repository_label in "${successful_repositories[@]}"; do
+            printf 'grayhaven_restic_repository_check_duration_seconds{host="%s",repository="%s"} %s\n' \
+              "$(hostname -f)" \
+              "$repository_label" \
+              "${repository_check_duration_seconds[$repository_label]}"
+          done
+        } > "$tmp_file"
+        chmod 0644 "$tmp_file"
+        mv "$tmp_file" "${TEXTFILE_DIR}/restic-check.prom"
       fi
 
 - name: Install restic integrity check service

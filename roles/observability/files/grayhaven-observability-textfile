@@ -3,15 +3,29 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import pathlib
 import tempfile
+import time
 from typing import Any
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 
 CONFIG_PATH = pathlib.Path("/etc/grayhaven/observability/textfile-metrics.json")
 TEXTFILE_DIR = pathlib.Path("/var/lib/grayhaven/observability/textfile")
 OUTPUT_PATH = TEXTFILE_DIR / "grayhaven.prom"
+GCS_READ_SCOPE = "https://www.googleapis.com/auth/devstorage.read_only"
+GOOGLE_CLOUD_PRODUCTS_URL = "https://status.cloud.google.com/products.json"
+GOOGLE_CLOUD_INCIDENTS_URL = "https://status.cloud.google.com/incidents.json"
+GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE = "Google Cloud Storage"
+GOOGLE_CLOUD_STORAGE_PRODUCT_ID = "UwaYoXQ5bHYHG6EdiPB8"
 
 
 def label_value(value: object) -> str:
@@ -35,6 +49,293 @@ def host_labels(host: dict[str, Any]) -> dict[str, object]:
         "project": host["project"],
         "role": host["role"],
     }
+
+
+# HTTP helpers
+
+def request_json(url: str, headers: dict[str, str] | None = None) -> Any:
+    request = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def post_form_json(url: str, data: dict[str, str]) -> Any:
+    encoded_data = urllib.parse.urlencode(data).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=encoded_data,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def storage_request(path: str, token: str) -> dict[str, Any]:
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    return request_json(f"https://storage.googleapis.com/storage/v1{path}", headers)
+
+
+def base64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def storage_token(credentials_file: str) -> str:
+    with open(credentials_file, encoding="utf-8") as credentials_handle:
+        credentials = json.load(credentials_handle)
+
+    now = int(time.time())
+    token_uri = credentials.get("token_uri", "https://oauth2.googleapis.com/token")
+    header = {"alg": "RS256", "typ": "JWT"}
+    payload = {
+        "aud": token_uri,
+        "exp": now + 3600,
+        "iat": now,
+        "iss": credentials["client_email"],
+        "scope": GCS_READ_SCOPE,
+    }
+
+    signing_input = ".".join(
+        [
+            base64url(json.dumps(header, separators=(",", ":")).encode("utf-8")),
+            base64url(json.dumps(payload, separators=(",", ":")).encode("utf-8")),
+        ]
+    )
+    private_key = serialization.load_pem_private_key(
+        credentials["private_key"].encode("utf-8"),
+        password=None,
+    )
+    signature = private_key.sign(
+        signing_input.encode("ascii"),
+        padding.PKCS1v15(),
+        hashes.SHA256(),
+    )
+    assertion = f"{signing_input}.{base64url(signature)}"
+    response = post_form_json(
+        token_uri,
+        {
+            "assertion": assertion,
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        },
+    )
+    token = response.get("access_token")
+    if not isinstance(token, str) or not token:
+        raise RuntimeError("Google Cloud credentials did not return an access token")
+    return token
+
+
+# Google Cloud Storage helpers
+
+def list_buckets(project_id: str, token: str) -> list[dict[str, Any]]:
+    buckets: list[dict[str, Any]] = []
+    query = {"project": project_id, "maxResults": "1000"}
+    while True:
+        response = storage_request(f"/b?{urllib.parse.urlencode(query)}", token)
+        buckets.extend(response.get("items", []))
+        next_page = response.get("nextPageToken")
+        if not next_page:
+            return buckets
+        query["pageToken"] = next_page
+
+
+def list_objects(bucket: str, token: str) -> list[dict[str, Any]]:
+    objects: list[dict[str, Any]] = []
+    query = {"versions": "true", "maxResults": "1000"}
+    encoded_bucket = urllib.parse.quote(bucket, safe="")
+    while True:
+        response = storage_request(f"/b/{encoded_bucket}/o?{urllib.parse.urlencode(query)}", token)
+        objects.extend(response.get("items", []))
+        next_page = response.get("nextPageToken")
+        if not next_page:
+            return objects
+        query["pageToken"] = next_page
+
+
+def bucket_is_managed(bucket: dict[str, Any], labels_to_match: dict[str, str]) -> bool:
+    bucket_labels = bucket.get("labels", {})
+    return all(bucket_labels.get(key) == value for key, value in labels_to_match.items())
+
+
+def expected_bucket_names(hosts: list[dict[str, Any]]) -> set[str]:
+    return {f"{host['short_hostname']}-restic" for host in hosts}
+
+
+# Google Cloud public service-health helpers
+
+def location_matches(configured_location: str, affected_locations: list[dict[str, Any]]) -> bool:
+    if not affected_locations:
+        return True
+
+    normalized_location = configured_location.lower()
+    for location in affected_locations:
+        candidates = {
+            str(location.get("id", "")).lower(),
+            str(location.get("title", "")).lower(),
+        }
+        if "global" in candidates:
+            return True
+        if normalized_location in candidates:
+            return True
+        if normalized_location == "us" and any("united states" in candidate for candidate in candidates):
+            return True
+        if any(f" {normalized_location} " in f" {candidate} " for candidate in candidates):
+            return True
+
+    return False
+
+
+def cloud_storage_product_id() -> str:
+    try:
+        products = request_json(GOOGLE_CLOUD_PRODUCTS_URL).get("products", [])
+    except (OSError, urllib.error.URLError, json.JSONDecodeError):
+        return GOOGLE_CLOUD_STORAGE_PRODUCT_ID
+
+    for product in products:
+        if product.get("title") == GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE:
+            return str(product.get("id", GOOGLE_CLOUD_STORAGE_PRODUCT_ID))
+
+    return GOOGLE_CLOUD_STORAGE_PRODUCT_ID
+
+
+def gcs_status(configured_location: str) -> tuple[str, int]:
+    product_id = cloud_storage_product_id()
+    try:
+        incidents = request_json(GOOGLE_CLOUD_INCIDENTS_URL)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError):
+        return "Unknown", 0
+
+    for incident in incidents:
+        if incident.get("end"):
+            continue
+
+        affected_products = incident.get("affected_products", [])
+        if not any(product.get("id") == product_id for product in affected_products):
+            continue
+
+        if not location_matches(configured_location, incident.get("currently_affected_locations", [])):
+            continue
+
+        status = incident.get("status_impact") or incident.get("severity") or "Incident"
+        return str(status).replace("_", " ").title(), 0
+
+    return "Operational", 1
+
+
+# Metric rendering
+
+def render_expected_restic_repositories(config: dict[str, Any]) -> list[str]:
+    current_host = config["host"]
+    if not current_host.get("control_node"):
+        return []
+
+    repositories = config.get("restic", {}).get("repositories", [])
+    output = [
+        "# HELP grayhaven_restic_repository_expected Expected restic repository marker.",
+        "# TYPE grayhaven_restic_repository_expected gauge",
+    ]
+    for host in config.get("hosts", []):
+        for repository in repositories:
+            metric_labels = host_labels(host)
+            metric_labels["repository"] = repository
+            output.append(line("grayhaven_restic_repository_expected", metric_labels, 1))
+
+    return output
+
+
+def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
+    current_host = config["host"]
+    gcs_config = config.get("gcs", {})
+    if not current_host.get("control_node") or not gcs_config.get("enabled"):
+        return []
+
+    metric_base = {
+        "client": current_host["client"],
+        "environment": current_host["environment"],
+        "location": gcs_config.get("location", ""),
+        "project_id": gcs_config.get("project_id", ""),
+    }
+    status, status_value = gcs_status(str(gcs_config.get("location", "")))
+    status_labels = dict(metric_base)
+    status_labels["product"] = GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE
+    status_labels["status"] = status
+
+    output = [
+        "# HELP grayhaven_gcs_service_status Google Cloud Storage public service-health status.",
+        "# TYPE grayhaven_gcs_service_status gauge",
+        line("grayhaven_gcs_service_status", status_labels, status_value),
+        "# HELP grayhaven_gcs_restic_telemetry_success GCS restic telemetry collection success.",
+        "# TYPE grayhaven_gcs_restic_telemetry_success gauge",
+    ]
+
+    telemetry_labels = dict(metric_base)
+    telemetry_labels["scope"] = "restic"
+
+    try:
+        token = storage_token(str(gcs_config["credentials_file"]))
+        required_labels = {
+            "managed_by": "ansible",
+            "client": current_host["client"],
+            "env": "prod",
+            "purpose": "restic",
+        }
+        managed_buckets = [
+            bucket
+            for bucket in list_buckets(str(gcs_config["project_id"]), token)
+            if bucket_is_managed(bucket, required_labels)
+        ]
+        bucket_stats = {
+            bucket["name"]: list_objects(bucket["name"], token)
+            for bucket in managed_buckets
+        }
+    except (KeyError, OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError):
+        output.append(line("grayhaven_gcs_restic_telemetry_success", telemetry_labels, 0))
+        return output
+
+    output.append(line("grayhaven_gcs_restic_telemetry_success", telemetry_labels, 1))
+    output.extend(
+        [
+            "# HELP grayhaven_gcs_restic_bucket_bytes GCS restic bucket object bytes.",
+            "# TYPE grayhaven_gcs_restic_bucket_bytes gauge",
+            "# HELP grayhaven_gcs_restic_bucket_object_count GCS restic bucket object count.",
+            "# TYPE grayhaven_gcs_restic_bucket_object_count gauge",
+        ]
+    )
+
+    for bucket in sorted(managed_buckets, key=lambda item: item["name"]):
+        objects = bucket_stats[bucket["name"]]
+        bucket_labels = dict(metric_base)
+        bucket_labels["bucket"] = bucket["name"]
+        bucket_labels["storage_class"] = bucket.get("storageClass", "")
+        output.append(
+            line(
+                "grayhaven_gcs_restic_bucket_bytes",
+                bucket_labels,
+                sum(int(obj.get("size", 0)) for obj in objects),
+            )
+        )
+        output.append(line("grayhaven_gcs_restic_bucket_object_count", bucket_labels, len(objects)))
+
+    output.extend(
+        [
+            "# HELP grayhaven_gcs_restic_stale_bucket_info Stale production GCS restic bucket marker.",
+            "# TYPE grayhaven_gcs_restic_stale_bucket_info gauge",
+        ]
+    )
+    expected_buckets = expected_bucket_names(config.get("hosts", []))
+    for bucket in sorted(managed_buckets, key=lambda item: item["name"]):
+        if bucket["name"] in expected_buckets:
+            continue
+        stale_labels = dict(metric_base)
+        stale_labels["bucket"] = bucket["name"]
+        output.append(line("grayhaven_gcs_restic_stale_bucket_info", stale_labels, 1))
+
+    return output
 
 
 def render(config: dict[str, Any]) -> str:
@@ -70,6 +371,9 @@ def render(config: dict[str, Any]) -> str:
         )
         metric_labels["short_hostname"] = current_host["short_hostname"]
         output.append(line("grayhaven_control_node_info", metric_labels, 1))
+
+    output.extend(render_expected_restic_repositories(config))
+    output.extend(render_gcs_metrics(config))
 
     return "\n".join(output) + "\n"
 
