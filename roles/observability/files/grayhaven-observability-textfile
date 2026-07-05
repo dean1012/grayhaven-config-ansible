@@ -26,6 +26,8 @@ GOOGLE_CLOUD_PRODUCTS_URL = "https://status.cloud.google.com/products.json"
 GOOGLE_CLOUD_INCIDENTS_URL = "https://status.cloud.google.com/incidents.json"
 GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE = "Google Cloud Storage"
 GOOGLE_CLOUD_STORAGE_PRODUCT_ID = "UwaYoXQ5bHYHG6EdiPB8"
+PROTON_COMPONENTS_URL = "https://status.proton.me/api/v2/components.json"
+PROTON_STATUS_OPERATIONAL = "operational"
 
 
 def label_value(value: object) -> str:
@@ -227,6 +229,25 @@ def gcs_status(configured_location: str) -> tuple[str, int]:
     return "Operational", 1
 
 
+# Proton public service-health helpers
+
+def proton_components() -> dict[str, dict[str, Any]]:
+    components = request_json(PROTON_COMPONENTS_URL).get("components", [])
+    return {
+        str(component.get("name", "")): component
+        for component in components
+        if component.get("name")
+    }
+
+
+def proton_status_value(status: str) -> int:
+    return 1 if status == PROTON_STATUS_OPERATIONAL else 0
+
+
+def render_status(status: str) -> str:
+    return status.replace("_", " ").title() if status else "Unknown"
+
+
 # Metric rendering
 
 def render_expected_restic_repositories(config: dict[str, Any]) -> list[str]:
@@ -338,6 +359,45 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
     return output
 
 
+def render_proton_metrics(config: dict[str, Any]) -> list[str]:
+    current_host = config["host"]
+    proton_config = config.get("proton", {})
+    if not current_host.get("control_node") or not proton_config.get("enabled"):
+        return []
+
+    services = proton_config.get("services", [])
+    if not services:
+        return []
+
+    metric_base = {
+        "client": current_host["client"],
+        "environment": current_host["environment"],
+        "provider": "Proton",
+    }
+    output = [
+        "# HELP grayhaven_proton_service_status Proton public service-health status.",
+        "# TYPE grayhaven_proton_service_status gauge",
+    ]
+
+    try:
+        components = proton_components()
+    except (OSError, urllib.error.URLError, json.JSONDecodeError):
+        components = {}
+
+    for service in services:
+        component_name = str(service.get("component_name", ""))
+        component = components.get(component_name, {})
+        raw_status = str(component.get("status", "unknown"))
+        status = render_status(raw_status)
+        metric_labels = dict(metric_base)
+        metric_labels["service"] = service["name"]
+        metric_labels["component"] = component_name
+        metric_labels["status"] = status
+        output.append(line("grayhaven_proton_service_status", metric_labels, proton_status_value(raw_status)))
+
+    return output
+
+
 def render(config: dict[str, Any]) -> str:
     current_host = config["host"]
     output = [
@@ -374,6 +434,7 @@ def render(config: dict[str, Any]) -> str:
 
     output.extend(render_expected_restic_repositories(config))
     output.extend(render_gcs_metrics(config))
+    output.extend(render_proton_metrics(config))
 
     return "\n".join(output) + "\n"
 
