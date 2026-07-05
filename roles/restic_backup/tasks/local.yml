@@ -115,6 +115,21 @@
       declare -A repository_restore_size_bytes
       declare -A repository_snapshot_count
 
+      restic_stats_restore_size_bytes() {
+        python3 -c '
+      import json
+      import sys
+
+      for line in reversed(sys.stdin.read().splitlines()):
+          line = line.strip()
+          if line.startswith("{"):
+              print(int(json.loads(line).get("total_size", 0)))
+              break
+      else:
+          raise SystemExit("restic stats did not return a JSON summary")
+      '
+      }
+
       backup_repository() {
         local repository=$1
         local label=$2
@@ -148,7 +163,7 @@
             stats latest \
             --mode restore-size \
             --json \
-            | python3 -c 'import json, sys; print(int(json.load(sys.stdin).get("total_size", 0)))'
+            | restic_stats_restore_size_bytes
         )"
         repository_snapshot_count["$label"]="$(
           restic \
