@@ -277,6 +277,9 @@ def fail2ban_status(jail: str) -> tuple[int, int, int, list[str]]:
     banned_ips: list[str] = []
     for raw_line in result.stdout.splitlines():
         status_line = raw_line.strip()
+        if status_line.startswith(("|-", "`-")):
+            status_line = status_line[2:].strip()
+
         if status_line.startswith("Currently banned:"):
             current_banned = parse_count(status_line.split(":", 1)[1])
         elif status_line.startswith("Total banned:"):
