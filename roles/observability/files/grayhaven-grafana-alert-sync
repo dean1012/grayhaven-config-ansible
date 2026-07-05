@@ -22,6 +22,14 @@ INITIAL_SILENCE_COMMENT = (
     "Initial Grayhaven Systems LLC convergence silence while new hosts "
     "settle and Alloy sends initial telemetry."
 )
+PROTON_SERVICES = [
+    ("Mail", "Proton Mail"),
+    ("Calendar", "Proton Calendar"),
+    ("Pass", "Proton Pass"),
+    ("Lumo", "Lumo by Proton"),
+    ("Drive", "Proton Drive"),
+    ("VPN", "Proton VPN"),
+]
 
 
 class GrafanaError(RuntimeError):
@@ -687,7 +695,7 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
         f'environment="{promql_string(config["labels"]["environment"])}"'
     )
 
-    return [
+    rules = [
         alert_rule(
             title="GCS Degraded for >= 5 min",
             expression=(
@@ -711,30 +719,38 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             },
             **common,
         ),
-        alert_rule(
-            title="Proton Degraded for >= 5 min",
-            expression=(
-                "max by (client, environment, provider, service, component, status) "
-                f"(grayhaven_proton_service_status{{{selector}}})"
-            ),
-            evaluator_type="lt",
-            threshold=1,
-            duration="5m",
-            labels=base_labels(
-                config,
-                {
-                    "check": "proton_service_status",
-                    "service": "Proton",
-                },
-            ),
-            annotations={
-                "summary": "Proton service is degraded",
-                "description": "{{ $labels.component }} is not reporting Operational status.",
-                "service_status": "{{ $labels.status }}",
-            },
-            **common,
-        ),
     ]
+
+    for service_name, component_name in PROTON_SERVICES:
+        rules.append(
+            alert_rule(
+                title=f"Proton {service_name} Degraded for >= 5 min",
+                expression=(
+                    "max by (client, environment, provider, service, component, status) "
+                    f"(grayhaven_proton_service_status{{{selector},"
+                    f'service="{promql_string(service_name)}",'
+                    f'component="{promql_string(component_name)}"}})'
+                ),
+                evaluator_type="lt",
+                threshold=1,
+                duration="5m",
+                labels=base_labels(
+                    config,
+                    {
+                        "check": "proton_service_status",
+                        "service": f"Proton {service_name}",
+                    },
+                ),
+                annotations={
+                    "summary": f"Proton {service_name} is degraded",
+                    "description": f"{component_name} is not reporting Operational status.",
+                    "service_status": "{{ $labels.status }}",
+                },
+                **common,
+            )
+        )
+
+    return rules
 
 
 def desired_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> dict[str, dict[str, Any]]:
