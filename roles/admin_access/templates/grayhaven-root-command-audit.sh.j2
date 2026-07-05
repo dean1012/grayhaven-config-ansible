@@ -112,15 +112,6 @@ __grayhaven_root_command_audit() {
     return "$previous_status"
 }
 
-__grayhaven_root_command_audit_exit() {
-    local previous_status
-
-    previous_status=$?
-    __grayhaven_root_command_log "exit"
-
-    return "$previous_status"
-}
-
 __GRAYHAVEN_ROOT_COMMAND_LAST_HISTORY_ID="$(__grayhaven_root_command_current_history_id)"
 
 # shellcheck disable=SC2128,SC2178
@@ -132,5 +123,3 @@ else
         *) PROMPT_COMMAND="__grayhaven_root_command_audit${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
     esac
 fi
-
-trap __grayhaven_root_command_audit_exit EXIT
