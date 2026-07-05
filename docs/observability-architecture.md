@@ -60,6 +60,7 @@ Metrics include:
 - restic backup, integrity-check, retention, and restore-size status;
 - Google Cloud Storage restic bucket usage, stale-bucket state, and public
   service-health status;
+- Proton public service-health status for Grayhaven Systems LLC-used services;
 - sanitized active Grafana IRM alert-group state;
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
   domains.
@@ -132,9 +133,10 @@ convergence from creating the silence again on the same control node.
 Managed alerts cover the same operational checks surfaced by the Grafana
 dashboards where alerting is useful, including host metrics, service state,
 backup freshness, Ansible convergence, web availability, development
-basic-auth behavior, certificate expiration, and certificate trust. CPU alerts
-use a five-minute rate window and require five minutes above threshold before
-firing. Alert rules send to the configured Grafana IRM contact point.
+basic-auth behavior, certificate expiration, certificate trust, and external
+service-health state for Google Cloud Storage and Proton. CPU and external
+service-health alerts require five minutes above threshold before firing. Alert
+rules send to the configured Grafana IRM contact point.
 
 Normal threshold and probe alerts treat missing query data as OK so a telemetry
 gap does not make every managed alert fire at once. Per-host metrics-data
