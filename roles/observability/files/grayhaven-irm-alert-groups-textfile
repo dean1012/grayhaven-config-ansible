@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import pathlib
@@ -14,9 +15,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
+from zoneinfo import ZoneInfo
 
 DEFAULT_CONFIG_PATH = pathlib.Path("/etc/grayhaven/observability/irm-alert-groups.json")
 DEFAULT_STATES = ("new", "acknowledged", "silenced")
+DISPLAY_TIMEZONE = ZoneInfo("America/Chicago")
+STATE_SORT_ORDER = {
+    "firing": "0",
+    "new": "0",
+    "acknowledged": "1",
+    "silenced": "2",
+}
 
 
 class GrafanaIrmError(RuntimeError):
@@ -99,6 +108,20 @@ class GrafanaIrmClient:
         api_url = self.discover_oncall_api_url()
         params = urllib.parse.urlencode({"state": state})
         next_url: str | None = f"{api_url}/api/v1/alert_groups/?{params}"
+        return self._paged_irm_results(next_url, "Grafana IRM alert groups")
+
+    def users(self) -> list[dict[str, Any]]:
+        api_url = self.discover_oncall_api_url()
+        return self._paged_irm_results(f"{api_url}/api/v1/users/", "Grafana IRM users")
+
+    def org_users(self) -> list[dict[str, Any]]:
+        users = self._request(f"{self.stack_url}/api/org/users")
+        if not isinstance(users, list):
+            raise GrafanaIrmError("Grafana organization users response was not a list")
+
+        return [user for user in users if isinstance(user, dict)]
+
+    def _paged_irm_results(self, next_url: str, description: str) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
 
         while next_url:
@@ -107,17 +130,43 @@ class GrafanaIrmClient:
                 headers={"Content-Type": "application/json", "X-Grafana-URL": self.stack_url},
             )
             if not isinstance(page, dict):
-                raise GrafanaIrmError("Grafana IRM alert groups response was not an object")
+                raise GrafanaIrmError(f"{description} response was not an object")
 
             page_results = page.get("results")
             if not isinstance(page_results, list):
-                raise GrafanaIrmError("Grafana IRM alert groups response did not include results")
+                raise GrafanaIrmError(f"{description} response did not include results")
 
             results.extend(item for item in page_results if isinstance(item, dict))
             next_value = page.get("next")
             next_url = next_value if isinstance(next_value, str) and next_value else None
 
         return results
+
+
+class IdentityResolver:
+    """Resolve Grafana IRM user IDs into operator-friendly display names."""
+
+    def __init__(self, irm_users: list[dict[str, Any]], org_users: list[dict[str, Any]]) -> None:
+        self.irm_users = {safe_string(user.get("id")): user for user in irm_users if user.get("id")}
+        self.org_names = {
+            safe_string(user.get("login")): safe_string(user.get("name"))
+            for user in org_users
+            if user.get("login")
+        }
+
+    def username(self, irm_user_id: str) -> str:
+        user = self.irm_users.get(irm_user_id)
+        if not user:
+            return ""
+
+        return safe_string(user.get("username"))
+
+    def display_name(self, irm_user_id: str) -> str:
+        username = self.username(irm_user_id)
+        if not username:
+            return ""
+
+        return self.org_names.get(username) or username
 
 
 def label_value(value: object) -> str:
@@ -148,7 +197,37 @@ def group_label(group: dict[str, Any], key: str) -> str:
     return safe_string(group.get(key))
 
 
-def render(config: dict[str, Any], groups_by_state: dict[str, list[dict[str, Any]]]) -> str:
+def alert_group_url(group: dict[str, Any]) -> str:
+    permalinks = group.get("permalinks")
+    if not isinstance(permalinks, dict):
+        return ""
+
+    return safe_string(permalinks.get("web"), max_length=512)
+
+
+def local_timestamp(timestamp: str) -> str:
+    if not timestamp:
+        return ""
+
+    try:
+        parsed = timestamp.replace("Z", "+00:00")
+        local_time = datetime.datetime.fromisoformat(parsed).astimezone(DISPLAY_TIMEZONE)
+    except ValueError:
+        return ""
+
+    hour = local_time.strftime("%I").lstrip("0") or "0"
+    return f"{local_time:%Y-%m-%d} {hour}:{local_time:%M %p %Z}"
+
+
+def state_sort_key(state: str) -> str:
+    return STATE_SORT_ORDER.get(state, "9")
+
+
+def render(
+    config: dict[str, Any],
+    groups_by_state: dict[str, list[dict[str, Any]]],
+    identities: IdentityResolver,
+) -> str:
     metric_labels = {
         "client": config["labels"]["client"],
         "environment": config["labels"]["environment"],
@@ -175,13 +254,20 @@ def render(config: dict[str, Any], groups_by_state: dict[str, list[dict[str, Any
             if not alert_group_id:
                 continue
 
+            state_label = group_label(group, "state") or state
+            acknowledged_by = group_label(group, "acknowledged_by")
             group_labels = {
                 **metric_labels,
-                "acknowledged_by": group_label(group, "acknowledged_by"),
+                "acknowledged_by": acknowledged_by,
+                "acknowledged_by_display": identities.display_name(acknowledged_by),
+                "acknowledged_by_username": identities.username(acknowledged_by),
                 "alert_group_id": alert_group_id,
                 "alert_group_number": group_label(group, "alert_group_number"),
+                "alert_group_url": alert_group_url(group),
                 "created_at": group_label(group, "created_at"),
-                "state": group_label(group, "state") or state,
+                "created_at_display": local_timestamp(group_label(group, "created_at")),
+                "state": state_label,
+                "state_sort": state_sort_key(state_label),
                 "title": group_label(group, "title"),
             }
             output.append(metric_line("grayhaven_irm_alert_group_info", group_labels, 1))
@@ -202,9 +288,11 @@ def atomic_write(path: pathlib.Path, content: str) -> None:
             os.unlink(tmp_name)
 
 
-def collect(config: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+def collect(config: dict[str, Any]) -> tuple[dict[str, list[dict[str, Any]]], IdentityResolver]:
     client = GrafanaIrmClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
-    return {state: client.alert_groups(state) for state in DEFAULT_STATES}
+    groups_by_state = {state: client.alert_groups(state) for state in DEFAULT_STATES}
+    identities = IdentityResolver(client.users(), client.org_users())
+    return groups_by_state, identities
 
 
 def parse_args() -> argparse.Namespace:
@@ -219,7 +307,8 @@ def main() -> int:
         config = json.load(config_file)
 
     output_path = pathlib.Path(config["output_path"])
-    atomic_write(output_path, render(config, collect(config)))
+    groups_by_state, identities = collect(config)
+    atomic_write(output_path, render(config, groups_by_state, identities))
     return 0
 
 

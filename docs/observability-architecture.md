@@ -76,7 +76,8 @@ The active control node publishes the full known-host inventory as textfile
 metrics so dashboards and alert rules can reason about all expected hosts.
 When Grafana Cloud is enabled, the active control node also publishes sanitized
 Grafana IRM alert-group state as textfile metrics for operational reporting.
-The collector reads only current alert-group metadata and does not expose the
+The collector reads only current alert-group metadata and read-only user
+metadata needed to display acknowledgement ownership. It does not expose the
 API token or raw IRM payloads in generated metrics.
 
 [Back to top](#observability-architecture)
