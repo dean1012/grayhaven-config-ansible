@@ -526,6 +526,10 @@ loki.process "grayhaven_dashboard_superuser" {
     action   = "drop"
   }
 
+  stage.drop {
+    expression = ".*<no value>.*"
+  }
+
   forward_to = [loki.process.grayhaven_redact.receiver]
 }
 
