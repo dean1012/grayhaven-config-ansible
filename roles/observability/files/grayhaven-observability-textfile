@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 import pathlib
@@ -251,6 +252,45 @@ def render_status(status: str) -> str:
 
 # fail2ban helpers
 
+def normalize_ip_token(value: str) -> str:
+    token = value.strip(" \t'\"[](),")
+    if token.endswith(":"):
+        token = token[:-1]
+
+    try:
+        return str(ipaddress.ip_address(token))
+    except ValueError:
+        return ""
+
+
+def fail2ban_ban_expiry_dates(jail: str) -> dict[str, str]:
+    try:
+        result = subprocess.run(
+            ["/usr/bin/fail2ban-client", "get", jail, "banip", "--with-time"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+
+    if result.returncode != 0:
+        return {}
+
+    expiry_dates: dict[str, str] = {}
+    for raw_line in result.stdout.splitlines():
+        for raw_token in raw_line.split():
+            banned_ip = normalize_ip_token(raw_token)
+            if not banned_ip:
+                continue
+
+            expiry_dates[banned_ip] = raw_line.split(raw_token, 1)[1].strip(" \t:-")
+            break
+
+    return expiry_dates
+
+
 def fail2ban_status(jail: str) -> tuple[int, int, int, list[str]]:
     def parse_count(value: str) -> int:
         try:
@@ -468,6 +508,7 @@ def render_fail2ban_metrics(config: dict[str, Any]) -> list[str]:
 
     for jail in jails:
         status, current_banned, total_banned, banned_ips = fail2ban_status(str(jail["name"]))
+        ban_expiry_dates = fail2ban_ban_expiry_dates(str(jail["name"])) if status else {}
         jail_labels = dict(metric_base)
         jail_labels["jail"] = jail["name"]
         jail_labels["display_name"] = jail.get("display_name", jail["name"])
@@ -480,6 +521,7 @@ def render_fail2ban_metrics(config: dict[str, Any]) -> list[str]:
         for banned_ip in banned_ips:
             ip_labels = dict(jail_labels)
             ip_labels["ip"] = banned_ip
+            ip_labels["ban_expiry_date"] = ban_expiry_dates.get(banned_ip, "")
             output.append(line("grayhaven_fail2ban_jail_banned_ip_info", ip_labels, 1))
 
     return output
