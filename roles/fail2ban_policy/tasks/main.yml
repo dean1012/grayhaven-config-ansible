@@ -39,11 +39,16 @@
       mode = aggressive
       port = ssh
 
-      [nginx-http-auth]
-      enabled = {{ fail2ban_policy_nginx_http_auth_enabled | ternary('true', 'false') }}
+      {% if fail2ban_policy_nginx_http_auth_enabled | bool %}
+      {% for domain in hosted_domains | default([]) | map(attribute='domain') | list %}
+      [nginx-http-auth-{{ domain | regex_replace('[^A-Za-z0-9_-]', '-') }}]
+      enabled = true
       filter = nginx-http-auth
       port = http,https
-      logpath = /var/log/nginx/*.error.log
+      logpath = /var/log/nginx/{{ domain }}.dev.error.log
+
+      {% endfor %}
+      {% endif %}
   notify: Restart fail2ban
 
 - name: Enable and start fail2ban

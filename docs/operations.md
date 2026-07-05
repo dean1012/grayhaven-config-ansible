@@ -16,6 +16,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Website Repository Deployments](#website-repository-deployments)
 - [GCS Restic Bucket Cleanup](#gcs-restic-bucket-cleanup)
 - [Root Command Audit Trail](#root-command-audit-trail)
+- [Fail2ban Administration](#fail2ban-administration)
 - [Operator Tmux Console](#operator-tmux-console)
 - [Grafana Cloud Observability](#grafana-cloud-observability)
 - [Infrastructure Policy Changes](#infrastructure-policy-changes)
@@ -364,6 +365,29 @@ exposed through command arguments, rotate the affected secret immediately.
 
 [Back to top](#operations)
 
+## Fail2ban Administration
+
+List configured jails and inspect a specific jail:
+
+```bash
+sudo fail2ban-client status
+sudo fail2ban-client status sshd
+sudo fail2ban-client status nginx-http-auth-example-com
+```
+
+Unban or manually ban an IP address:
+
+```bash
+sudo fail2ban-client set <jail> unbanip <ip-address>
+sudo fail2ban-client set <jail> banip <ip-address>
+```
+
+Web development basic-auth jails are named from the hosted domain by replacing
+characters outside `A-Z`, `a-z`, `0-9`, `_`, and `-` with `-`. For example,
+`example.com` becomes `nginx-http-auth-example-com`.
+
+[Back to top](#operations)
+
 ## Operator Tmux Console
 
 On bastions, sudo-capable managed users receive the shared tmux configuration
@@ -387,7 +411,7 @@ bypass it for one SSH session by setting the bypass variable in the remote
 login shell:
 
 ```bash
-ssh -tt <user>@bastion.grayhavensystems.com 'GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1 exec bash -l'
+ssh -A -tt <user>@bastion.grayhavensystems.com 'GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1 exec bash -l'
 ```
 
 The

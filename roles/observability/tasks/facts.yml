@@ -105,3 +105,25 @@
           if grayhaven_environment == 'prod'
           else 'staging.' ~ observability_root_domain
         }}
+
+- name: Initialize observability fail2ban jail metadata
+  ansible.builtin.set_fact:
+    observability_fail2ban_jails:
+      - name: sshd
+        display_name: SSH
+        domain: ""
+        category: ssh
+
+- name: Add web basic-auth fail2ban jail metadata
+  ansible.builtin.set_fact:
+    observability_fail2ban_jails: "{{ observability_fail2ban_jails + [observability_fail2ban_jail] }}"
+  loop: "{{ observability_web_sites }}"
+  loop_control:
+    label: "{{ item.root_name }}"
+  vars:
+    observability_fail2ban_jail:
+      name: "nginx-http-auth-{{ item.root_name | regex_replace('[^A-Za-z0-9_-]', '-') }}"
+      display_name: "{{ item.root_name }} basic auth"
+      domain: "{{ item.root_name }}"
+      category: htaccess
+  when: grayhaven_role == "web"

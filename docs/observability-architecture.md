@@ -57,6 +57,7 @@ Metrics include:
 - Grayhaven Systems LLC host inventory metadata;
 - active control-node metadata;
 - Ansible convergence status;
+- fail2ban jail status and ban counts;
 - restic backup, integrity-check, retention, and restore-size status;
 - Google Cloud Storage restic bucket usage, stale-bucket state, and public
   service-health status;
@@ -133,10 +134,12 @@ convergence from creating the silence again on the same control node.
 Managed alerts cover the same operational checks surfaced by the Grafana
 dashboards where alerting is useful, including host metrics, service state,
 backup freshness, Ansible convergence, web availability, development
-basic-auth behavior, certificate expiration, certificate trust, and external
-service-health state for Google Cloud Storage and Proton. CPU and external
-service-health alerts require five minutes above threshold before firing. Alert
-rules send to the configured Grafana IRM contact point.
+basic-auth behavior, certificate expiration, certificate-expiration warning,
+certificate trust, and external service-health state for Google Cloud Storage
+and Proton. Certificate-expiration warnings fire when a certificate is valid
+but expires within 14 days. CPU and external service-health alerts require five
+minutes above threshold before firing. Alert rules send to the configured
+Grafana IRM contact point.
 
 Normal threshold and probe alerts treat missing query data as OK so a telemetry
 gap does not make every managed alert fire at once. Per-host metrics-data
