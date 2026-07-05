@@ -68,9 +68,24 @@ __grayhaven_root_command_origin() {
     printf '%s' "${origin_user:-unknown}"
 }
 
-__grayhaven_root_command_audit() {
-    local previous_status history_entry history_id command origin_user
+__grayhaven_root_command_log() {
+    local command origin_user
     local command_log origin_user_log
+
+    command="$1"
+    origin_user="$(__grayhaven_root_command_origin)"
+    origin_user_log="$(__grayhaven_root_command_escape "$origin_user")"
+    command_log="$(__grayhaven_root_command_escape "$command")"
+
+    logger \
+        --priority authpriv.notice \
+        --tag grayhaven-root-command \
+        -- \
+        "grayhaven-root-command user=\"${origin_user_log}\" command=\"${command_log}\""
+}
+
+__grayhaven_root_command_audit() {
+    local previous_status history_entry history_id command
 
     previous_status=$?
     history_entry="$(HISTTIMEFORMAT='' history 1 2>/dev/null || true)"
@@ -92,15 +107,16 @@ __grayhaven_root_command_audit() {
         return "$previous_status"
     fi
 
-    origin_user="$(__grayhaven_root_command_origin)"
-    origin_user_log="$(__grayhaven_root_command_escape "$origin_user")"
-    command_log="$(__grayhaven_root_command_escape "$command")"
+    __grayhaven_root_command_log "$command"
 
-    logger \
-        --priority authpriv.notice \
-        --tag grayhaven-root-command \
-        -- \
-        "grayhaven-root-command user=\"${origin_user_log}\" command=\"${command_log}\""
+    return "$previous_status"
+}
+
+__grayhaven_root_command_audit_exit() {
+    local previous_status
+
+    previous_status=$?
+    __grayhaven_root_command_log "exit"
 
     return "$previous_status"
 }
@@ -116,3 +132,5 @@ else
         *) PROMPT_COMMAND="__grayhaven_root_command_audit${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
     esac
 fi
+
+trap __grayhaven_root_command_audit_exit EXIT
