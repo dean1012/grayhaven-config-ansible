@@ -12,7 +12,7 @@ import re
 import subprocess
 import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 import urllib.error
 import urllib.parse
@@ -26,6 +26,24 @@ CONFIG_PATH = pathlib.Path("/etc/grayhaven/observability/textfile-metrics.json")
 TEXTFILE_DIR = pathlib.Path("/var/lib/grayhaven/observability/textfile")
 OUTPUT_PATH = TEXTFILE_DIR / "grayhaven.prom"
 GCS_READ_SCOPE = "https://www.googleapis.com/auth/devstorage.read_only"
+GCS_MONITORING_SCOPE = "https://www.googleapis.com/auth/monitoring.read"
+GCS_OPERATION_WINDOW_DAYS = 14
+GCS_OPERATION_CLASS_A_TERMS = (
+    "compose",
+    "copy",
+    "create",
+    "delete",
+    "insert",
+    "list",
+    "patch",
+    "rewrite",
+    "update",
+    "clone",
+)
+GCS_OPERATION_CLASS_B_TERMS = (
+    "get",
+    "read",
+)
 GOOGLE_CLOUD_PRODUCTS_URL = "https://status.cloud.google.com/products.json"
 GOOGLE_CLOUD_INCIDENTS_URL = "https://status.cloud.google.com/incidents.json"
 GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE = "Google Cloud Storage"
@@ -92,7 +110,7 @@ def base64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def storage_token(credentials_file: str) -> str:
+def google_token(credentials_file: str, scope: str) -> str:
     with open(credentials_file, encoding="utf-8") as credentials_handle:
         credentials = json.load(credentials_handle)
 
@@ -104,7 +122,7 @@ def storage_token(credentials_file: str) -> str:
         "exp": now + 3600,
         "iat": now,
         "iss": credentials["client_email"],
-        "scope": GCS_READ_SCOPE,
+        "scope": scope,
     }
 
     signing_input = ".".join(
@@ -137,6 +155,13 @@ def storage_token(credentials_file: str) -> str:
 
 
 # Google Cloud Storage helpers
+
+def storage_token(credentials_file: str) -> str:
+    return google_token(credentials_file, GCS_READ_SCOPE)
+
+
+def monitoring_token(credentials_file: str) -> str:
+    return google_token(credentials_file, GCS_MONITORING_SCOPE)
 
 def list_buckets(project_id: str, token: str) -> list[dict[str, Any]]:
     buckets: list[dict[str, Any]] = []
@@ -183,6 +208,80 @@ def inferred_bucket_host(bucket_name: str, hosts: list[dict[str, Any]]) -> dict[
         if bucket_prefix.rsplit("-", 1)[0] == str(host["short_hostname"]).rsplit("-", 1)[0]
     ]
     return candidates[0] if len(candidates) == 1 else None
+
+
+def monitoring_request(project_id: str, path: str, query: dict[str, str], token: str) -> dict[str, Any]:
+    encoded_project = urllib.parse.quote(project_id, safe="")
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    url = (
+        f"https://monitoring.googleapis.com/v3/projects/{encoded_project}/{path}"
+        f"?{urllib.parse.urlencode(query)}"
+    )
+    return request_json(url, headers)
+
+
+def point_value(point: dict[str, Any]) -> float:
+    value = point.get("value", {})
+    if "int64Value" in value:
+        return float(value["int64Value"])
+    if "doubleValue" in value:
+        return float(value["doubleValue"])
+    return 0.0
+
+
+def gcs_operation_class(method: str) -> str:
+    normalized_method = method.lower()
+    if any(term in normalized_method for term in GCS_OPERATION_CLASS_A_TERMS):
+        return "Class A"
+    if any(term in normalized_method for term in GCS_OPERATION_CLASS_B_TERMS):
+        return "Class B"
+    return ""
+
+
+def gcs_operation_counts(
+    project_id: str,
+    token: str,
+    bucket_names: set[str],
+) -> dict[str, float]:
+    if not bucket_names:
+        return {"Class A": 0.0, "Class B": 0.0}
+
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(days=GCS_OPERATION_WINDOW_DAYS)
+    query = {
+        "filter": (
+            'metric.type = "storage.googleapis.com/api/request_count" '
+            'AND resource.type = "gcs_bucket"'
+        ),
+        "interval.startTime": start_time.isoformat().replace("+00:00", "Z"),
+        "interval.endTime": end_time.isoformat().replace("+00:00", "Z"),
+        "aggregation.alignmentPeriod": f"{GCS_OPERATION_WINDOW_DAYS * 24 * 60 * 60}s",
+        "aggregation.perSeriesAligner": "ALIGN_DELTA",
+        "pageSize": "10000",
+    }
+    counts = {"Class A": 0.0, "Class B": 0.0}
+
+    while True:
+        response = monitoring_request(project_id, "timeSeries", query, token)
+        for series in response.get("timeSeries", []):
+            bucket_name = series.get("resource", {}).get("labels", {}).get("bucket_name", "")
+            if bucket_name not in bucket_names:
+                continue
+
+            method = str(series.get("metric", {}).get("labels", {}).get("method", ""))
+            operation_class = gcs_operation_class(method)
+            if not operation_class:
+                continue
+
+            counts[operation_class] += sum(point_value(point) for point in series.get("points", []))
+
+        next_page = response.get("nextPageToken")
+        if not next_page:
+            return counts
+        query["pageToken"] = next_page
 
 
 # Google Cloud public service-health helpers
@@ -412,7 +511,9 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
     telemetry_labels["scope"] = "restic"
 
     try:
-        token = storage_token(str(gcs_config["credentials_file"]))
+        credentials_file = str(gcs_config["credentials_file"])
+        token = storage_token(credentials_file)
+        monitor_token = monitoring_token(credentials_file)
         required_labels = {
             "managed_by": "ansible",
             "client": current_host["client"],
@@ -428,6 +529,11 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
             bucket["name"]: list_objects(bucket["name"], token)
             for bucket in managed_buckets
         }
+        operation_counts = gcs_operation_counts(
+            str(gcs_config["project_id"]),
+            monitor_token,
+            {bucket["name"] for bucket in managed_buckets},
+        )
     except (KeyError, OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError):
         output.append(line("grayhaven_gcs_restic_telemetry_success", telemetry_labels, 0))
         return output
@@ -439,13 +545,21 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
             "# TYPE grayhaven_gcs_restic_bucket_bytes gauge",
             "# HELP grayhaven_gcs_restic_bucket_object_count GCS restic bucket object count.",
             "# TYPE grayhaven_gcs_restic_bucket_object_count gauge",
+            (
+                "# HELP grayhaven_gcs_restic_operations_14d_total "
+                "GCS restic bucket API operations in the last 14 days."
+            ),
+            "# TYPE grayhaven_gcs_restic_operations_14d_total gauge",
         ]
     )
 
     bucket_hosts = expected_bucket_hosts(config.get("hosts", []))
     for bucket in sorted(managed_buckets, key=lambda item: item["name"]):
         objects = bucket_stats[bucket["name"]]
-        bucket_host = bucket_hosts.get(bucket["name"])
+        bucket_host = bucket_hosts.get(bucket["name"]) or inferred_bucket_host(
+            bucket["name"],
+            config.get("hosts", []),
+        )
         bucket_labels = host_labels(bucket_host) if bucket_host else dict(metric_base)
         bucket_labels["bucket"] = bucket["name"]
         bucket_labels["location"] = gcs_config.get("location", "")
@@ -459,6 +573,12 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
             )
         )
         output.append(line("grayhaven_gcs_restic_bucket_object_count", bucket_labels, len(objects)))
+
+    for operation_class, count in sorted(operation_counts.items()):
+        operation_labels = dict(metric_base)
+        operation_labels["operation_class"] = operation_class
+        operation_labels["window"] = f"{GCS_OPERATION_WINDOW_DAYS}d"
+        output.append(line("grayhaven_gcs_restic_operations_14d_total", operation_labels, int(count)))
 
     output.extend(
         [
