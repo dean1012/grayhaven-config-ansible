@@ -30,6 +30,7 @@ observability_filesystem_inode_warning_percent: 80
 observability_swap_warning_percent: 80
 observability_certificate_expiring_seconds: 1209600
 observability_restic_stale_seconds: 100800
+observability_gcs_stale_bucket_check_stale_seconds: 100800
 
 observability_service_units_common:
   - name: sshd.service
@@ -75,3 +76,6 @@ observability_service_units_control_node:
   - name: grayhaven-ansible-poller.timer
     check: ansible_poller_timer
     summary: Ansible poller timer is down
+  - name: grayhaven-gcs-restic-stale-buckets.timer
+    check: gcs_stale_bucket_check_timer
+    summary: Stale GCS bucket check timer is down

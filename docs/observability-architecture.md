@@ -59,8 +59,8 @@ Metrics include:
 - Ansible convergence status;
 - fail2ban jail status and ban counts;
 - restic backup, integrity-check, retention, and restore-size status;
-- Google Cloud Storage restic bucket usage, stale-bucket state, and public
-  service-health status;
+- Google Cloud Storage public service-health status, 14-day API operation
+  totals, and daily stale restic bucket state;
 - Proton public service-health status for Grayhaven Systems LLC-used services;
 - sanitized active Grafana IRM alert-group state;
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web

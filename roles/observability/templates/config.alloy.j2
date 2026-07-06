@@ -10,7 +10,7 @@ prometheus.exporter.unix "node" {
   enable_collectors        = ["systemd"]
 
   systemd {
-    unit_include = "(sshd|firewalld|fail2ban|chronyd|auditd|do-agent|nginx|certbot-renew|grayhaven-website-deploy-webhook|grayhaven-restic-backup|grayhaven-restic-check|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
+    unit_include = "(sshd|firewalld|fail2ban|chronyd|auditd|do-agent|nginx|certbot-renew|grayhaven-website-deploy-webhook|grayhaven-restic-backup|grayhaven-restic-check|grayhaven-gcs-restic-stale-buckets|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
     start_time   = true
   }
 

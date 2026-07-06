@@ -752,6 +752,51 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             },
             **common,
         ),
+        alert_rule(
+            title="GCS stale bucket check stale",
+            expression=(
+                "time() - max by (client, environment, location, project_id) "
+                f"(grayhaven_gcs_restic_stale_bucket_check_last_success_timestamp_seconds{{{selector}}})"
+            ),
+            evaluator_type="gt",
+            threshold=float(config["thresholds"]["gcs_stale_bucket_check_stale_seconds"]),
+            labels=base_labels(
+                config,
+                {
+                    "check": "gcs_stale_bucket_check_stale",
+                    "service": "Google Cloud Storage",
+                },
+            ),
+            annotations={
+                "summary": "Stale GCS bucket check has not completed",
+                "description": "The daily stale GCS restic bucket check has not completed recently.",
+            },
+            no_data_state="Alerting",
+            **common,
+        ),
+        alert_rule(
+            title="Stale GCS restic buckets",
+            expression=(
+                "max by (client, environment, location, project_id) "
+                f"(grayhaven_gcs_restic_stale_bucket_count{{{selector}}})"
+            ),
+            evaluator_type="gt",
+            threshold=0,
+            duration="5m",
+            labels=base_labels(
+                config,
+                {
+                    "check": "gcs_stale_bucket_count",
+                    "service": "Google Cloud Storage",
+                },
+            ),
+            annotations={
+                "summary": "Stale GCS restic buckets found",
+                "description": "The daily stale GCS restic bucket check found one or more stale buckets.",
+                "check_value": "{{ humanize $values.A.Value }}",
+            },
+            **common,
+        ),
     ]
 
     for service_name, component_name in PROTON_SERVICES:

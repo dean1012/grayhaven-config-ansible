@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+"""Cache daily stale GCS restic bucket metrics for Grayhaven observability."""
+
+from __future__ import annotations
+
+import base64
+import json
+import pathlib
+import tempfile
+import time
+from typing import Any
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+CONFIG_PATH = pathlib.Path("/etc/grayhaven/observability/textfile-metrics.json")
+TEXTFILE_DIR = pathlib.Path("/var/lib/grayhaven/observability/textfile")
+OUTPUT_PATH = TEXTFILE_DIR / "gcs-restic-stale-buckets.prom"
+GCS_READ_SCOPE = "https://www.googleapis.com/auth/devstorage.read_only"
+
+
+def label_value(value: object) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def labels(values: dict[str, object]) -> str:
+    rendered = ",".join(f'{key}="{label_value(value)}"' for key, value in sorted(values.items()))
+    return f"{{{rendered}}}"
+
+
+def line(name: str, metric_labels: dict[str, object], value: object) -> str:
+    return f"{name}{labels(metric_labels)} {value}"
+
+
+def request_json(url: str, headers: dict[str, str] | None = None) -> Any:
+    request = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def post_form_json(url: str, data: dict[str, str]) -> Any:
+    encoded_data = urllib.parse.urlencode(data).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=encoded_data,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def base64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def google_token(credentials_file: str, scope: str) -> str:
+    with open(credentials_file, encoding="utf-8") as credentials_handle:
+        credentials = json.load(credentials_handle)
+
+    now = int(time.time())
+    token_uri = credentials.get("token_uri", "https://oauth2.googleapis.com/token")
+    header = {"alg": "RS256", "typ": "JWT"}
+    payload = {
+        "aud": token_uri,
+        "exp": now + 3600,
+        "iat": now,
+        "iss": credentials["client_email"],
+        "scope": scope,
+    }
+
+    signing_input = ".".join(
+        [
+            base64url(json.dumps(header, separators=(",", ":")).encode("utf-8")),
+            base64url(json.dumps(payload, separators=(",", ":")).encode("utf-8")),
+        ]
+    )
+    private_key = serialization.load_pem_private_key(
+        credentials["private_key"].encode("utf-8"),
+        password=None,
+    )
+    if not isinstance(private_key, rsa.RSAPrivateKey):
+        raise RuntimeError("Google Cloud service account key is not an RSA private key")
+
+    signature = private_key.sign(
+        signing_input.encode("ascii"),
+        padding.PKCS1v15(),
+        hashes.SHA256(),
+    )
+    response = post_form_json(
+        token_uri,
+        {
+            "assertion": f"{signing_input}.{base64url(signature)}",
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        },
+    )
+    token = response.get("access_token")
+    if not isinstance(token, str) or not token:
+        raise RuntimeError("Google Cloud credentials did not return an access token")
+    return token
+
+
+def storage_request(path: str, token: str) -> dict[str, Any]:
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    return request_json(f"https://storage.googleapis.com/storage/v1{path}", headers)
+
+
+def list_buckets(project_id: str, token: str) -> list[dict[str, Any]]:
+    buckets: list[dict[str, Any]] = []
+    query = {"project": project_id, "maxResults": "1000"}
+    while True:
+        response = storage_request(f"/b?{urllib.parse.urlencode(query)}", token)
+        buckets.extend(response.get("items", []))
+        next_page = response.get("nextPageToken")
+        if not next_page:
+            return buckets
+        query["pageToken"] = next_page
+
+
+def bucket_is_managed(bucket: dict[str, Any], labels_to_match: dict[str, str]) -> bool:
+    bucket_labels = bucket.get("labels", {})
+    return all(bucket_labels.get(key) == value for key, value in labels_to_match.items())
+
+
+def expected_bucket_names(hosts: list[dict[str, Any]]) -> set[str]:
+    return {f"{host['short_hostname']}-restic" for host in hosts}
+
+
+def bucket_host_fqdn(bucket_name: str, environment: str) -> str:
+    short_hostname = bucket_name.removesuffix("-restic")
+    domain = "staging.grayhavensystems.com" if environment == "staging" else "grayhavensystems.com"
+    return f"{short_hostname}.{domain}"
+
+
+def remove_output() -> None:
+    try:
+        OUTPUT_PATH.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def write_output(lines: list[str]) -> None:
+    TEXTFILE_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", dir=TEXTFILE_DIR, delete=False, encoding="utf-8") as handle:
+        temp_path = pathlib.Path(handle.name)
+        handle.write("\n".join(lines))
+        handle.write("\n")
+    temp_path.chmod(0o644)
+    temp_path.replace(OUTPUT_PATH)
+
+
+def render_metrics(config: dict[str, Any]) -> list[str]:
+    current_host = config["host"]
+    gcs_config = config.get("gcs", {})
+    metric_base = {
+        "client": current_host["client"],
+        "environment": current_host["environment"],
+        "location": gcs_config.get("location", ""),
+        "project_id": gcs_config.get("project_id", ""),
+    }
+
+    token = google_token(str(gcs_config["credentials_file"]), GCS_READ_SCOPE)
+    required_labels = {
+        "managed_by": "ansible",
+        "client": str(current_host["client"]),
+        "env": str(current_host["environment"]),
+        "purpose": "restic",
+    }
+    actual_buckets = {
+        str(bucket["name"])
+        for bucket in list_buckets(str(gcs_config["project_id"]), token)
+        if bucket.get("name") and bucket_is_managed(bucket, required_labels)
+    }
+    stale_buckets = sorted(actual_buckets - expected_bucket_names(config.get("hosts", [])))
+
+    output = [
+        (
+            "# HELP grayhaven_gcs_restic_stale_bucket_check_last_success_timestamp_seconds "
+            "Last successful stale GCS restic bucket check time."
+        ),
+        "# TYPE grayhaven_gcs_restic_stale_bucket_check_last_success_timestamp_seconds gauge",
+        line(
+            "grayhaven_gcs_restic_stale_bucket_check_last_success_timestamp_seconds",
+            metric_base,
+            int(time.time()),
+        ),
+        "# HELP grayhaven_gcs_restic_stale_bucket_count Stale GCS restic bucket count.",
+        "# TYPE grayhaven_gcs_restic_stale_bucket_count gauge",
+        line("grayhaven_gcs_restic_stale_bucket_count", metric_base, len(stale_buckets)),
+    ]
+
+    if stale_buckets:
+        output.extend(
+            [
+                "# HELP grayhaven_gcs_restic_stale_bucket_info Stale GCS restic bucket marker.",
+                "# TYPE grayhaven_gcs_restic_stale_bucket_info gauge",
+            ]
+        )
+    for bucket_name in stale_buckets:
+        stale_labels = dict(metric_base)
+        stale_labels["bucket"] = bucket_name
+        stale_labels["host"] = bucket_host_fqdn(bucket_name, str(current_host["environment"]))
+        output.append(line("grayhaven_gcs_restic_stale_bucket_info", stale_labels, 1))
+
+    return output
+
+
+def main() -> int:
+    with open(CONFIG_PATH, encoding="utf-8") as config_handle:
+        config = json.load(config_handle)
+
+    current_host = config["host"]
+    gcs_config = config.get("gcs", {})
+    if not current_host.get("control_node") or not gcs_config.get("enabled"):
+        remove_output()
+        return 0
+
+    write_output(render_metrics(config))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

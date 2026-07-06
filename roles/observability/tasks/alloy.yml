@@ -273,6 +273,15 @@
     - observability_metrics_enabled
     - observability_host_is_control_node
 
+- name: Install GCS restic stale-bucket textfile helper
+  ansible.builtin.copy:
+    src: grayhaven-gcs-restic-stale-buckets
+    dest: /usr/local/sbin/grayhaven-gcs-restic-stale-buckets
+    owner: root
+    group: root
+    mode: "0755"
+  when: observability_metrics_enabled
+
 - name: Store Grafana IRM alert-group reporting configuration
   ansible.builtin.copy:
     dest: "{{ observability_irm_alert_groups_config_file }}"
@@ -352,6 +361,43 @@
     - observability_host_is_control_node
   notify: Reload systemd
 
+- name: Install GCS restic stale-bucket textfile service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-gcs-restic-stale-buckets.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Grayhaven Systems LLC stale GCS restic bucket textfile metrics
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/grayhaven-gcs-restic-stale-buckets
+  when: observability_metrics_enabled
+  notify: Reload systemd
+
+- name: Install GCS restic stale-bucket textfile timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grayhaven-gcs-restic-stale-buckets.timer
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Refresh Grayhaven Systems LLC stale GCS restic bucket textfile metrics
+
+      [Timer]
+      OnCalendar=*-*-* 04:17:00
+      RandomizedDelaySec=30m
+      Persistent=true
+      Unit=grayhaven-gcs-restic-stale-buckets.service
+
+      [Install]
+      WantedBy=timers.target
+  when: observability_metrics_enabled
+  notify: Reload systemd
+
 - name: Install Grayhaven observability textfile timer
   ansible.builtin.copy:
     dest: /etc/systemd/system/grayhaven-observability-textfile.timer
@@ -396,6 +442,14 @@
 - name: Enable Grayhaven observability textfile timer
   ansible.builtin.systemd_service:
     name: grayhaven-observability-textfile.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: observability_metrics_enabled
+
+- name: Enable GCS restic stale-bucket textfile timer
+  ansible.builtin.systemd_service:
+    name: grayhaven-gcs-restic-stale-buckets.timer
     enabled: true
     state: started
     daemon_reload: true
