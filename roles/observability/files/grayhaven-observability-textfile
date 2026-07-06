@@ -8,9 +8,11 @@ import ipaddress
 import json
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 import time
+from datetime import datetime
 from typing import Any
 import urllib.error
 import urllib.parse
@@ -263,6 +265,21 @@ def normalize_ip_token(value: str) -> str:
         return ""
 
 
+def format_fail2ban_expiry_date(value: str) -> str:
+    expiry_text = value.rsplit("=", 1)[-1].strip()
+    match = re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", expiry_text)
+    if not match:
+        return value
+
+    try:
+        expiry = datetime.strptime(match.group(0), "%Y-%m-%d %H:%M:%S").astimezone()
+    except ValueError:
+        return value
+
+    hour = expiry.hour % 12 or 12
+    return f"{expiry:%Y-%m-%d} {hour}:{expiry:%M} {expiry:%p} {expiry.tzname()}"
+
+
 def fail2ban_ban_expiry_dates(jail: str) -> dict[str, str]:
     try:
         result = subprocess.run(
@@ -285,7 +302,9 @@ def fail2ban_ban_expiry_dates(jail: str) -> dict[str, str]:
             if not banned_ip:
                 continue
 
-            expiry_dates[banned_ip] = raw_line.split(raw_token, 1)[1].strip(" \t:-")
+            expiry_dates[banned_ip] = format_fail2ban_expiry_date(
+                raw_line.split(raw_token, 1)[1].strip(" \t:-")
+            )
             break
 
     return expiry_dates
