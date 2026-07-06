@@ -12,7 +12,7 @@ import re
 import subprocess
 import tempfile
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 import urllib.error
 import urllib.parse
@@ -26,7 +26,6 @@ CONFIG_PATH = pathlib.Path("/etc/grayhaven/observability/textfile-metrics.json")
 TEXTFILE_DIR = pathlib.Path("/var/lib/grayhaven/observability/textfile")
 OUTPUT_PATH = TEXTFILE_DIR / "grayhaven.prom"
 GCS_MONITORING_SCOPE = "https://www.googleapis.com/auth/monitoring.read"
-GCS_OPERATION_WINDOW_DAYS = 14
 GCS_OPERATION_CLASS_A_TERMS = (
     "compose",
     "copy",
@@ -196,7 +195,8 @@ def gcs_operation_counts(
         return {"Class A": 0.0, "Class B": 0.0}
 
     end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(days=GCS_OPERATION_WINDOW_DAYS)
+    start_time = end_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    alignment_seconds = max(60, int((end_time - start_time).total_seconds()))
     query = {
         "filter": (
             'metric.type = "storage.googleapis.com/api/request_count" '
@@ -204,7 +204,7 @@ def gcs_operation_counts(
         ),
         "interval.startTime": start_time.isoformat().replace("+00:00", "Z"),
         "interval.endTime": end_time.isoformat().replace("+00:00", "Z"),
-        "aggregation.alignmentPeriod": f"{GCS_OPERATION_WINDOW_DAYS * 24 * 60 * 60}s",
+        "aggregation.alignmentPeriod": f"{alignment_seconds}s",
         "aggregation.perSeriesAligner": "ALIGN_DELTA",
         "pageSize": "10000",
     }
@@ -472,18 +472,18 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
     output.extend(
         [
             (
-                "# HELP grayhaven_gcs_restic_operations_14d_total "
-                "GCS restic bucket API operations in the last 14 days."
+                "# HELP grayhaven_gcs_restic_monthly_operations_total "
+                "GCS restic bucket API operations in the current calendar month."
             ),
-            "# TYPE grayhaven_gcs_restic_operations_14d_total gauge",
+            "# TYPE grayhaven_gcs_restic_monthly_operations_total gauge",
         ]
     )
 
     for operation_class, count in sorted(operation_counts.items()):
         operation_labels = dict(metric_base)
+        operation_labels["month"] = datetime.now(timezone.utc).strftime("%Y-%m")
         operation_labels["operation_class"] = operation_class
-        operation_labels["window"] = f"{GCS_OPERATION_WINDOW_DAYS}d"
-        output.append(line("grayhaven_gcs_restic_operations_14d_total", operation_labels, int(count)))
+        output.append(line("grayhaven_gcs_restic_monthly_operations_total", operation_labels, int(count)))
 
     return output
 

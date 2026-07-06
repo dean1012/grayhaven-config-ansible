@@ -56,6 +56,8 @@
         certificate_expiring_seconds: "{{ observability_certificate_expiring_seconds }}"
         restic_stale_seconds: "{{ observability_restic_stale_seconds }}"
         gcs_stale_bucket_check_stale_seconds: "{{ observability_gcs_stale_bucket_check_stale_seconds }}"
+        gcs_class_a_monthly_warning_operations: "{{ observability_gcs_class_a_monthly_warning_operations }}"
+        gcs_class_b_monthly_warning_operations: "{{ observability_gcs_class_b_monthly_warning_operations }}"
       tls_mode: "{{ grayhaven_tls_mode }}"
       hosts: "{{ observability_hosts }}"
       sites: "{{ observability_web_sites }}"

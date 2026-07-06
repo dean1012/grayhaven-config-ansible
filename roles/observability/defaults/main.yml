@@ -31,6 +31,8 @@ observability_swap_warning_percent: 80
 observability_certificate_expiring_seconds: 1209600
 observability_restic_stale_seconds: 100800
 observability_gcs_stale_bucket_check_stale_seconds: 100800
+observability_gcs_class_a_monthly_warning_operations: 4000
+observability_gcs_class_b_monthly_warning_operations: 40000
 
 observability_service_units_common:
   - name: sshd.service
