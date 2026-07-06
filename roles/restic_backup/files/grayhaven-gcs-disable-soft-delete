@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""Disable soft delete on a GCS bucket when it is enabled."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any
+
+from google.auth.transport.requests import Request
+from google.oauth2 import service_account
+
+GCS_SCOPE = "https://www.googleapis.com/auth/devstorage.full_control"
+
+
+class SoftDeleteError(RuntimeError):
+    """Raised when the GCS soft delete policy cannot be managed."""
+
+
+def credentials_token(credentials_file: str) -> str:
+    credentials = service_account.Credentials.from_service_account_file(
+        credentials_file,
+        scopes=[GCS_SCOPE],
+    )
+    credentials.refresh(Request())
+    if not credentials.token:
+        raise SoftDeleteError("Google Cloud credentials did not return an access token")
+    return credentials.token
+
+
+def request(
+    method: str,
+    path: str,
+    token: str,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    body = None
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    url = f"https://storage.googleapis.com/storage/v1{path}"
+    for attempt in range(5):
+        request_object = urllib.request.Request(
+            url,
+            data=body,
+            headers=headers,
+            method=method,
+        )
+        try:
+            with urllib.request.urlopen(request_object, timeout=30) as response:
+                response_body = response.read().decode("utf-8")
+                return json.loads(response_body) if response_body else None
+        except urllib.error.HTTPError as error:
+            if error.code == 429 or 500 <= error.code <= 599:
+                retry_after = error.headers.get("Retry-After")
+                delay = (
+                    int(retry_after)
+                    if retry_after and retry_after.isdigit()
+                    else min(2**attempt, 30)
+                )
+                time.sleep(delay)
+                continue
+
+            message = error.read().decode("utf-8", errors="replace")
+            raise SoftDeleteError(
+                f"{method} {path} failed with HTTP {error.code}: {message}"
+            ) from error
+
+    raise SoftDeleteError(f"{method} {path} exceeded retry budget")
+
+
+def bucket_metadata(bucket: str, token: str) -> dict[str, Any]:
+    encoded_bucket = urllib.parse.quote(bucket, safe="")
+    fields = urllib.parse.urlencode({"fields": "softDeletePolicy"})
+    response = request("GET", f"/b/{encoded_bucket}?{fields}", token)
+    if not isinstance(response, dict):
+        raise SoftDeleteError("GCS bucket metadata response was not an object")
+    return response
+
+
+def soft_delete_enabled(metadata: dict[str, Any]) -> bool:
+    retention = metadata.get("softDeletePolicy", {}).get("retentionDurationSeconds")
+    if retention in (None, "", "0", 0):
+        return False
+    return int(retention) > 0
+
+
+def disable_soft_delete(bucket: str, token: str) -> None:
+    encoded_bucket = urllib.parse.quote(bucket, safe="")
+    request(
+        "PATCH",
+        f"/b/{encoded_bucket}",
+        token,
+        {"softDeletePolicy": {"retentionDurationSeconds": "0"}},
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--credentials-file", required=True)
+    parser.add_argument("--bucket", required=True)
+    args = parser.parse_args()
+
+    token = credentials_token(args.credentials_file)
+    metadata = bucket_metadata(args.bucket, token)
+    changed = soft_delete_enabled(metadata)
+    if changed:
+        disable_soft_delete(args.bucket, token)
+
+    print(json.dumps({"changed": changed}))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except SoftDeleteError as error:
+        print(json.dumps({"failed": True, "msg": str(error)}), file=sys.stderr)
+        raise SystemExit(1)

@@ -340,8 +340,8 @@ disaster recovery.
 
 Remote GCS repositories are optional. When enabled, Ansible creates one GCS
 bucket per managed host before restic is initialized, labels the bucket with
-Grayhaven Systems LLC resource metadata, disables bucket versioning, and points
-restic at `gs:<short-hostname>-restic:/`.
+Grayhaven Systems LLC resource metadata, disables bucket versioning and soft
+delete, and points restic at `gs:<short-hostname>-restic:/`.
 
 The remote repository uses the same restic encryption password as the local
 repository. Remote backup credentials come from `grayhaven-vault` and are
