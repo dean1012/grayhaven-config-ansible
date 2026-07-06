@@ -26,6 +26,12 @@ STATE_SORT_ORDER = {
     "acknowledged": "1",
     "silenced": "2",
 }
+STATE_DISPLAY_NAMES = {
+    "firing": "Firing",
+    "new": "Firing",
+    "acknowledged": "Acknowledged",
+    "silenced": "Silenced",
+}
 
 
 class GrafanaIrmError(RuntimeError):
@@ -109,6 +115,16 @@ class GrafanaIrmClient:
         params = urllib.parse.urlencode({"state": state})
         next_url: str | None = f"{api_url}/api/v1/alert_groups/?{params}"
         return self._paged_irm_results(next_url, "Grafana IRM alert groups")
+
+    def alert_group_detail(self, alert_group_id: str) -> dict[str, Any]:
+        encoded_id = urllib.parse.quote(alert_group_id, safe="")
+        detail = self._request(
+            f"{self.stack_url}/api/plugins/grafana-irm-app/resources/alertgroups/{encoded_id}/?short=false"
+        )
+        if not isinstance(detail, dict):
+            raise GrafanaIrmError(f"Grafana IRM alert group {alert_group_id} detail response was not an object")
+
+        return detail
 
     def users(self) -> list[dict[str, Any]]:
         api_url = self.discover_oncall_api_url()
@@ -223,10 +239,30 @@ def state_sort_key(state: str) -> str:
     return STATE_SORT_ORDER.get(state, "9")
 
 
+def state_display_name(state: str) -> str:
+    return STATE_DISPLAY_NAMES.get(state, state.title())
+
+
+def detail_user_display(user: object, identities: IdentityResolver) -> str:
+    if not isinstance(user, dict):
+        return ""
+
+    username = safe_string(user.get("username"))
+    if username:
+        return identities.org_names.get(username) or username
+
+    pk = safe_string(user.get("pk"))
+    if pk:
+        return identities.display_name(pk)
+
+    return ""
+
+
 def render(
     config: dict[str, Any],
     groups_by_state: dict[str, list[dict[str, Any]]],
     identities: IdentityResolver,
+    details_by_id: dict[str, dict[str, Any]],
 ) -> str:
     metric_labels = {
         "client": config["labels"]["client"],
@@ -254,8 +290,20 @@ def render(
             if not alert_group_id:
                 continue
 
+            detail = details_by_id.get(alert_group_id, {})
             state_label = group_label(group, "state") or state
             acknowledged_by = group_label(group, "acknowledged_by")
+            user_display = ""
+            silenced_until = ""
+            if state_label == "acknowledged":
+                user_display = (
+                    detail_user_display(detail.get("acknowledged_by_user"), identities)
+                    or identities.display_name(acknowledged_by)
+                )
+            elif state_label == "silenced":
+                user_display = detail_user_display(detail.get("silenced_by_user"), identities)
+                silenced_until = group_label(detail, "silenced_until")
+
             group_labels = {
                 **metric_labels,
                 "acknowledged_by": acknowledged_by,
@@ -266,9 +314,13 @@ def render(
                 "alert_group_url": alert_group_url(group),
                 "created_at": group_label(group, "created_at"),
                 "created_at_display": local_timestamp(group_label(group, "created_at")),
+                "silenced_until": silenced_until,
+                "silenced_until_display": local_timestamp(silenced_until),
                 "state": state_label,
+                "state_display": state_display_name(state_label),
                 "state_sort": state_sort_key(state_label),
                 "title": group_label(group, "title"),
+                "user_display": user_display,
             }
             output.append(metric_line("grayhaven_irm_alert_group_info", group_labels, 1))
 
@@ -288,11 +340,20 @@ def atomic_write(path: pathlib.Path, content: str) -> None:
             os.unlink(tmp_name)
 
 
-def collect(config: dict[str, Any]) -> tuple[dict[str, list[dict[str, Any]]], IdentityResolver]:
+def collect(
+    config: dict[str, Any],
+) -> tuple[dict[str, list[dict[str, Any]]], IdentityResolver, dict[str, dict[str, Any]]]:
     client = GrafanaIrmClient(config["grafana"]["stack_url"], config["grafana"]["api_token"])
     groups_by_state = {state: client.alert_groups(state) for state in DEFAULT_STATES}
     identities = IdentityResolver(client.users(), client.org_users())
-    return groups_by_state, identities
+    details_by_id = {}
+    for groups in groups_by_state.values():
+        for group in groups:
+            alert_group_id = group_label(group, "id")
+            if alert_group_id:
+                details_by_id[alert_group_id] = client.alert_group_detail(alert_group_id)
+
+    return groups_by_state, identities, details_by_id
 
 
 def parse_args() -> argparse.Namespace:
@@ -307,8 +368,8 @@ def main() -> int:
         config = json.load(config_file)
 
     output_path = pathlib.Path(config["output_path"])
-    groups_by_state, identities = collect(config)
-    atomic_write(output_path, render(config, groups_by_state, identities))
+    groups_by_state, identities, details_by_id = collect(config)
+    atomic_write(output_path, render(config, groups_by_state, identities, details_by_id))
     return 0
 
 
