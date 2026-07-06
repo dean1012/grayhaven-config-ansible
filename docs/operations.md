@@ -411,7 +411,7 @@ bypass it for one SSH session by setting the bypass variable in the remote
 login shell:
 
 ```bash
-ssh -A -tt <user>@bastion.grayhavensystems.com 'GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1 exec bash -l'
+ssh -A -tt <user>@bastion.grayhavensystems.com 'cat /etc/motd; GRAYHAVEN_TMUX_AUTO_ATTACH_BYPASS=1 exec bash -l'
 ```
 
 The
