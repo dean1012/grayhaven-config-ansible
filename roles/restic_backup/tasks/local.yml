@@ -156,15 +156,17 @@
 
         backup_end="$(date +%s)"
         repository_backup_duration_seconds["$label"]=$((backup_end - backup_start))
-        repository_restore_size_bytes["$label"]="$(
-          restic \
-            --repo "$repository" \
-            --password-file "$PASSWORD_FILE" \
-            stats latest \
-            --mode restore-size \
-            --json \
-            | restic_stats_restore_size_bytes
-        )"
+        if [[ "$label" == "local" ]]; then
+          repository_restore_size_bytes["$label"]="$(
+            restic \
+              --repo "$repository" \
+              --password-file "$PASSWORD_FILE" \
+              stats latest \
+              --mode restore-size \
+              --json \
+              | restic_stats_restore_size_bytes
+          )"
+        fi
         repository_snapshot_count["$label"]="$(
           restic \
             --repo "$repository" \
@@ -211,7 +213,8 @@
           done
           printf '# HELP grayhaven_restic_repository_restore_size_bytes Latest restore-size bytes by repository.\n'
           printf '# TYPE grayhaven_restic_repository_restore_size_bytes gauge\n'
-          for repository_label in "${successful_repositories[@]}"; do
+          for repository_label in local; do
+            [[ -v "repository_restore_size_bytes[$repository_label]" ]] || continue
             printf 'grayhaven_restic_repository_restore_size_bytes{host="%s",repository="%s"} %s\n' \
               "$(hostname -f)" \
               "$repository_label" \
