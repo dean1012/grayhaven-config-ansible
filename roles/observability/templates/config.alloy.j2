@@ -318,6 +318,43 @@ loki.source.file "ansible_runner_dashboard" {
 }
 
 {% endif %}
+
+local.file_match "restic_backup_dashboard" {
+  path_targets = [{
+    "__path__"              = "/var/lib/grayhaven/observability/restic-backup-dashboard.log",
+    "client"                = {{ observability_client | to_json }},
+    "environment"           = {{ grayhaven_environment | to_json }},
+    "grayhaven_log_restic"  = "backup",
+    "host"                  = {{ inventory_hostname | to_json }},
+    "job"                   = "restic_dashboard",
+    "project"               = {{ observability_project | to_json }},
+    "role"                  = {{ observability_role | to_json }},
+  }]
+}
+
+local.file_match "restic_check_dashboard" {
+  path_targets = [{
+    "__path__"              = "/var/lib/grayhaven/observability/restic-check-dashboard.log",
+    "client"                = {{ observability_client | to_json }},
+    "environment"           = {{ grayhaven_environment | to_json }},
+    "grayhaven_log_restic"  = "check",
+    "host"                  = {{ inventory_hostname | to_json }},
+    "job"                   = "restic_dashboard",
+    "project"               = {{ observability_project | to_json }},
+    "role"                  = {{ observability_role | to_json }},
+  }]
+}
+
+loki.source.file "restic_backup_dashboard" {
+  targets    = local.file_match.restic_backup_dashboard.targets
+  forward_to = [loki.process.grayhaven_dashboard_restic.receiver]
+}
+
+loki.source.file "restic_check_dashboard" {
+  targets    = local.file_match.restic_check_dashboard.targets
+  forward_to = [loki.process.grayhaven_dashboard_restic.receiver]
+}
+
 loki.relabel "journal_dashboard" {
   forward_to = []
 
@@ -365,7 +402,6 @@ loki.source.journal "system_dashboard" {
     loki.process.grayhaven_dashboard_auth.receiver,
     loki.process.grayhaven_dashboard_superuser.receiver,
     loki.process.grayhaven_dashboard_fail2ban.receiver,
-    loki.process.grayhaven_dashboard_restic.receiver,
     loki.process.grayhaven_dashboard_system_errors.receiver,
   ]
 }
@@ -435,37 +471,38 @@ loki.process "grayhaven_dashboard_fail2ban" {
 }
 
 loki.process "grayhaven_dashboard_restic" {
+  stage.logfmt {
+    mapping = {
+      "line"        = "",
+      "observed_at" = "",
+      "ordered_at"  = "",
+      "run_id"      = "",
+      "sequence"    = "",
+    }
+  }
+
+  stage.timestamp {
+    source = "ordered_at"
+    format = "RFC3339Nano"
+  }
+
+  stage.structured_metadata {
+    values = {
+      "observed_at" = "",
+      "run_id"      = "",
+      "sequence"    = "",
+    }
+  }
+
+  stage.output {
+    source = "line"
+  }
+
   stage.static_labels {
     values = {
-      grayhaven_log_host   = {{ observability_short_hostname | to_json }},
-      grayhaven_log_restic = "false",
-      grayhaven_log_view   = "dashboard",
+      grayhaven_log_host = {{ observability_short_hostname | to_json }},
+      grayhaven_log_view = "dashboard",
     }
-  }
-
-  stage.match {
-    selector = `{systemd_unit="grayhaven-restic-backup.service"}`
-
-    stage.static_labels {
-      values = {
-        grayhaven_log_restic = "backup",
-      }
-    }
-  }
-
-  stage.match {
-    selector = `{systemd_unit="grayhaven-restic-check.service"}`
-
-    stage.static_labels {
-      values = {
-        grayhaven_log_restic = "check",
-      }
-    }
-  }
-
-  stage.match {
-    selector = `{grayhaven_log_restic="false"}`
-    action   = "drop"
   }
 
   forward_to = [loki.process.grayhaven_redact.receiver]

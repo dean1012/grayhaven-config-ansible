@@ -797,6 +797,54 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             },
             **common,
         ),
+        alert_rule(
+            title="GCS Class A operations >= 80% usage",
+            expression=(
+                "max by (client, environment, location, month, operation_class, project_id) "
+                f'(grayhaven_gcs_restic_monthly_operations_total{{{selector},operation_class="Class A"}})'
+                f' >= {float(config["thresholds"]["gcs_class_a_monthly_warning_operations"])}'
+            ),
+            evaluator_type="gt",
+            threshold=0,
+            labels=base_labels(
+                config,
+                {
+                    "check": "gcs_class_a_monthly_operations",
+                    "service": "Google Cloud Storage",
+                },
+            ),
+            annotations={
+                "summary": "GCS Class A operations are approaching monthly usage limit",
+                "description": "GCS Class A operations are at or above the configured warning threshold.",
+                "check_value": "{{ humanize $values.A.Value }}",
+                "month": "{{ $labels.month }}",
+            },
+            **common,
+        ),
+        alert_rule(
+            title="GCS Class B operations >= 80% usage",
+            expression=(
+                "max by (client, environment, location, month, operation_class, project_id) "
+                f'(grayhaven_gcs_restic_monthly_operations_total{{{selector},operation_class="Class B"}})'
+                f' >= {float(config["thresholds"]["gcs_class_b_monthly_warning_operations"])}'
+            ),
+            evaluator_type="gt",
+            threshold=0,
+            labels=base_labels(
+                config,
+                {
+                    "check": "gcs_class_b_monthly_operations",
+                    "service": "Google Cloud Storage",
+                },
+            ),
+            annotations={
+                "summary": "GCS Class B operations are approaching monthly usage limit",
+                "description": "GCS Class B operations are at or above the configured warning threshold.",
+                "check_value": "{{ humanize $values.A.Value }}",
+                "month": "{{ $labels.month }}",
+            },
+            **common,
+        ),
     ]
 
     for service_name, component_name in PROTON_SERVICES:
