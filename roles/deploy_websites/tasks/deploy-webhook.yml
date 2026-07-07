@@ -50,6 +50,14 @@
     group: root
     mode: "0755"
 
+- name: Ensure website deployment state directory exists
+  ansible.builtin.file:
+    path: "{{ deploy_websites_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Install website deployment command
   ansible.builtin.copy:
     src: grayhaven-website-deploy
@@ -79,7 +87,15 @@
     content: >-
       {{
         {
-          "deployments": deploy_websites_repository_deployments | default([])
+          "deployments": deploy_websites_repository_deployments | default([]),
+          "fanout": {
+            "enabled": deploy_websites_fanout_enabled | bool,
+            "secret": web_deploy_fanout_secret | default(""),
+            "peers": deploy_websites_fanout_peers | default([]),
+            "port": deploy_websites_webhook_bind_port,
+            "timeout_seconds": deploy_websites_fanout_timeout_seconds,
+            "retries": deploy_websites_fanout_retries
+          }
         }
         | to_nice_json
       }}

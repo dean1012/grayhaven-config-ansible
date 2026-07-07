@@ -20,6 +20,14 @@
     <accept/>
   </rule>
 {% endfor %}
+{% elif source_tag == "web" %}
+{% for source in managed_inventory_web_private_sources %}
+  <rule family="ipv4">
+    <source address="{{ source }}"/>
+    <port protocol="{{ rule.protocol }}" port="{{ rule.port_range }}"/>
+    <accept/>
+  </rule>
+{% endfor %}
 {% endif %}
 {% endfor %}
 {% if (rule.source_addresses | default([]) | length == 0) and (rule.source_tags | default([]) | length == 0) %}

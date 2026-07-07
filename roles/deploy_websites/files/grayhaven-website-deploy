@@ -14,6 +14,9 @@ import re
 import shutil
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -50,8 +53,32 @@ class WebsiteDeployment:
     branches: dict[str, BranchDeployment]
 
 
+@dataclass(frozen=True)
+class FanoutConfig:
+    """Private web-to-web deployment fanout settings."""
+
+    enabled: bool
+    secret: str
+    peers: list[str]
+    port: int
+    timeout_seconds: int
+    retries: int
+
+
+@dataclass(frozen=True)
+class DeploymentConfig:
+    """Ansible-managed deployment configuration."""
+
+    deployments: list[WebsiteDeployment]
+    fanout: FanoutConfig
+
+
 class DeployError(RuntimeError):
     """Raised when a deployment request is valid but cannot be completed."""
+
+
+class StaleDeployment(DeployError):
+    """Raised when a newer descendant commit is already deployed."""
 
 
 # Configuration
@@ -65,7 +92,7 @@ def normalize_repository_url(repository_url: str) -> str:
     return normalized.lower()
 
 
-def load_config(config_path: Path) -> list[WebsiteDeployment]:
+def load_config(config_path: Path) -> DeploymentConfig:
     """Load the Ansible-managed deployment allowlist."""
 
     with config_path.open("r", encoding="utf-8") as config_file:
@@ -92,7 +119,16 @@ def load_config(config_path: Path) -> list[WebsiteDeployment]:
                 branches=branches,
             )
         )
-    return deployments
+    raw_fanout = raw_config.get("fanout", {})
+    fanout = FanoutConfig(
+        enabled=bool(raw_fanout.get("enabled", False)),
+        secret=str(raw_fanout.get("secret", "")),
+        peers=[str(peer) for peer in raw_fanout.get("peers", [])],
+        port=int(raw_fanout.get("port", 8791)),
+        timeout_seconds=int(raw_fanout.get("timeout_seconds", 30)),
+        retries=int(raw_fanout.get("retries", 2)),
+    )
+    return DeploymentConfig(deployments=deployments, fanout=fanout)
 
 
 def find_deployment(
@@ -241,6 +277,55 @@ def render_dev_source(source: Path, target: Path) -> bool:
 
 # Deployment
 
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def environment_for_branch(branch_name: str) -> str:
+    """Return the hosted website environment label for a repository branch."""
+
+    return "prod" if branch_name == "main" else branch_name
+
+
+def safe_status_component(value: str) -> str:
+    """Return a conservative path component for deployment status files."""
+
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", value)
+
+
+def status_path(state_dir: Path, deployment: WebsiteDeployment, branch_name: str) -> Path:
+    """Return the local status path for a site and branch."""
+
+    return state_dir / "status" / safe_status_component(deployment.root_name) / f"{branch_name}.json"
+
+
+def read_status(state_dir: Path, deployment: WebsiteDeployment, branch_name: str) -> dict[str, Any]:
+    """Read the most recent local deployment status for a site and branch."""
+
+    path = status_path(state_dir, deployment, branch_name)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        LOG.warning("Ignoring unreadable deployment status file %s: %s", path, exc)
+        return {}
+
+
+def write_status(
+    state_dir: Path,
+    deployment: WebsiteDeployment,
+    branch_name: str,
+    status: dict[str, Any],
+) -> None:
+    """Write local deployment status for observability consumers."""
+
+    path = status_path(state_dir, deployment, branch_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(".json.tmp")
+    temporary_path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary_path.replace(path)
+
+
 def run_command(command: list[str], *, user: str | None = None, cwd: Path | None = None) -> None:
     """Run a command, optionally as another local user."""
 
@@ -250,6 +335,16 @@ def run_command(command: list[str], *, user: str | None = None, cwd: Path | None
 
     LOG.info("Running command: %s", " ".join(full_command))
     subprocess.run(full_command, cwd=cwd, check=True)
+
+
+def git_commit_is_ancestor(checkout: Path, ancestor_sha: str, descendant_sha: str) -> bool:
+    """Return true when ancestor_sha is an ancestor of descendant_sha."""
+
+    result = subprocess.run(
+        ["git", "-C", str(checkout), "merge-base", "--is-ancestor", ancestor_sha, descendant_sha],
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def restore_selinux_context(path: Path) -> None:
@@ -262,16 +357,40 @@ def restore_selinux_context(path: Path) -> None:
     run_command([restorecon, "-RF", str(path)])
 
 
-def deploy_branch(deployment: WebsiteDeployment, branch_name: str) -> None:
-    """Refresh one configured checkout and synchronize it to its docroot."""
+def deploy_branch(
+    deployment: WebsiteDeployment,
+    branch_name: str,
+    commit_sha: str,
+    *,
+    state_dir: Path,
+    delivery_id: str,
+    role: str,
+    failed_peers: list[str] | None = None,
+) -> str:
+    """Refresh one configured checkout and synchronize an exact commit."""
 
     branch = deployment.branches[branch_name]
     if not branch.checkout.is_dir():
         raise DeployError(f"Checkout path does not exist: {branch.checkout}")
 
+    if not SHA_RE.match(commit_sha):
+        raise DeployError(f"Invalid commit SHA: {commit_sha}")
+
+    started_at = time.time()
     run_command(["git", "-C", str(branch.checkout), "fetch", "--prune", "origin", branch_name], user="ansible")
-    run_command(["git", "-C", str(branch.checkout), "checkout", branch_name], user="ansible")
-    run_command(["git", "-C", str(branch.checkout), "reset", "--hard", f"origin/{branch_name}"], user="ansible")
+
+    current_status = read_status(state_dir, deployment, branch_name)
+    current_sha = str(current_status.get("sha", ""))
+    if current_sha == commit_sha:
+        LOG.info("Commit %s is already deployed for %s %s", commit_sha, deployment.root_name, branch_name)
+        return "unchanged"
+
+    if SHA_RE.match(current_sha) and git_commit_is_ancestor(branch.checkout, commit_sha, current_sha):
+        raise StaleDeployment(
+            f"{deployment.root_name} {branch_name} commit {commit_sha} is older than deployed commit {current_sha}"
+        )
+
+    run_command(["git", "-C", str(branch.checkout), "checkout", "--detach", commit_sha], user="ansible")
     run_command(["git", "-C", str(branch.checkout), "clean", "-fdx"], user="ansible")
 
     if branch.render_source:
@@ -298,17 +417,51 @@ def deploy_branch(deployment: WebsiteDeployment, branch_name: str) -> None:
         inject_dev_cues(branch.destination)
 
     restore_selinux_context(branch.destination)
-    LOG.info("Deployed %s branch %s to %s", deployment.root_name, branch_name, branch.destination)
+    finished_at = time.time()
+    status = {
+        "site": deployment.root_name,
+        "branch": branch_name,
+        "environment": environment_for_branch(branch_name),
+        "sha": commit_sha,
+        "github_delivery_id": delivery_id,
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
+        "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(finished_at)),
+        "duration_seconds": round(finished_at - started_at, 3),
+        "role": role,
+        "status": "success",
+        "failed_peers": failed_peers or [],
+    }
+    write_status(state_dir, deployment, branch_name, status)
+    LOG.info("Deployed %s branch %s commit %s to %s", deployment.root_name, branch_name, commit_sha, branch.destination)
+    return "deployed"
 
 
-def deploy_with_lock(deployment: WebsiteDeployment, branch_name: str, runtime_dir: Path) -> None:
+def deploy_with_lock(
+    deployment: WebsiteDeployment,
+    branch_name: str,
+    commit_sha: str,
+    *,
+    runtime_dir: Path,
+    state_dir: Path,
+    delivery_id: str,
+    role: str,
+    failed_peers: list[str] | None = None,
+) -> str:
     """Serialize deployments for a single site and branch."""
 
     runtime_dir.mkdir(parents=True, exist_ok=True)
     lock_path = runtime_dir / f"{deployment.root_name}-{branch_name}.lock"
     with lock_path.open("w", encoding="utf-8") as lock_file:
         fcntl.flock(lock_file, fcntl.LOCK_EX)
-        deploy_branch(deployment, branch_name)
+        return deploy_branch(
+            deployment,
+            branch_name,
+            commit_sha,
+            state_dir=state_dir,
+            delivery_id=delivery_id,
+            role=role,
+            failed_peers=failed_peers,
+        )
 
 
 # Webhook Handling
@@ -334,11 +487,88 @@ def verify_signature(body: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(signature, f"sha256={expected}")
 
 
+def fanout_body(
+    *,
+    deployment: WebsiteDeployment,
+    branch_name: str,
+    commit_sha: str,
+    delivery_id: str,
+    sender: str,
+) -> bytes:
+    """Build a stable fanout request body."""
+
+    payload = {
+        "site": deployment.root_name,
+        "host": deployment.host,
+        "repository_url": deployment.repository_url,
+        "branch": branch_name,
+        "sha": commit_sha,
+        "delivery_id": delivery_id,
+        "sender": sender,
+        "timestamp": int(time.time()),
+    }
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+def call_fanout_peer(peer: str, fanout: FanoutConfig, body: bytes) -> None:
+    """Send a signed private fanout request to one peer."""
+
+    signature = hmac.new(fanout.secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    request = urllib.request.Request(
+        f"http://{peer}:{fanout.port}/fanout",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Grayhaven-Fanout-Signature": f"sha256={signature}",
+        },
+        method="POST",
+    )
+    urllib.request.urlopen(request, timeout=fanout.timeout_seconds).read()
+
+
+def fanout_to_peers(
+    *,
+    deployment: WebsiteDeployment,
+    branch_name: str,
+    commit_sha: str,
+    delivery_id: str,
+    fanout: FanoutConfig,
+) -> list[str]:
+    """Attempt deployment fanout to all configured peers."""
+
+    if not fanout.enabled:
+        return []
+
+    failed_peers: list[str] = []
+    body = fanout_body(
+        deployment=deployment,
+        branch_name=branch_name,
+        commit_sha=commit_sha,
+        delivery_id=delivery_id,
+        sender=os.uname().nodename,
+    )
+    for peer in fanout.peers:
+        peer_succeeded = False
+        for attempt in range(1, fanout.retries + 2):
+            try:
+                call_fanout_peer(peer, fanout, body)
+                peer_succeeded = True
+                LOG.info("Fanout deployment completed on peer %s", peer)
+                break
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                LOG.warning("Fanout attempt %s failed for peer %s: %s", attempt, peer, exc)
+        if not peer_succeeded:
+            failed_peers.append(peer)
+    return failed_peers
+
+
 class DeploymentRequestHandler(BaseHTTPRequestHandler):
     """Handle authenticated repository deployment requests from GitHub."""
 
     deployments: list[WebsiteDeployment] = []
+    fanout = FanoutConfig(enabled=False, secret="", peers=[], port=8791, timeout_seconds=30, retries=2)
     runtime_dir = Path("/run/grayhaven-website-deploy")
+    state_dir = Path("/var/lib/grayhaven/website-deploy")
 
     def log_message(self, format_string: str, *args: Any) -> None:  # noqa: A002
         LOG.info("%s - %s", self.address_string(), format_string % args)
@@ -356,31 +586,50 @@ class DeploymentRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         """Process one deployment webhook request."""
 
-        if self.path != "/deploy":
-            self.send_text(HTTPStatus.NOT_FOUND, "not found")
+        if self.path == "/deploy":
+            self.handle_public_deploy()
             return
+        if self.path == "/fanout":
+            self.handle_fanout_deploy()
+            return
+
+        self.send_text(HTTPStatus.NOT_FOUND, "not found")
+
+    def read_json_body(self) -> tuple[bytes, dict[str, Any]] | None:
+        """Read and decode the request body."""
 
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             self.send_text(HTTPStatus.BAD_REQUEST, "invalid content length")
-            return
+            return None
 
         body = self.rfile.read(content_length)
-        signature = self.headers.get("X-Hub-Signature-256", "")
-        host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "")
-
         try:
             payload = json.loads(body.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             self.send_text(HTTPStatus.BAD_REQUEST, "invalid json payload")
+            return None
+        return body, payload
+
+    def handle_public_deploy(self) -> None:
+        """Process one public GitHub deployment webhook request."""
+
+        body_payload = self.read_json_body()
+        if body_payload is None:
             return
+        body, payload = body_payload
+
+        signature = self.headers.get("X-Hub-Signature-256", "")
+        host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "")
+        delivery_id = self.headers.get("X-GitHub-Delivery", "") or str(payload.get("delivery_id", ""))
+        commit_sha = str(payload.get("after", ""))
 
         branch_name = parse_branch(str(payload.get("ref", "")))
         repository = payload.get("repository", {})
         repository_url = str(repository.get("clone_url") or repository.get("html_url") or "")
-        if not branch_name or not repository_url:
-            self.send_text(HTTPStatus.FORBIDDEN, "unsupported repository or branch")
+        if not branch_name or not repository_url or not SHA_RE.match(commit_sha):
+            self.send_text(HTTPStatus.FORBIDDEN, "unsupported repository, branch, or commit")
             return
 
         deployment = find_deployment(
@@ -397,22 +646,118 @@ class DeploymentRequestHandler(BaseHTTPRequestHandler):
             self.send_text(HTTPStatus.FORBIDDEN, "invalid signature")
             return
 
+        failed_peers: list[str] = []
         try:
-            deploy_with_lock(deployment, branch_name, self.runtime_dir)
+            deploy_result = deploy_with_lock(
+                deployment,
+                branch_name,
+                commit_sha,
+                runtime_dir=self.runtime_dir,
+                state_dir=self.state_dir,
+                delivery_id=delivery_id,
+                role="coordinator",
+            )
+            failed_peers = fanout_to_peers(
+                deployment=deployment,
+                branch_name=branch_name,
+                commit_sha=commit_sha,
+                delivery_id=delivery_id,
+                fanout=self.fanout,
+            )
+            if failed_peers:
+                write_status(
+                    self.state_dir,
+                    deployment,
+                    branch_name,
+                    {
+                        **read_status(self.state_dir, deployment, branch_name),
+                        "status": "failed",
+                        "failed_peers": failed_peers,
+                    },
+                )
+                self.send_text(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    f"deployment partially failed on peers: {', '.join(failed_peers)}",
+                )
+                return
+        except StaleDeployment as exc:
+            LOG.warning("Ignoring stale public deployment: %s", exc)
+            self.send_text(HTTPStatus.OK, f"stale deployment ignored: {exc}")
+            return
         except (DeployError, subprocess.CalledProcessError, OSError) as exc:
             LOG.exception("Deployment failed for %s %s", deployment.root_name, branch_name)
             self.send_text(HTTPStatus.INTERNAL_SERVER_ERROR, f"deployment failed: {exc}")
             return
 
-        self.send_text(HTTPStatus.OK, "deployment complete")
+        self.send_text(HTTPStatus.OK, f"deployment {deploy_result}")
+
+    def handle_fanout_deploy(self) -> None:
+        """Process one private peer deployment request."""
+
+        if not self.fanout.enabled:
+            self.send_text(HTTPStatus.NOT_FOUND, "not found")
+            return
+
+        body_payload = self.read_json_body()
+        if body_payload is None:
+            return
+        body, payload = body_payload
+
+        signature = self.headers.get("X-Grayhaven-Fanout-Signature", "")
+        if not verify_signature(body, signature, self.fanout.secret):
+            self.send_text(HTTPStatus.FORBIDDEN, "invalid fanout signature")
+            return
+
+        branch_name = str(payload.get("branch", ""))
+        commit_sha = str(payload.get("sha", ""))
+        repository_url = str(payload.get("repository_url", ""))
+        host = str(payload.get("host", ""))
+        delivery_id = str(payload.get("delivery_id", ""))
+        if branch_name not in {"main", "dev"} or not SHA_RE.match(commit_sha) or not repository_url:
+            self.send_text(HTTPStatus.FORBIDDEN, "unsupported fanout target")
+            return
+
+        deployment = find_deployment(
+            self.deployments,
+            host=host,
+            repository_url=repository_url,
+            branch_name=branch_name,
+        )
+        if not deployment:
+            self.send_text(HTTPStatus.FORBIDDEN, "unsupported deployment target")
+            return
+
+        try:
+            deploy_result = deploy_with_lock(
+                deployment,
+                branch_name,
+                commit_sha,
+                runtime_dir=self.runtime_dir,
+                state_dir=self.state_dir,
+                delivery_id=delivery_id,
+                role="peer",
+            )
+        except StaleDeployment as exc:
+            LOG.warning("Ignoring stale fanout deployment: %s", exc)
+            self.send_text(HTTPStatus.OK, f"stale deployment ignored: {exc}")
+            return
+        except (DeployError, subprocess.CalledProcessError, OSError) as exc:
+            LOG.exception("Deployment failed for %s %s", deployment.root_name, branch_name)
+            self.send_text(HTTPStatus.INTERNAL_SERVER_ERROR, f"deployment failed: {exc}")
+            return
+
+        self.send_text(HTTPStatus.OK, f"deployment {deploy_result}")
 
 
-def serve(config_path: Path, host: str, port: int, runtime_dir: Path) -> None:
+def serve(config_path: Path, host: str, port: int, runtime_dir: Path, state_dir: Path) -> None:
     """Start the local webhook HTTP server."""
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    DeploymentRequestHandler.deployments = load_config(config_path)
+    config = load_config(config_path)
+    DeploymentRequestHandler.deployments = config.deployments
+    DeploymentRequestHandler.fanout = config.fanout
     DeploymentRequestHandler.runtime_dir = runtime_dir
+    DeploymentRequestHandler.state_dir = state_dir
 
     server = ThreadingHTTPServer((host, port), DeploymentRequestHandler)
     LOG.info("Listening on %s:%s", host, port)
@@ -444,6 +789,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="directory for deployment locks",
     )
+    serve_parser.add_argument(
+        "--state-dir",
+        default=Path("/var/lib/grayhaven/website-deploy"),
+        type=Path,
+        help="directory for deployment status metadata",
+    )
 
     return parser
 
@@ -465,7 +816,7 @@ def main() -> int:
         return 0
 
     if args.command == "serve":
-        serve(args.config, args.host, args.port, args.runtime_dir)
+        serve(args.config, args.host, args.port, args.runtime_dir, args.state_dir)
         return 0
 
     raise AssertionError(f"Unhandled command: {args.command}")

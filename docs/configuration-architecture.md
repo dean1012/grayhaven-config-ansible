@@ -229,11 +229,22 @@ from the generic fallback templates in the website deployment role.
 
 Repository-backed domains also receive a small deployment webhook at
 `/.grayhaven/deploy` on the apex hostname. The endpoint accepts signed GitHub
-Actions deployment requests only from GitHub source ranges, verifies the
-repository webhook secret from `grayhaven-vault`, and deploys only configured
-repositories and the `main` or `dev` branches. Deployments are locked per
-domain and branch so independent sites or branches can deploy without blocking
-each other.
+Actions deployment requests, verifies the repository webhook secret from
+`grayhaven-vault`, and deploys only configured repositories and the `main` or
+`dev` branches. In host TLS mode, Nginx also restricts the endpoint to GitHub
+source ranges. Deployments are locked per domain and branch so independent sites
+or branches can deploy without blocking each other.
+
+When load-balancer TLS is active with two or more web hosts, the web host that
+receives the public webhook coordinates private web-to-web fanout over short
+hostnames that resolve to private addresses. Peer fanout requests are signed with
+the environment-wide `web_deploy_fanout_secret` from `grayhaven-vault`, deploy
+only locally, and do not recursively fan out. Fanout is disabled for
+single-web-host environments. Public webhook deployments and peer fanout
+deployments target the exact commit SHA from the GitHub webhook payload.
+
+Each local deployment writes status metadata under
+`/var/lib/grayhaven/website-deploy/status/` for observability support.
 
 Host TLS mode issues certificates with Let's Encrypt through DNS-01 validation
 using the role-specific DigitalOcean DNS token from the vault. Certbot renewals
@@ -299,6 +310,8 @@ When web hosts run behind load-balancer TLS, OpenTofu restricts cloud firewall
 origin HTTP access to the DigitalOcean load balancer and removes direct web
 origin HTTPS access. Ansible applies the matching host-side behavior by keeping
 only the local web origin ports needed for backend service.
+For load-balanced environments with two or more web hosts, Ansible also opens
+TCP `8791` between web hosts on private addresses for website deployment fanout.
 
 For SSH from bastion to managed hosts, local firewalld allows the environment
 VPC CIDR from `grayhaven-vault` `network.vpc_cidr` as well as known bastion
