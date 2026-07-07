@@ -16,6 +16,15 @@
 - name: Configure sudo command lookup path
   ansible.builtin.import_tasks: sudo-path.yml
 
+- name: Enforce vault Ansible control authorized key on managed hosts
+  ansible.builtin.copy:
+    dest: /home/ansible/.ssh/authorized_keys
+    owner: ansible
+    group: ansible
+    mode: "0600"
+    content: "{{ ansible_control_public_key | trim }}\n"
+  no_log: true
+
 - name: Install vault Ansible control private key on bastion hosts
   ansible.builtin.copy:
     dest: /home/ansible/.ssh/id_ed25519
@@ -34,13 +43,4 @@
     mode: "0644"
     content: "{{ ansible_control_public_key | trim }}\n"
   when: grayhaven_role == "bastion"
-  no_log: true
-
-- name: Enforce vault Ansible control authorized key on managed hosts
-  ansible.builtin.copy:
-    dest: /home/ansible/.ssh/authorized_keys
-    owner: ansible
-    group: ansible
-    mode: "0600"
-    content: "{{ ansible_control_public_key | trim }}\n"
   no_log: true
