@@ -34,6 +34,16 @@
   when: grayhaven_role == "bastion"
   no_log: true
 
+- name: Install vault Ansible control public key on bastion hosts
+  ansible.builtin.copy:
+    dest: /home/ansible/.ssh/id_ed25519.pub
+    owner: ansible
+    group: ansible
+    mode: "0644"
+    content: "{{ ansible_control_public_key | trim }}\n"
+  when: grayhaven_role == "bastion"
+  no_log: true
+
 - name: Reset SSH connection after Ansible control key handoff
   ansible.builtin.meta: reset_connection
 
@@ -51,14 +61,4 @@
     group: ansible
     mode: "0600"
     content: "{{ ansible_control_public_key | trim }}\n"
-  no_log: true
-
-- name: Install vault Ansible control public key on bastion hosts
-  ansible.builtin.copy:
-    dest: /home/ansible/.ssh/id_ed25519.pub
-    owner: ansible
-    group: ansible
-    mode: "0644"
-    content: "{{ ansible_control_public_key | trim }}\n"
-  when: grayhaven_role == "bastion"
   no_log: true
