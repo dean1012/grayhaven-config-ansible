@@ -346,6 +346,7 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 ),
                 evaluator_type="lt",
                 threshold=1,
+                duration="1m",
                 no_data_state="Alerting",
                 labels=host_labels(config, host, "metrics_data"),
                 annotations={
@@ -760,6 +761,7 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             ),
             evaluator_type="gt",
             threshold=float(config["thresholds"]["gcs_stale_bucket_check_stale_seconds"]),
+            duration="1m",
             labels=base_labels(
                 config,
                 {
