@@ -55,6 +55,19 @@
         | list
       }}
 
+- name: Derive web private source addresses
+  ansible.builtin.set_fact:
+    managed_inventory_web_private_sources: >-
+      {{
+        managed_inventory_hosts
+        | default([])
+        | selectattr('role', 'equalto', 'web')
+        | map(attribute='private_ip')
+        | select('defined')
+        | select('string')
+        | list
+      }}
+
 - name: Build web SSH source list for control-node failover
   ansible.builtin.set_fact:
     managed_inventory_web_ssh_sources: >-

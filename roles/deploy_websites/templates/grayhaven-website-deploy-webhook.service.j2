@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/grayhaven-website-deploy serve --config {{ deploy_websites_config_dir }}/deployments.json --host {{ deploy_websites_webhook_bind_host }} --port {{ deploy_websites_webhook_bind_port }} --runtime-dir {{ deploy_websites_runtime_dir }}
+ExecStart=/usr/local/sbin/grayhaven-website-deploy serve --config {{ deploy_websites_config_dir }}/deployments.json --host {{ deploy_websites_effective_webhook_bind_host }} --port {{ deploy_websites_webhook_bind_port }} --runtime-dir {{ deploy_websites_runtime_dir }} --state-dir {{ deploy_websites_state_dir }}
 Restart=on-failure
 RestartSec=5s
 

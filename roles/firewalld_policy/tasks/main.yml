@@ -96,6 +96,24 @@
     - grayhaven_tls_mode == "load_balancer"
     - not (item.protocol == "tcp" and item.port_range == "443")
 
+- name: Allow private web deploy fanout between load-balanced web hosts
+  ansible.builtin.set_fact:
+    firewalld_policy_load_balancer_tls_inbound: >-
+      {{
+        firewalld_policy_load_balancer_tls_inbound
+        + [{
+          "protocol": "tcp",
+          "port_range": "8791",
+          "source_addresses": [],
+          "source_tags": ["web"]
+        }]
+      }}
+  when:
+    - firewalld_policy_cache_stat.stat.exists
+    - grayhaven_role == "web"
+    - grayhaven_tls_mode == "load_balancer"
+    - managed_inventory_web_private_sources | default([]) | length > 1
+
 - name: Apply load-balancer TLS firewalld policy
   ansible.builtin.set_fact:
     firewalld_policy_role_policy: >-

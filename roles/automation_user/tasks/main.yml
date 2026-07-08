@@ -16,6 +16,14 @@
 - name: Configure sudo command lookup path
   ansible.builtin.import_tasks: sudo-path.yml
 
+- name: Add vault Ansible control key before controller handoff
+  ansible.posix.authorized_key:
+    user: ansible
+    key: "{{ ansible_control_public_key | trim }}"
+    state: present
+    exclusive: false
+  no_log: true
+
 - name: Install vault Ansible control private key on bastion hosts
   ansible.builtin.copy:
     dest: /home/ansible/.ssh/id_ed25519
@@ -35,6 +43,16 @@
     content: "{{ ansible_control_public_key | trim }}\n"
   when: grayhaven_role == "bastion"
   no_log: true
+
+- name: Reset SSH connection after Ansible control key handoff
+  ansible.builtin.meta: reset_connection
+
+- name: Verify fresh SSH after Ansible control key handoff
+  ansible.builtin.wait_for_connection:
+    delay: 1
+    sleep: 2
+    timeout: 60
+  when: ansible_connection | default("ssh") != "local"
 
 - name: Enforce vault Ansible control authorized key on managed hosts
   ansible.builtin.copy:

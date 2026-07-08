@@ -267,12 +267,12 @@ def cloud_storage_product_id() -> str:
     return GOOGLE_CLOUD_STORAGE_PRODUCT_ID
 
 
-def gcs_status(configured_location: str) -> tuple[str, int]:
+def gcs_status(configured_location: str) -> tuple[str, int, int]:
     product_id = cloud_storage_product_id()
     try:
         incidents = request_json(GOOGLE_CLOUD_INCIDENTS_URL)
     except (OSError, urllib.error.URLError, json.JSONDecodeError):
-        return "Unknown", 0
+        return "Unknown", 0, 0
 
     for incident in incidents:
         if incident.get("end"):
@@ -286,9 +286,9 @@ def gcs_status(configured_location: str) -> tuple[str, int]:
             continue
 
         status = incident.get("status_impact") or incident.get("severity") or "Incident"
-        return str(status).replace("_", " ").title(), 0
+        return str(status).replace("_", " ").title(), 0, 1
 
-    return "Operational", 1
+    return "Operational", 1, 1
 
 
 # Proton public service-health helpers
@@ -440,18 +440,22 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
         "location": gcs_config.get("location", ""),
         "project_id": gcs_config.get("project_id", ""),
     }
-    status, status_value = gcs_status(str(gcs_config.get("location", "")))
+    status, status_value, service_telemetry_success = gcs_status(str(gcs_config.get("location", "")))
     status_labels = dict(metric_base)
     status_labels["product"] = GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE
     status_labels["status"] = status
 
     output = [
+        "# HELP grayhaven_gcs_service_telemetry_success Google Cloud Storage public service-health telemetry collection success.",
+        "# TYPE grayhaven_gcs_service_telemetry_success gauge",
         "# HELP grayhaven_gcs_service_status Google Cloud Storage public service-health status.",
         "# TYPE grayhaven_gcs_service_status gauge",
-        line("grayhaven_gcs_service_status", status_labels, status_value),
+        line("grayhaven_gcs_service_telemetry_success", metric_base, service_telemetry_success),
         "# HELP grayhaven_gcs_restic_telemetry_success GCS restic telemetry collection success.",
         "# TYPE grayhaven_gcs_restic_telemetry_success gauge",
     ]
+    if service_telemetry_success:
+        output.append(line("grayhaven_gcs_service_status", status_labels, status_value))
 
     telemetry_labels = dict(metric_base)
     telemetry_labels["scope"] = "restic"
@@ -504,14 +508,18 @@ def render_proton_metrics(config: dict[str, Any]) -> list[str]:
         "provider": "Proton",
     }
     output = [
+        "# HELP grayhaven_proton_telemetry_success Proton public service-health telemetry collection success.",
+        "# TYPE grayhaven_proton_telemetry_success gauge",
         "# HELP grayhaven_proton_service_status Proton public service-health status.",
         "# TYPE grayhaven_proton_service_status gauge",
     ]
 
     try:
         components = proton_components()
+        output.append(line("grayhaven_proton_telemetry_success", metric_base, 1))
     except (OSError, urllib.error.URLError, json.JSONDecodeError):
-        components = {}
+        output.append(line("grayhaven_proton_telemetry_success", metric_base, 0))
+        return output
 
     for service in services:
         component_name = str(service.get("component_name", ""))

@@ -15,6 +15,49 @@
     quiet: true
   no_log: true
 
+- name: Derive website deployment fanout topology
+  ansible.builtin.set_fact:
+    deploy_websites_web_hosts: "{{ deploy_websites_web_host_entries }}"
+    deploy_websites_web_host_count: "{{ deploy_websites_web_host_entries | length }}"
+    deploy_websites_fanout_enabled: "{{ deploy_websites_tls_mode == 'load_balancer' and (deploy_websites_web_host_entries | length) > 1 }}"
+    deploy_websites_effective_webhook_bind_host: >-
+      {{
+        deploy_websites_fanout_bind_host
+        if deploy_websites_tls_mode == 'load_balancer' and (deploy_websites_web_host_entries | length) > 1
+        else deploy_websites_webhook_bind_host
+      }}
+    deploy_websites_fanout_peers: >-
+      {{
+        deploy_websites_web_host_entries
+        | rejectattr('fqdn', 'equalto', inventory_hostname)
+        | map(attribute='host_alias')
+        | list
+        | sort
+      }}
+  vars:
+    deploy_websites_web_host_entries: >-
+      {{
+        managed_inventory_hosts
+        | default([])
+        | selectattr('role', 'equalto', 'web')
+        | list
+      }}
+
+- name: Validate website deployment fanout topology
+  ansible.builtin.assert:
+    that:
+      - deploy_websites_web_host_count | int <= 1 or deploy_websites_tls_mode == "load_balancer"
+      - not deploy_websites_fanout_enabled | bool or web_deploy_fanout_secret is defined
+      - not deploy_websites_fanout_enabled | bool or web_deploy_fanout_secret is string
+      - not deploy_websites_fanout_enabled | bool or web_deploy_fanout_secret | trim | length > 0
+      - not deploy_websites_fanout_enabled | bool or deploy_websites_fanout_peers | length == (deploy_websites_web_host_count | int - 1)
+    fail_msg: >-
+      Website deployment fanout requires load-balancer TLS, complete web host
+      inventory, and web_deploy_fanout_secret when more than one web host is
+      present.
+    quiet: true
+  no_log: true
+
 - name: Validate hosted domain entries
   ansible.builtin.assert:
     that:

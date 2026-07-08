@@ -292,10 +292,18 @@ document root.
 
 The deployment webhook at `/.grayhaven/deploy` is installed only for
 repository-backed domains. GitHub Actions calls this endpoint after validation
-passes. Nginx allows only GitHub source ranges to reach the endpoint, and the
-local deployment service accepts only configured repository URLs, the `main` or
-`dev` branch, and a valid HMAC signature made with the domain's configured
-webhook secret.
+passes. In host TLS mode, Nginx allows only GitHub source ranges to reach the
+endpoint. The local deployment service accepts only configured repository URLs,
+the `main` or `dev` branch, and a valid HMAC signature made with the domain's
+configured webhook secret.
+
+In load-balancer TLS environments with two or more web hosts, whichever web host
+receives the public webhook deploys the exact Git commit locally and then fans
+the same deployment out to peer web hosts over private short hostnames. Peer
+requests are authenticated with `web_deploy_fanout_secret` from
+`grayhaven-vault`. If one or more peers fail, the coordinator attempts every
+configured peer, logs the failed hostnames, and returns a failed webhook response
+with the failed peer list.
 
 Webhook deployment status is recorded in the
 `grayhaven-website-deploy-webhook.service` journal:
