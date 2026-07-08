@@ -731,6 +731,29 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
 
     rules = [
         alert_rule(
+            title="GCS service telemetry failed for >= 5 min",
+            expression=(
+                "max by (client, environment, location, project_id) "
+                f"(grayhaven_gcs_service_telemetry_success{{{selector}}})"
+            ),
+            evaluator_type="lt",
+            threshold=1,
+            duration="5m",
+            labels=base_labels(
+                config,
+                {
+                    "check": "gcs_service_telemetry_success",
+                    "service": "Google Cloud Storage",
+                },
+            ),
+            annotations={
+                "summary": "GCS service telemetry collection failed",
+                "description": "The Google Cloud Storage public service-health collector is not reporting successful telemetry.",
+            },
+            no_data_state="Alerting",
+            **common,
+        ),
+        alert_rule(
             title="GCS Degraded for >= 5 min",
             expression=(
                 "max by (client, environment, location, product, project_id, status) "
