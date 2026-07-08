@@ -326,6 +326,34 @@ def write_status(
     temporary_path.replace(path)
 
 
+def success_status(
+    deployment: WebsiteDeployment,
+    branch_name: str,
+    commit_sha: str,
+    *,
+    delivery_id: str,
+    role: str,
+    started_at: float,
+    finished_at: float,
+    failed_peers: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build a successful deployment status record."""
+
+    return {
+        "site": deployment.root_name,
+        "branch": branch_name,
+        "environment": environment_for_branch(branch_name),
+        "sha": commit_sha,
+        "github_delivery_id": delivery_id,
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
+        "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(finished_at)),
+        "duration_seconds": round(finished_at - started_at, 3),
+        "role": role,
+        "status": "success",
+        "failed_peers": failed_peers or [],
+    }
+
+
 def run_command(command: list[str], *, user: str | None = None, cwd: Path | None = None) -> None:
     """Run a command, optionally as another local user."""
 
@@ -353,7 +381,19 @@ def git_commit_is_ancestor(checkout: Path, ancestor_sha: str, descendant_sha: st
     """Return true when ancestor_sha is an ancestor of descendant_sha."""
 
     result = subprocess.run(
-        ["git", "-C", str(checkout), "merge-base", "--is-ancestor", ancestor_sha, descendant_sha],
+        [
+            "runuser",
+            "-u",
+            "ansible",
+            "--",
+            "git",
+            "-C",
+            str(checkout),
+            "merge-base",
+            "--is-ancestor",
+            ancestor_sha,
+            descendant_sha,
+        ],
         check=False,
     )
     return result.returncode == 0
@@ -405,6 +445,22 @@ def deploy_branch(
     current_sha = str(current_status.get("sha", ""))
     if current_sha == commit_sha and not force:
         LOG.info("Commit %s is already deployed for %s %s", commit_sha, deployment.root_name, branch_name)
+        finished_at = time.time()
+        write_status(
+            state_dir,
+            deployment,
+            branch_name,
+            success_status(
+                deployment,
+                branch_name,
+                commit_sha,
+                delivery_id=delivery_id,
+                role=role,
+                started_at=started_at,
+                finished_at=finished_at,
+                failed_peers=failed_peers,
+            ),
+        )
         return "unchanged"
 
     if require_branch_head and commit_sha != branch_head_sha:
@@ -449,20 +505,21 @@ def deploy_branch(
 
     restore_selinux_context(branch.destination)
     finished_at = time.time()
-    status = {
-        "site": deployment.root_name,
-        "branch": branch_name,
-        "environment": environment_for_branch(branch_name),
-        "sha": commit_sha,
-        "github_delivery_id": delivery_id,
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
-        "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(finished_at)),
-        "duration_seconds": round(finished_at - started_at, 3),
-        "role": role,
-        "status": "success",
-        "failed_peers": failed_peers or [],
-    }
-    write_status(state_dir, deployment, branch_name, status)
+    write_status(
+        state_dir,
+        deployment,
+        branch_name,
+        success_status(
+            deployment,
+            branch_name,
+            commit_sha,
+            delivery_id=delivery_id,
+            role=role,
+            started_at=started_at,
+            finished_at=finished_at,
+            failed_peers=failed_peers,
+        ),
+    )
     LOG.info("Deployed %s branch %s commit %s to %s", deployment.root_name, branch_name, commit_sha, branch.destination)
     return "deployed"
 
