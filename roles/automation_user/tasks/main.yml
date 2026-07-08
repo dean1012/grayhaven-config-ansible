@@ -17,11 +17,14 @@
   ansible.builtin.import_tasks: sudo-path.yml
 
 - name: Add vault Ansible control key before controller handoff
-  ansible.posix.authorized_key:
-    user: ansible
-    key: "{{ ansible_control_public_key | trim }}"
+  ansible.builtin.lineinfile:
+    path: /home/ansible/.ssh/authorized_keys
+    line: "{{ ansible_control_public_key | trim }}"
     state: present
-    exclusive: false
+    create: true
+    owner: ansible
+    group: ansible
+    mode: "0600"
   no_log: true
 
 - name: Install vault Ansible control private key on bastion hosts
