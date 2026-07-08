@@ -189,23 +189,39 @@
   loop_control:
     label: "{{ item.root_name }} dev"
 
-- name: Build website content deployment list
+- name: Initialize website content deployment list
+  ansible.builtin.set_fact:
+    deploy_websites_content_deployments: []
+
+- name: Add production website content deployments
   ansible.builtin.set_fact:
     deploy_websites_content_deployments: >-
-      {%- set deployments = [] -%}
-      {%- for site in deploy_websites_sites -%}
-      {%- for environment in ["prod", "dev"] -%}
-      {%- set source = site.rendered_paths.dev
-        if site.uses_repository and environment == "dev"
-        else site.content_sources[environment] -%}
-      {%- set _ = deployments.append({
-        "label": site.root_name ~ " " ~ environment,
-        "src": source,
-        "dest": deploy_websites_root ~ "/" ~ site.root_name ~ "/" ~ environment
-      }) -%}
-      {%- endfor -%}
-      {%- endfor -%}
-      {{ deployments }}
+      {{
+        deploy_websites_content_deployments
+        + [{
+          "label": item.root_name ~ " prod",
+          "src": item.content_sources.prod,
+          "dest": deploy_websites_root ~ "/" ~ item.root_name ~ "/prod"
+        }]
+      }}
+  loop: "{{ deploy_websites_sites }}"
+  loop_control:
+    label: "{{ item.root_name }} prod"
+
+- name: Add development website content deployments
+  ansible.builtin.set_fact:
+    deploy_websites_content_deployments: >-
+      {{
+        deploy_websites_content_deployments
+        + [{
+          "label": item.root_name ~ " dev",
+          "src": item.rendered_paths.dev if item.uses_repository else item.content_sources.dev,
+          "dest": deploy_websites_root ~ "/" ~ item.root_name ~ "/dev"
+        }]
+      }}
+  loop: "{{ deploy_websites_sites }}"
+  loop_control:
+    label: "{{ item.root_name }} dev"
 
 - name: Synchronize website content to docroots
   ansible.posix.synchronize:
