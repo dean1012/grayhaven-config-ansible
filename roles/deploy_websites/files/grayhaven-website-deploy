@@ -385,6 +385,9 @@ def deploy_branch(
     delivery_id: str,
     role: str,
     failed_peers: list[str] | None = None,
+    require_branch_head: bool = True,
+    reject_stale: bool = True,
+    force: bool = False,
 ) -> str:
     """Refresh one configured checkout and synchronize an exact commit."""
 
@@ -400,11 +403,11 @@ def deploy_branch(
 
     current_status = read_status(state_dir, deployment, branch_name)
     current_sha = str(current_status.get("sha", ""))
-    if current_sha == commit_sha:
+    if current_sha == commit_sha and not force:
         LOG.info("Commit %s is already deployed for %s %s", commit_sha, deployment.root_name, branch_name)
         return "unchanged"
 
-    if commit_sha != branch_head_sha:
+    if require_branch_head and commit_sha != branch_head_sha:
         if git_commit_is_ancestor(branch.checkout, commit_sha, branch_head_sha):
             raise StaleDeployment(
                 f"{deployment.root_name} {branch_name} commit {commit_sha} is older than branch head {branch_head_sha}"
@@ -413,7 +416,7 @@ def deploy_branch(
             f"{deployment.root_name} {branch_name} commit {commit_sha} is not the branch head {branch_head_sha}"
         )
 
-    if SHA_RE.match(current_sha) and git_commit_is_ancestor(branch.checkout, commit_sha, current_sha):
+    if reject_stale and SHA_RE.match(current_sha) and git_commit_is_ancestor(branch.checkout, commit_sha, current_sha):
         raise StaleDeployment(
             f"{deployment.root_name} {branch_name} commit {commit_sha} is older than deployed commit {current_sha}"
         )
@@ -490,6 +493,72 @@ def deploy_with_lock(
             role=role,
             failed_peers=failed_peers,
         )
+
+
+def rollback_coordinator_after_failed_fanout(
+    deployment: WebsiteDeployment,
+    branch_name: str,
+    attempted_sha: str,
+    *,
+    previous_status: dict[str, Any],
+    failed_peers: list[str],
+    state_dir: Path,
+    delivery_id: str,
+) -> tuple[bool, str]:
+    """Rollback a coordinator after local success but peer fanout failure."""
+
+    previous_sha = str(previous_status.get("sha", ""))
+    if not SHA_RE.match(previous_sha):
+        rollback_status = {
+            **read_status(state_dir, deployment, branch_name),
+            "status": "failed",
+            "attempted_sha": attempted_sha,
+            "previous_sha": previous_sha,
+            "failed_peers": failed_peers,
+            "rollback_status": "skipped",
+            "rollback_error": "previous deployed SHA is unavailable",
+        }
+        write_status(state_dir, deployment, branch_name, rollback_status)
+        return False, "previous deployed SHA is unavailable"
+
+    try:
+        deploy_branch(
+            deployment,
+            branch_name,
+            previous_sha,
+            state_dir=state_dir,
+            delivery_id=delivery_id,
+            role="coordinator",
+            failed_peers=failed_peers,
+            require_branch_head=False,
+            reject_stale=False,
+            force=True,
+        )
+    except (DeployError, subprocess.CalledProcessError, OSError) as exc:
+        rollback_error = str(exc)
+        rollback_status = {
+            **read_status(state_dir, deployment, branch_name),
+            "status": "failed",
+            "attempted_sha": attempted_sha,
+            "previous_sha": previous_sha,
+            "failed_peers": failed_peers,
+            "rollback_status": "failed",
+            "rollback_error": rollback_error,
+        }
+        write_status(state_dir, deployment, branch_name, rollback_status)
+        return False, rollback_error
+
+    rollback_status = {
+        **read_status(state_dir, deployment, branch_name),
+        "status": "failed",
+        "sha": previous_sha,
+        "attempted_sha": attempted_sha,
+        "previous_sha": previous_sha,
+        "failed_peers": failed_peers,
+        "rollback_status": "success",
+    }
+    write_status(state_dir, deployment, branch_name, rollback_status)
+    return True, previous_sha
 
 
 # Webhook Handling
@@ -676,38 +745,53 @@ class DeploymentRequestHandler(BaseHTTPRequestHandler):
 
         failed_peers: list[str] = []
         try:
-            deploy_result = deploy_with_lock(
-                deployment,
-                branch_name,
-                commit_sha,
-                runtime_dir=self.runtime_dir,
-                state_dir=self.state_dir,
-                delivery_id=delivery_id,
-                role="coordinator",
-            )
-            failed_peers = fanout_to_peers(
-                deployment=deployment,
-                branch_name=branch_name,
-                commit_sha=commit_sha,
-                delivery_id=delivery_id,
-                fanout=self.fanout,
-            )
-            if failed_peers:
-                write_status(
-                    self.state_dir,
+            self.runtime_dir.mkdir(parents=True, exist_ok=True)
+            lock_path = self.runtime_dir / f"{deployment.root_name}-{branch_name}.lock"
+            with lock_path.open("w", encoding="utf-8") as lock_file:
+                fcntl.flock(lock_file, fcntl.LOCK_EX)
+                previous_status = read_status(self.state_dir, deployment, branch_name)
+                deploy_result = deploy_branch(
                     deployment,
                     branch_name,
-                    {
-                        **read_status(self.state_dir, deployment, branch_name),
-                        "status": "failed",
-                        "failed_peers": failed_peers,
-                    },
+                    commit_sha,
+                    state_dir=self.state_dir,
+                    delivery_id=delivery_id,
+                    role="coordinator",
                 )
-                self.send_text(
-                    HTTPStatus.INTERNAL_SERVER_ERROR,
-                    f"deployment partially failed on peers: {', '.join(failed_peers)}",
+                failed_peers = fanout_to_peers(
+                    deployment=deployment,
+                    branch_name=branch_name,
+                    commit_sha=commit_sha,
+                    delivery_id=delivery_id,
+                    fanout=self.fanout,
                 )
-                return
+                if failed_peers:
+                    rollback_succeeded, rollback_detail = rollback_coordinator_after_failed_fanout(
+                        deployment,
+                        branch_name,
+                        commit_sha,
+                        previous_status=previous_status,
+                        failed_peers=failed_peers,
+                        state_dir=self.state_dir,
+                        delivery_id=delivery_id,
+                    )
+                    if rollback_succeeded:
+                        self.send_text(
+                            HTTPStatus.INTERNAL_SERVER_ERROR,
+                            (
+                                f"deployment partially failed on peers: {', '.join(failed_peers)}; "
+                                f"rolled back to {rollback_detail}"
+                            ),
+                        )
+                    else:
+                        self.send_text(
+                            HTTPStatus.INTERNAL_SERVER_ERROR,
+                            (
+                                f"deployment partially failed on peers: {', '.join(failed_peers)}; "
+                                f"rollback failed: {rollback_detail}"
+                            ),
+                        )
+                    return
         except StaleDeployment as exc:
             LOG.warning("Ignoring stale public deployment: %s", exc)
             self.send_text(HTTPStatus.OK, f"stale deployment ignored: {exc}")
