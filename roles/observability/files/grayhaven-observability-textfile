@@ -504,14 +504,18 @@ def render_proton_metrics(config: dict[str, Any]) -> list[str]:
         "provider": "Proton",
     }
     output = [
+        "# HELP grayhaven_proton_telemetry_success Proton public service-health telemetry collection success.",
+        "# TYPE grayhaven_proton_telemetry_success gauge",
         "# HELP grayhaven_proton_service_status Proton public service-health status.",
         "# TYPE grayhaven_proton_service_status gauge",
     ]
 
     try:
         components = proton_components()
+        output.append(line("grayhaven_proton_telemetry_success", metric_base, 1))
     except (OSError, urllib.error.URLError, json.JSONDecodeError):
-        components = {}
+        output.append(line("grayhaven_proton_telemetry_success", metric_base, 0))
+        return output
 
     for service in services:
         component_name = str(service.get("component_name", ""))

@@ -849,6 +849,32 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
         ),
     ]
 
+    rules.append(
+        alert_rule(
+            title="Proton status telemetry failed for >= 5 min",
+            expression=(
+                "max by (client, environment, provider) "
+                f"(grayhaven_proton_telemetry_success{{{selector}}})"
+            ),
+            evaluator_type="lt",
+            threshold=1,
+            duration="5m",
+            labels=base_labels(
+                config,
+                {
+                    "check": "proton_telemetry_success",
+                    "service": "Proton",
+                },
+            ),
+            annotations={
+                "summary": "Proton status telemetry collection failed",
+                "description": "The Proton public service-health collector is not reporting successful telemetry.",
+            },
+            no_data_state="Alerting",
+            **common,
+        )
+    )
+
     for service_name, component_name in PROTON_SERVICES:
         rules.append(
             alert_rule(
