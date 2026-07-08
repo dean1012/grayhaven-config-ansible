@@ -189,26 +189,23 @@
   loop_control:
     label: "{{ item.root_name }} dev"
 
-- name: Initialize website content deployment list
-  ansible.builtin.set_fact:
-    deploy_websites_content_deployments: []
-
 - name: Build website content deployment list
   ansible.builtin.set_fact:
     deploy_websites_content_deployments: >-
-      {{
-        deploy_websites_content_deployments
-        + [{
-          "label": item.0.root_name ~ " " ~ item.1,
-          "src": item.0.rendered_paths.dev
-            if item.0.uses_repository and item.1 == "dev"
-            else item.0.content_sources[item.1],
-          "dest": deploy_websites_root ~ "/" ~ item.0.root_name ~ "/" ~ item.1
-        }]
-      }}
-  loop: "{{ deploy_websites_sites | product(['prod', 'dev']) | list }}"
-  loop_control:
-    label: "{{ item.0.root_name }} {{ item.1 }}"
+      {%- set deployments = [] -%}
+      {%- for site in deploy_websites_sites -%}
+      {%- for environment in ["prod", "dev"] -%}
+      {%- set source = site.rendered_paths.dev
+        if site.uses_repository and environment == "dev"
+        else site.content_sources[environment] -%}
+      {%- set _ = deployments.append({
+        "label": site.root_name ~ " " ~ environment,
+        "src": source,
+        "dest": deploy_websites_root ~ "/" ~ site.root_name ~ "/" ~ environment
+      }) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {{ deployments }}
 
 - name: Synchronize website content to docroots
   ansible.posix.synchronize:
