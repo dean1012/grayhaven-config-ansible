@@ -107,6 +107,17 @@ persist_ref() {
   mv "$temp_path" "$path"
 }
 
+format_ref_for_log() {
+  local value="$1"
+
+  if [[ -z "$value" ]]; then
+    printf '<none>'
+    return
+  fi
+
+  printf '%s' "$value"
+}
+
 main() {
   drop_to_ansible "$@"
 
@@ -144,6 +155,14 @@ main() {
     exit 0
   fi
 
+  log "Tracked config ref ${REPO_REF}: old=$(format_ref_for_log "$previous_config_ref") new=${config_ref}"
+  log "Tracked vault ref ${VAULT_REPO_REF}: old=$(format_ref_for_log "$previous_vault_ref") new=${vault_ref}"
+  if [[ "$config_ref" != "$previous_config_ref" ]]; then
+    log "Config repository change detected for ${REPO_REF}."
+  fi
+  if [[ "$vault_ref" != "$previous_vault_ref" ]]; then
+    log "Vault repository change detected for ${VAULT_REPO_REF}."
+  fi
   log "Repository change detected; triggering Ansible runner."
   sudo -n systemctl start --no-block grayhaven-ansible-runner.service
 
