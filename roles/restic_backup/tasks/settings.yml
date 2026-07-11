@@ -70,9 +70,12 @@
     restic_backup_remote_gcs_enabled: "{{ restic_backup_remote_provider == 'gcs' }}"
     restic_backup_remote_gcs_project_id: >-
       {{ restic_backup_remote_config.project_id | default('') }}
-    restic_backup_remote_gcs_location: "{{ restic_backup_remote_config.location | default('us-east1') }}"
+    # Cloud Storage returns canonical uppercase values; normalize inputs before
+    # the bucket module performs its case-sensitive idempotence comparison.
+    restic_backup_remote_gcs_location: >-
+      {{ restic_backup_remote_config.location | default('US-EAST1', true) | trim | upper }}
     restic_backup_remote_gcs_storage_class: >-
-      {{ restic_backup_remote_config.storage_class | default('STANDARD') }}
+      {{ restic_backup_remote_config.storage_class | default('STANDARD', true) | trim | upper }}
     restic_backup_remote_gcs_credentials_json: >-
       {{ restic_backup_gcs_config.credentials_json | default('') }}
     restic_backup_remote_gcs_bucket_name: "{{ inventory_hostname.split('.')[0] }}-restic"
