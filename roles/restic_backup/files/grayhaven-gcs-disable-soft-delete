@@ -22,9 +22,17 @@ class SoftDeleteError(RuntimeError):
     """Raised when the GCS soft delete policy cannot be managed."""
 
 
-def credentials_token(credentials_file: str) -> str:
-    credentials = service_account.Credentials.from_service_account_file(
-        credentials_file,
+def credentials_token(credentials_json: str) -> str:
+    try:
+        credential_info = json.loads(credentials_json)
+    except json.JSONDecodeError as error:
+        raise SoftDeleteError("Google Cloud credentials are not valid JSON") from error
+
+    if not isinstance(credential_info, dict):
+        raise SoftDeleteError("Google Cloud credentials must be a JSON object")
+
+    credentials = service_account.Credentials.from_service_account_info(
+        credential_info,
         scopes=[GCS_SCOPE],
     )
     credentials.refresh(Request())
@@ -107,11 +115,16 @@ def disable_soft_delete(bucket: str, token: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--credentials-file", required=True)
+    parser.add_argument(
+        "--credentials-stdin",
+        action="store_true",
+        required=True,
+        help="Read service-account credential JSON from standard input",
+    )
     parser.add_argument("--bucket", required=True)
     args = parser.parse_args()
 
-    token = credentials_token(args.credentials_file)
+    token = credentials_token(sys.stdin.read())
     metadata = bucket_metadata(args.bucket, token)
     changed = soft_delete_enabled(metadata)
     if changed:

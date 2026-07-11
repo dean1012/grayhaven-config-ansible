@@ -22,47 +22,19 @@
   no_log: true
 
 - name: Enforce GCS restic bucket soft delete policy
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/files/grayhaven-gcs-disable-soft-delete"
+      - --credentials-stdin
+      - --bucket
+      - "{{ restic_backup_remote_gcs_bucket_name }}"
+    stdin: "{{ restic_backup_remote_gcs_credentials_json }}"
+    stdin_add_newline: false
+  register: restic_backup_gcs_soft_delete
+  changed_when: (restic_backup_gcs_soft_delete.stdout | from_json).changed | bool
+  delegate_to: localhost
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
   when: restic_backup_remote_gcs_enabled | bool
   no_log: true
-  block:
-    - name: Create temporary GCS credential file for bucket policy management
-      ansible.builtin.tempfile:
-        state: file
-        suffix: .json
-      register: restic_backup_gcs_credentials_tempfile
-      delegate_to: localhost
-      vars:
-        ansible_python_interpreter: "{{ ansible_playbook_python }}"
-
-    - name: Write temporary GCS credential file for bucket policy management
-      ansible.builtin.copy:
-        dest: "{{ restic_backup_gcs_credentials_tempfile.path }}"
-        content: "{{ restic_backup_remote_gcs_credentials_json }}"
-        mode: "0600"
-      delegate_to: localhost
-      vars:
-        ansible_python_interpreter: "{{ ansible_playbook_python }}"
-
-    - name: Disable soft delete on GCS restic bucket
-      ansible.builtin.command:
-        argv:
-          - "{{ ansible_playbook_python }}"
-          - "{{ role_path }}/files/grayhaven-gcs-disable-soft-delete"
-          - --credentials-file
-          - "{{ restic_backup_gcs_credentials_tempfile.path }}"
-          - --bucket
-          - "{{ restic_backup_remote_gcs_bucket_name }}"
-      register: restic_backup_gcs_soft_delete
-      changed_when: (restic_backup_gcs_soft_delete.stdout | from_json).changed | bool
-      delegate_to: localhost
-      vars:
-        ansible_python_interpreter: "{{ ansible_playbook_python }}"
-  always:
-    - name: Remove temporary GCS credential file for bucket policy management
-      ansible.builtin.file:
-        path: "{{ restic_backup_gcs_credentials_tempfile.path }}"
-        state: absent
-      delegate_to: localhost
-      vars:
-        ansible_python_interpreter: "{{ ansible_playbook_python }}"
-      when: restic_backup_gcs_credentials_tempfile is defined
