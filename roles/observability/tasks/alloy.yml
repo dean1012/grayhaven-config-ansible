@@ -138,7 +138,6 @@
   when:
     - observability_metrics_enabled
     - observability_logs_enabled
-  notify: Restart Alloy
 
 - name: Check nginx log directory for Alloy access
   ansible.builtin.stat:
@@ -192,7 +191,6 @@
     - observability_metrics_enabled
     - observability_logs_enabled
     - grayhaven_role == "web"
-  notify: Restart Alloy
 
 - name: Store Grafana Alloy API key
   ansible.builtin.copy:

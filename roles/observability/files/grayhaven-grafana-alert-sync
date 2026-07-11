@@ -346,7 +346,7 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 ),
                 evaluator_type="lt",
                 threshold=1,
-                duration="1m",
+                duration="5m",
                 no_data_state="Alerting",
                 labels=host_labels(config, host, "metrics_data"),
                 annotations={
