@@ -126,12 +126,13 @@
     - observability_metrics_enabled
     - observability_logs_enabled
 
-- name: Allow Alloy to read existing audit log files
+- name: Set active and rotated audit log permissions for Alloy
   ansible.builtin.file:
     path: "{{ item.path }}"
     owner: root
     group: alloy
-    mode: "0640"
+    # auditd removes write access from completed files during rotation.
+    mode: "{{ '0640' if (item.path | basename) == 'audit.log' else '0440' }}"
   loop: "{{ observability_audit_log_files.files | default([]) }}"
   loop_control:
     label: "{{ item.path }}"
