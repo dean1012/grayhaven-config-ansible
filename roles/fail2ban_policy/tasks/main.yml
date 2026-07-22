@@ -49,6 +49,28 @@
 
       {% endfor %}
       {% endif %}
+
+      {% if grayhaven_role == 'web' %}
+      [grayhaven-timetracker]
+      enabled = true
+      backend = systemd
+      filter = grayhaven-timetracker
+      port = http,https
+      {% endif %}
+  notify: Restart fail2ban
+
+- name: Install Time Tracker authentication failure filter
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/filter.d/grayhaven-timetracker.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Definition]
+      failregex = ^.*"event":"login_(?:rejected|rate_limited)".*"ip":"<HOST>".*$
+      ignoreregex =
+      journalmatch = _SYSTEMD_UNIT=grayhaven-timetracker.service
+  when: grayhaven_role == "web"
   notify: Restart fail2ban
 
 - name: Enable and start fail2ban
