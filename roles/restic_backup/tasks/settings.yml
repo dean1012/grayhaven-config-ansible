@@ -26,6 +26,15 @@
           '/var/log/dnf*',
           '/var/log/yum.log'
         ]
+        + (
+          [
+            timetracker.data_dir ~ '/timetracker.sqlite3',
+            timetracker.data_dir ~ '/timetracker.sqlite3-wal',
+            timetracker.data_dir ~ '/timetracker.sqlite3-shm'
+          ]
+          if grayhaven_role == 'web'
+          else []
+        )
         + (backup.exclude | default([]))
       }}
 
@@ -44,7 +53,9 @@
     restic_backup_include_paths: >-
       {{
         (
-          [restic_backup_homedir_archive_path] +
+          [restic_backup_homedir_archive_path]
+          + ([timetracker.backup_dir] if grayhaven_role == 'web' else [])
+          +
           (
             backup.include
             | default([
