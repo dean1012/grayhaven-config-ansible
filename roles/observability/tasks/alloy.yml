@@ -171,6 +171,8 @@
       - "*.prod.error.log"
       - "*.dev.access.log"
       - "*.dev.error.log"
+      - "timetracker.access.log"
+      - "timetracker.error.log"
     file_type: file
   register: observability_nginx_log_files
   when:

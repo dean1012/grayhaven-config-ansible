@@ -64,6 +64,9 @@ observability_service_units_web:
   - name: nginx.service
     check: nginx_service
     summary: Nginx service is down
+  - name: grayhaven-timetracker.service
+    check: timetracker_service
+    summary: Time Tracker service is down
   - name: certbot-renew.timer
     check: certbot_renew_timer
     summary: Certbot renewal timer is down
