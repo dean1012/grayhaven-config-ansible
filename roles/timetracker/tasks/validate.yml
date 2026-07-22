@@ -13,16 +13,13 @@
       - timetracker.branding_commit is defined
       - timetracker.branding_commit is match('^[0-9a-f]{40}$')
       - timetracker.data_dir is defined
-      - timetracker.data_dir is match('^/var/lib/grayhaven/timetracker(?:/|$)')
+      - timetracker.data_dir == '/var/lib/grayhaven/timetracker/data'
       - timetracker.branding_dir is defined
-      - timetracker.branding_dir is match('^/var/lib/grayhaven/timetracker(?:/|$)')
+      - timetracker.branding_dir == '/var/lib/grayhaven/timetracker/branding'
       - timetracker.secrets_dir is defined
-      - timetracker.secrets_dir is match('^/var/lib/grayhaven/timetracker(?:/|$)')
+      - timetracker.secrets_dir == '/var/lib/grayhaven/timetracker/secrets'
       - timetracker.backup_dir is defined
-      - timetracker.backup_dir is match('^/var/lib/grayhaven/timetracker(?:/|$)')
-      - >-
-        [timetracker.data_dir, timetracker.branding_dir,
-        timetracker.secrets_dir, timetracker.backup_dir] | unique | length == 4
+      - timetracker.backup_dir == '/var/lib/grayhaven/timetracker/backups'
       - timetracker_backup_retention_days | int >= 1
       - timetracker_backup_retention_days | int <= 365
       - timetracker_secrets is defined

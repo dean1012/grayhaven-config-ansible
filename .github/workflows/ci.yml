@@ -82,5 +82,8 @@ jobs:
           find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
           | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
 
+      - name: Run Time Tracker contract check
+        run: ansible-playbook --check playbooks/validate-timetracker-contract.yml
+
       - name: Run ansible-lint
         run: ansible-lint .
