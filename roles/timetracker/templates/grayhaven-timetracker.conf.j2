@@ -1,0 +1,70 @@
+# Managed by Ansible. Local changes will be overwritten.
+
+map $request_uri $grayhaven_timetracker_safe_path {
+    default $uri;
+    "~^/shared/reports/[A-Za-z0-9_-]{32,128}$" /shared/reports/[redacted];
+}
+
+log_format grayhaven_timetracker
+    '$remote_addr - $remote_user [$time_local] '
+    '"$request_method $grayhaven_timetracker_safe_path $server_protocol" '
+    '$status $body_bytes_sent "$http_referer" "$http_user_agent"';
+
+server {
+    listen 80;
+    server_name {{ timetracker.hostname }};
+
+{% if timetracker_tls_mode == "host" %}
+    return 301 https://{{ timetracker.hostname }}$request_uri;
+{% else %}
+    access_log /var/log/nginx/timetracker.access.log grayhaven_timetracker;
+    error_log /var/log/nginx/timetracker.error.log;
+
+    location = /health {
+        return 404;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:{{ timetracker_host_port }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 60s;
+    }
+{% endif %}
+}
+
+{% if timetracker_tls_mode == "host" %}
+server {
+    listen 443 ssl;
+    server_name {{ timetracker.hostname }};
+
+    access_log /var/log/nginx/timetracker.access.log grayhaven_timetracker;
+    error_log /var/log/nginx/timetracker.error.log;
+
+    ssl_certificate /etc/letsencrypt/live/{{ timetracker.hostname }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ timetracker.hostname }}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers PROFILE=SYSTEM;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+
+    location = /health {
+        return 404;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:{{ timetracker_host_port }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 60s;
+    }
+}
+{% endif %}

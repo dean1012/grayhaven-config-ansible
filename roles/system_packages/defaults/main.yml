@@ -25,6 +25,7 @@ system_packages_required_packages:
   - httpd-tools
   - NetworkManager
   - openssh-server
+  - podman
   - python3-firewall
   - python3-libselinux
   - restic

@@ -48,6 +48,7 @@ jobs:
           roles/observability/files/grayhaven-irm-alert-groups-textfile
           roles/observability/files/grayhaven-observability-textfile
           scripts/validate-rendered-alloy-config
+          scripts/validate-rendered-timetracker-config
 
       - name: Install Alloy validation tool
         run: |
@@ -69,6 +70,9 @@ jobs:
 
       - name: Validate rendered Alloy config
         run: scripts/validate-rendered-alloy-config
+
+      - name: Validate rendered Time Tracker config
+        run: scripts/validate-rendered-timetracker-config
 
       - name: Install Ansible Galaxy collections
         run: scripts/install-galaxy-collections

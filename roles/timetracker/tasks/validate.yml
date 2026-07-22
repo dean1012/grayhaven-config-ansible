@@ -1,0 +1,77 @@
+---
+- name: Validate required Time Tracker configuration
+  ansible.builtin.assert:
+    that:
+      - timetracker is defined
+      - timetracker is mapping
+      - timetracker.hostname is defined
+      - timetracker.hostname is string
+      - timetracker.hostname is match('^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$')
+      - timetracker.image_digest is defined
+      - timetracker.image_digest is string
+      - timetracker.image_digest is match('^sha256:[0-9a-f]{64}$')
+      - timetracker.branding_commit is defined
+      - timetracker.branding_commit is match('^[0-9a-f]{40}$')
+      - timetracker.data_dir is defined
+      - timetracker.data_dir is match('^/var/lib/grayhaven/timetracker(?:/|$)')
+      - timetracker.branding_dir is defined
+      - timetracker.branding_dir is match('^/var/lib/grayhaven/timetracker(?:/|$)')
+      - timetracker.secrets_dir is defined
+      - timetracker.secrets_dir is match('^/var/lib/grayhaven/timetracker(?:/|$)')
+      - timetracker.backup_dir is defined
+      - timetracker.backup_dir is match('^/var/lib/grayhaven/timetracker(?:/|$)')
+      - >-
+        [timetracker.data_dir, timetracker.branding_dir,
+        timetracker.secrets_dir, timetracker.backup_dir] | unique | length == 4
+      - timetracker_backup_retention_days | int >= 1
+      - timetracker_backup_retention_days | int <= 365
+      - timetracker_secrets is defined
+      - timetracker_secrets is mapping
+      - timetracker_secrets.flask_secret_key is defined
+      - timetracker_secrets.flask_secret_key is string
+      - timetracker_secrets.flask_secret_key | length >= 32
+      - timetracker_secrets.sqlcipher_passphrase is defined
+      - timetracker_secrets.sqlcipher_passphrase is string
+      - timetracker_secrets.sqlcipher_passphrase | length >= 32
+      - timetracker_secrets.initial_users is defined
+      - timetracker_secrets.initial_users is iterable
+      - timetracker_secrets.initial_users | length > 0
+      - timetracker_tls_mode in ['host', 'load_balancer']
+      - timetracker_certificate_environment in ['production', 'staging']
+      - timetracker_tls_mode == 'load_balancer' or deploy_websites_certbot_email | default('') | length > 0
+    fail_msg: "Required Time Tracker deployment configuration is incomplete or unsafe."
+    quiet: true
+  no_log: true
+
+- name: Validate Time Tracker bootstrap users
+  ansible.builtin.assert:
+    that:
+      - item.email is defined
+      - item.email is string
+      - item.email is match('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+      - item.first_name is defined
+      - item.first_name is string
+      - item.first_name | trim | length > 0
+      - item.last_name is defined
+      - item.last_name is string
+      - item.last_name | trim | length > 0
+      - item.password_hash is defined
+      - item.password_hash is string
+      - item.password_hash is match('^\\$argon2id\\$')
+      - item.admin is defined
+      - item.admin is boolean
+      - item.totp_secret is not defined or item.totp_secret is none or item.totp_secret is string
+    fail_msg: "Every Time Tracker bootstrap user must satisfy the deployment contract."
+    quiet: true
+  loop: "{{ timetracker_secrets.initial_users }}"
+  loop_control:
+    label: "{{ item.email | default('invalid-bootstrap-user') }}"
+  no_log: true
+
+- name: Require at least one bootstrap administrator
+  ansible.builtin.assert:
+    that:
+      - timetracker_secrets.initial_users | selectattr('admin', 'equalto', true) | list | length > 0
+    fail_msg: "Time Tracker requires at least one bootstrap administrator."
+    quiet: true
+  no_log: true

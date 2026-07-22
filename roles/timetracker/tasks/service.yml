@@ -1,0 +1,54 @@
+---
+- name: Pull the approved Time Tracker image by digest
+  containers.podman.podman_image:
+    name: "{{ timetracker_image_repository }}@{{ timetracker.image_digest }}"
+    pull: true
+
+- name: Install Time Tracker Quadlet
+  ansible.builtin.template:
+    src: grayhaven-timetracker.container.j2
+    dest: "{{ timetracker_quadlet_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Time Tracker
+
+- name: Apply pending Time Tracker service changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start Time Tracker
+  ansible.builtin.systemd_service:
+    name: "{{ timetracker_service_name }}"
+    state: started
+    daemon_reload: true
+
+- name: Wait for local Time Tracker health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ timetracker_host_port }}/health"
+    return_content: true
+  register: timetracker_health
+  retries: "{{ timetracker_health_retries }}"
+  delay: "{{ timetracker_health_delay }}"
+  until:
+    - timetracker_health.status == 200
+    - timetracker_health.json.status == "ok"
+  changed_when: false
+
+- name: Inspect running Time Tracker container image
+  ansible.builtin.command:
+    argv:
+      - podman
+      - container
+      - inspect
+      - --format
+      - "{{ '{{.ImageDigest}}' }}"
+      - "{{ timetracker_container_name }}"
+  register: timetracker_running_image_digest
+  changed_when: false
+
+- name: Verify running Time Tracker image digest
+  ansible.builtin.assert:
+    that:
+      - timetracker_running_image_digest.stdout | trim == timetracker.image_digest
+    fail_msg: "Running Time Tracker image does not match the approved digest."
+    quiet: true

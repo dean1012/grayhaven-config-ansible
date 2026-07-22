@@ -1,0 +1,21 @@
+---
+- name: Validate Time Tracker inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Enforce Time Tracker service account and directories
+  ansible.builtin.import_tasks: filesystem.yml
+
+- name: Install Time Tracker branding assets
+  ansible.builtin.import_tasks: branding.yml
+
+- name: Install Time Tracker secrets
+  ansible.builtin.import_tasks: secrets.yml
+
+- name: Install Time Tracker container service
+  ansible.builtin.import_tasks: service.yml
+
+- name: Enforce Time Tracker certificate
+  ansible.builtin.import_tasks: certificate.yml
+
+- name: Enforce Time Tracker nginx proxy
+  ansible.builtin.import_tasks: nginx.yml

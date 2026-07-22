@@ -1,0 +1,38 @@
+---
+- name: Validate branding source inputs
+  ansible.builtin.assert:
+    that:
+      - timetracker is defined
+      - timetracker is mapping
+      - timetracker.branding_commit is defined
+      - timetracker.branding_commit is string
+      - timetracker.branding_commit is match('^[0-9a-f]{40}$')
+      - branding_repository_url is match('^https://github.com/')
+    fail_msg: "Time Tracker requires an immutable Grayhaven branding commit."
+    quiet: true
+  run_once: true
+
+- name: Check out the approved Grayhaven branding revision on the control node
+  ansible.builtin.git:
+    repo: "{{ branding_repository_url }}"
+    dest: "{{ branding_checkout_dir }}"
+    version: "{{ timetracker.branding_commit }}"
+    update: true
+  become: false
+  delegate_to: localhost
+  run_once: true
+
+- name: Verify the checked-out branding revision
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ branding_checkout_dir }}"
+      - rev-parse
+      - HEAD
+  register: branding_checked_out_revision
+  changed_when: false
+  failed_when: branding_checked_out_revision.stdout | trim != timetracker.branding_commit
+  become: false
+  delegate_to: localhost
+  run_once: true
