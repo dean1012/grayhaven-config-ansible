@@ -25,6 +25,8 @@
 - name: Wait for local Time Tracker health
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ timetracker_host_port }}/health"
+    headers:
+      Host: "{{ timetracker.hostname }}"
     return_content: true
   register: timetracker_health
   retries: "{{ timetracker_health_retries }}"

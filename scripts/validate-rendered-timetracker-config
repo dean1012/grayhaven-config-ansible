@@ -12,6 +12,7 @@ import jinja2
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = REPO_ROOT / "roles" / "timetracker" / "templates"
+SERVICE_TASKS = REPO_ROOT / "roles" / "timetracker" / "tasks" / "service.yml"
 TEMPLATES = {
     "grayhaven-timetracker.container.j2": "grayhaven-timetracker.container",
     "grayhaven-timetracker.conf.j2": "grayhaven-timetracker.conf",
@@ -58,6 +59,7 @@ def render_templates(output_dir: pathlib.Path) -> dict[str, str]:
 def validate(rendered: dict[str, str]) -> None:
     quadlet = rendered["grayhaven-timetracker.container"]
     nginx = rendered["grayhaven-timetracker.conf"]
+    service_tasks = SERVICE_TASKS.read_text(encoding="utf-8")
     required_quadlet = (
         "Image=ghcr.io/example/grayhaven-timetracker@sha256:",
         "PublishPort=127.0.0.1:8000:8000",
@@ -84,6 +86,18 @@ def validate(rendered: dict[str, str]) -> None:
         raise RuntimeError(f"Rendered Time Tracker configuration is missing: {missing}")
     if "0.0.0.0:8000" in quadlet:
         raise RuntimeError("Time Tracker container port must remain loopback-only")
+    required_service_probe = (
+        'url: "http://127.0.0.1:{{ timetracker_host_port }}/health"',
+        'Host: "{{ timetracker.hostname }}"',
+    )
+    missing_service_probe = [
+        value for value in required_service_probe if value not in service_tasks
+    ]
+    if missing_service_probe:
+        raise RuntimeError(
+            "Time Tracker service health probe is missing: "
+            f"{missing_service_probe}"
+        )
 
 
 def main() -> int:
