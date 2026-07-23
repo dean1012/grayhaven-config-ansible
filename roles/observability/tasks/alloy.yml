@@ -318,7 +318,7 @@
       Type=oneshot
       ExecStart=/usr/local/sbin/grayhaven-observability-textfile
   when: observability_metrics_enabled
-  notify: Reload systemd
+  notify: Reload observability systemd
 
 - name: Install Grafana IRM alert-group textfile service
   ansible.builtin.copy:
@@ -336,7 +336,7 @@
   when:
     - observability_metrics_enabled
     - observability_host_is_control_node
-  notify: Reload systemd
+  notify: Reload observability systemd
 
 - name: Install Grafana IRM alert-group textfile timer
   ansible.builtin.copy:
@@ -360,7 +360,7 @@
   when:
     - observability_metrics_enabled
     - observability_host_is_control_node
-  notify: Reload systemd
+  notify: Reload observability systemd
 
 - name: Install GCS restic stale-bucket textfile service
   ansible.builtin.copy:
@@ -376,7 +376,7 @@
       Type=oneshot
       ExecStart=/usr/local/sbin/grayhaven-gcs-restic-stale-buckets
   when: observability_metrics_enabled
-  notify: Reload systemd
+  notify: Reload observability systemd
 
 - name: Install GCS restic stale-bucket textfile timer
   ansible.builtin.copy:
@@ -397,7 +397,7 @@
       [Install]
       WantedBy=timers.target
   when: observability_metrics_enabled
-  notify: Reload systemd
+  notify: Reload observability systemd
 
 - name: Install Grayhaven observability textfile timer
   ansible.builtin.copy:
@@ -419,7 +419,7 @@
       [Install]
       WantedBy=timers.target
   when: observability_metrics_enabled
-  notify: Reload systemd
+  notify: Reload observability systemd
 
 - name: Seed restic success metric during observability rollout
   ansible.builtin.copy:

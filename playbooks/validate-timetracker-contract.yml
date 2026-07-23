@@ -31,3 +31,25 @@
       ansible.builtin.include_role:
         name: timetracker
         tasks_from: validate
+
+- name: Validate Time Tracker skips non-web hosts cleanly
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    grayhaven_role: bastion
+
+  roles:
+    - timetracker
+
+- name: Validate observability skips staging cleanly
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    grayhaven_environment: staging
+
+  roles:
+    - observability

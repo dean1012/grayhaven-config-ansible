@@ -11,10 +11,9 @@
     state: reloaded
   listen: Reload nginx
 
-- name: Reload systemd
+- name: Reload website deployment systemd
   ansible.builtin.systemd_service:
     daemon_reload: true
-  listen: Reload systemd
 
 - name: Restart website deployment webhook
   ansible.builtin.systemd_service:
