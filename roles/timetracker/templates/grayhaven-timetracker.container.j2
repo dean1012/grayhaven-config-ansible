@@ -18,6 +18,7 @@ Volume={{ timetracker.secrets_dir }}:/run/secrets:ro,Z
 Environment=BRANDING_PATH=/app/branding
 Environment=BOOTSTRAP_USERS_FILE=/run/secrets/bootstrap_users
 Environment=DATABASE_PATH=/app/data/{{ timetracker_database_filename }}
+Environment=GUNICORN_CMD_ARGS=--no-control-socket
 Environment=PUBLIC_BASE_URL=https://{{ timetracker.hostname }}
 Environment=SECRET_KEY_FILE=/run/secrets/flask_secret_key
 Environment=SESSION_COOKIE_SECURE=true
@@ -30,7 +31,7 @@ NoNewPrivileges=true
 PidsLimit=128
 ReadOnly=true
 Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m
-HealthCmd=python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+HealthCmd=python -c "import urllib.request; request = urllib.request.Request('http://127.0.0.1:8000/health', headers={'Host': '{{ timetracker.hostname }}'}); urllib.request.urlopen(request, timeout=3)"
 HealthInterval=30s
 HealthTimeout=5s
 HealthRetries=3

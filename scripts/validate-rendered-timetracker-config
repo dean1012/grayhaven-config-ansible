@@ -61,6 +61,8 @@ def validate(rendered: dict[str, str]) -> None:
     required_quadlet = (
         "Image=ghcr.io/example/grayhaven-timetracker@sha256:",
         "PublishPort=127.0.0.1:8000:8000",
+        "Environment=GUNICORN_CMD_ARGS=--no-control-socket",
+        "headers={'Host': 'timetracker.example.invalid'}",
         "NoNewPrivileges=true",
         "PidsLimit=128",
         "ReadOnly=true",
