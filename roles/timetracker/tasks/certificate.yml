@@ -1,0 +1,76 @@
+---
+- name: Check Time Tracker certificate
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ timetracker.hostname }}/fullchain.pem"
+  register: timetracker_certificate_file
+  when: timetracker_tls_mode == "host"
+
+- name: Check Time Tracker certificate environment marker
+  ansible.builtin.stat:
+    path: "{{ timetracker_certbot_marker_dir }}/{{ timetracker.hostname }}.environment"
+  register: timetracker_certificate_marker_file
+  when: timetracker_tls_mode == "host"
+
+- name: Read Time Tracker certificate environment marker
+  ansible.builtin.slurp:
+    src: "{{ timetracker_certbot_marker_dir }}/{{ timetracker.hostname }}.environment"
+  register: timetracker_certificate_marker
+  when:
+    - timetracker_tls_mode == "host"
+    - timetracker_certificate_marker_file.stat.exists
+
+- name: Issue Time Tracker certificate when required
+  ansible.builtin.command:
+    argv: "{{ timetracker_certbot_command }}"
+  vars:
+    timetracker_certbot_command: >-
+      {{
+        [
+          'certbot', 'certonly', '--non-interactive', '--agree-tos',
+          '--email', deploy_websites_certbot_email,
+          '--cert-name', timetracker.hostname,
+          '--force-renewal',
+          '--dns-digitalocean',
+          '--dns-digitalocean-credentials', timetracker_certbot_credentials_file,
+          '--dns-digitalocean-propagation-seconds', '30',
+          '-d', timetracker.hostname
+        ]
+        + (['--test-cert'] if timetracker_certificate_environment == 'staging' else [])
+      }}
+  register: timetracker_certificate_issuance
+  changed_when: true
+  retries: 3
+  delay: 20
+  until: timetracker_certificate_issuance.rc == 0
+  when:
+    - timetracker_tls_mode == "host"
+    - >-
+      not timetracker_certificate_file.stat.exists
+      or not timetracker_certificate_marker_file.stat.exists
+      or (timetracker_certificate_marker.content | default('') | b64decode | trim)
+      != timetracker_certificate_environment
+
+- name: Record Time Tracker certificate environment
+  ansible.builtin.copy:
+    dest: "{{ timetracker_certbot_marker_dir }}/{{ timetracker.hostname }}.environment"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ timetracker_certificate_environment }}\n"
+  when:
+    - timetracker_tls_mode == "host"
+    - timetracker_certificate_issuance is changed
+
+- name: Verify Time Tracker certificate exists
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ timetracker.hostname }}/fullchain.pem"
+  register: timetracker_certificate_result
+  when: timetracker_tls_mode == "host"
+
+- name: Require Time Tracker certificate after issuance
+  ansible.builtin.assert:
+    that:
+      - timetracker_certificate_result.stat.exists
+    fail_msg: "Time Tracker certificate is missing after Certbot execution."
+    quiet: true
+  when: timetracker_tls_mode == "host"

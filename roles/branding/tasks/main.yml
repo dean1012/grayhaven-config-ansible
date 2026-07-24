@@ -1,0 +1,38 @@
+---
+- name: Validate branding source inputs
+  ansible.builtin.assert:
+    that:
+      - branding_repository_url is match('^https://github.com/')
+    fail_msg: "Grayhaven branding must use the public HTTPS repository."
+    quiet: true
+  run_once: true
+
+- name: Check out the latest Grayhaven branding revision on the control node
+  ansible.builtin.git:
+    repo: "{{ branding_repository_url }}"
+    dest: "{{ branding_checkout_dir }}"
+    version: main
+    update: true
+    force: true
+  become: false
+  delegate_to: localhost
+  run_once: true
+
+- name: Verify the checked-out branding revision is current
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ branding_checkout_dir }}"
+      - rev-parse
+      - HEAD
+      - refs/remotes/origin/main
+  register: branding_checked_out_revision
+  changed_when: false
+  failed_when: >-
+    branding_checked_out_revision.stdout_lines | length != 2
+    or branding_checked_out_revision.stdout_lines[0]
+    != branding_checked_out_revision.stdout_lines[1]
+  become: false
+  delegate_to: localhost
+  run_once: true

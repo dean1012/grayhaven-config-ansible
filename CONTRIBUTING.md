@@ -92,8 +92,11 @@ python3 -m py_compile \
   roles/observability/files/grayhaven-grafana-alert-sync \
   roles/observability/files/grayhaven-irm-alert-groups-textfile \
   roles/observability/files/grayhaven-observability-textfile \
-  scripts/validate-rendered-alloy-config
+  scripts/validate-rendered-alloy-config \
+  scripts/validate-rendered-timetracker-config
 scripts/validate-rendered-alloy-config
+scripts/validate-rendered-timetracker-config
+ansible-playbook --check playbooks/validate-timetracker-contract.yml
 git ls-files '*.md' | xargs -r markdownlint-cli2
 ```
 

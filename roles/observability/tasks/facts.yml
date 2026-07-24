@@ -95,6 +95,7 @@
       }}
     observability_site_entry:
       root_name: "{{ observability_root_domain }}"
+      kind: website
       domain: "{{ observability_site_domain }}"
       aliases:
         - "{{ observability_site_www_domain }}"
@@ -105,6 +106,27 @@
           if grayhaven_environment == 'prod'
           else 'staging.' ~ observability_root_domain
         }}
+      nginx_log_names:
+        - prod.access
+        - prod.error
+        - dev.access
+        - dev.error
+
+- name: Add Time Tracker observability site metadata
+  ansible.builtin.set_fact:
+    observability_web_sites: "{{ observability_web_sites + [observability_timetracker_site] }}"
+  vars:
+    observability_timetracker_site:
+      root_name: timetracker
+      kind: application
+      domain: "{{ timetracker.hostname }}"
+      aliases: []
+      dev_domain: ""
+      cert_name: "{{ timetracker.hostname }}"
+      nginx_log_names:
+        - access
+        - error
+  when: grayhaven_role == "web"
 
 - name: Initialize observability fail2ban jail metadata
   ansible.builtin.set_fact:
@@ -126,4 +148,20 @@
       display_name: "{{ item.root_name }} basic auth"
       domain: "{{ item.root_name }}"
       category: htaccess
+  when:
+    - grayhaven_role == "web"
+    - item.dev_domain | length > 0
+
+- name: Add Time Tracker fail2ban jail metadata
+  ansible.builtin.set_fact:
+    observability_fail2ban_jails: >-
+      {{
+        observability_fail2ban_jails
+        + [{
+          'name': 'grayhaven-timetracker',
+          'display_name': 'Time Tracker authentication',
+          'domain': timetracker.hostname,
+          'category': 'application'
+        }]
+      }}
   when: grayhaven_role == "web"

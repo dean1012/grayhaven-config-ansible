@@ -337,8 +337,9 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
             "contact_point": config["grafana"]["contact_point"],
         }
 
-        rules.append(
-            alert_rule(
+        if site.get("dev_domain"):
+            rules.append(
+                alert_rule(
                 title=f"{host['short_hostname']} metrics data",
                 expression=(
                     "max by (host, environment, role, project, client) "
@@ -566,34 +567,40 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                 )
             )
 
-        rules.append(
-            alert_rule(
-                title=f"{site['dev_domain']} basic auth",
-                expression=(
-                    "max by (domain, environment, role, project, client) "
-                    f'(probe_success{{domain="{promql_string(site["dev_domain"])}",'
-                    'check="dev_basic_auth_401"})'
-                ),
-                evaluator_type="lt",
-                threshold=1,
-                labels=base_labels(
-                    config,
-                    {
-                        "check": "dev_basic_auth_401",
-                        "domain": site["dev_domain"],
-                        "project": web_host["project"],
-                        "role": "web",
+        if site.get("dev_domain"):
+            rules.append(
+                alert_rule(
+                    title=f"{site['dev_domain']} basic auth",
+                    expression=(
+                        "max by (domain, environment, role, project, client) "
+                        f'(probe_success{{domain="{promql_string(site["dev_domain"])}",'
+                        'check="dev_basic_auth_401"})'
+                    ),
+                    evaluator_type="lt",
+                    threshold=1,
+                    labels=base_labels(
+                        config,
+                        {
+                            "check": "dev_basic_auth_401",
+                            "domain": site["dev_domain"],
+                            "project": web_host["project"],
+                            "role": "web",
+                        },
+                    ),
+                    annotations={
+                        "summary": "Development basic auth check failed",
+                        "description": (
+                            f"{site['dev_domain']} did not return 401 Unauthorized "
+                            "without credentials."
+                        ),
                     },
-                ),
-                annotations={
-                    "summary": "Development basic auth check failed",
-                    "description": f"{site['dev_domain']} did not return 401 Unauthorized without credentials.",
-                },
-                **common,
+                    **common,
+                )
             )
-        )
 
-        redirect_domains = [site["domain"], *site["aliases"], site["dev_domain"]]
+        redirect_domains = [site["domain"], *site["aliases"]]
+        if site.get("dev_domain"):
+            redirect_domains.append(site["dev_domain"])
         rules.append(
             alert_rule(
                 title=f"{site['domain']} HTTP to HTTPS redirects",
