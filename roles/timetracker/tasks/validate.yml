@@ -10,8 +10,6 @@
       - timetracker.image_digest is defined
       - timetracker.image_digest is string
       - timetracker.image_digest is match('^sha256:[0-9a-f]{64}$')
-      - timetracker.branding_commit is defined
-      - timetracker.branding_commit is match('^[0-9a-f]{40}$')
       - timetracker.data_dir is defined
       - timetracker.data_dir == '/var/lib/grayhaven/timetracker/data'
       - timetracker.branding_dir is defined
