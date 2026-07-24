@@ -13,6 +13,7 @@ import jinja2
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = REPO_ROOT / "roles" / "timetracker" / "templates"
 SERVICE_TASKS = REPO_ROOT / "roles" / "timetracker" / "tasks" / "service.yml"
+NGINX_TASKS = REPO_ROOT / "roles" / "timetracker" / "tasks" / "nginx.yml"
 TEMPLATES = {
     "grayhaven-timetracker.container.j2": "grayhaven-timetracker.container",
     "grayhaven-timetracker.conf.j2": "grayhaven-timetracker.conf",
@@ -60,6 +61,7 @@ def validate(rendered: dict[str, str]) -> None:
     quadlet = rendered["grayhaven-timetracker.container"]
     nginx = rendered["grayhaven-timetracker.conf"]
     service_tasks = SERVICE_TASKS.read_text(encoding="utf-8")
+    nginx_tasks = NGINX_TASKS.read_text(encoding="utf-8")
     required_quadlet = (
         "Image=ghcr.io/example/grayhaven-timetracker@sha256:",
         "PublishPort=127.0.0.1:8000:8000",
@@ -97,6 +99,20 @@ def validate(rendered: dict[str, str]) -> None:
         raise RuntimeError(
             "Time Tracker service health probe is missing: "
             f"{missing_service_probe}"
+        )
+    required_nginx_tasks = (
+        "ansible.posix.seboolean:",
+        "name: httpd_can_network_connect",
+        "state: true",
+        "persistent: true",
+    )
+    missing_nginx_tasks = [
+        value for value in required_nginx_tasks if value not in nginx_tasks
+    ]
+    if missing_nginx_tasks:
+        raise RuntimeError(
+            "Time Tracker nginx SELinux policy is missing: "
+            f"{missing_nginx_tasks}"
         )
 
 

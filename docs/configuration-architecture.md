@@ -313,9 +313,11 @@ separate SELinux-labeled bind mounts.
 
 Nginx is the only public application entry point. It terminates host TLS or
 accepts traffic from the managed load balancer, forwards a controlled HTTPS
-proxy context, and does not expose the container health endpoint publicly.
-Time Tracker access logging removes query strings and redacts shared-report
-tokens before log files can be collected.
+proxy context, and does not expose the container health endpoint publicly. The
+role persistently enables the SELinux `httpd_can_network_connect` boolean so
+Nginx can reach the loopback-only container upstream while SELinux remains
+enforcing. Time Tracker access logging removes query strings and redacts
+shared-report tokens before log files can be collected.
 
 Bootstrap users are reconciled only when the database has no users. Initial
 passwords must be changed at first sign-in. Once users exist, account management
