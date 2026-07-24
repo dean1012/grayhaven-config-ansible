@@ -292,15 +292,16 @@ repository.
 
 Time Tracker is a required web-host service. The public `timetracker` mapping
 in `grayhaven-vault/config.yml` selects its hostname, immutable application
-image digest, immutable branding commit, persistent directories, and optional
-verified-backup retention. The separate encrypted `timetracker_secrets`
-mapping in `vault/web.yml` supplies the Flask signing key, SQLCipher
-passphrase, and initial users.
+image digest, persistent directories, and optional verified-backup retention.
+The separate encrypted `timetracker_secrets` mapping in `vault/web.yml`
+supplies the Flask signing key, SQLCipher passphrase, and initial users.
 
-The branding role checks out the public `grayhaven-branding` repository at the
-configured full commit. The Time Tracker role copies only the required
-wordmark, favicon, and font assets into the application branding directory.
-Neither Ansible nor the application image embeds private branding credentials.
+On every convergence, the branding role updates its control-node checkout from
+the public `grayhaven-branding` repository's `main` branch and verifies that
+the checkout matches the fetched remote revision. The Time Tracker role copies
+only the required wordmark, favicon, and font assets into the application
+branding directory. Neither Ansible nor the application image embeds private
+branding credentials.
 
 Web hosts run the application as a rootful system Quadlet so systemd and Podman
 own the container lifecycle. The application process itself runs as dedicated
