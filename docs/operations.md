@@ -13,7 +13,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
 - [Backup & Restoration Operations](#backup--restoration-operations)
-- [Time Tracker Operations](#time-tracker-operations)
+- [Time Tracker Database Restore](#time-tracker-database-restore)
 - [Website Repository Deployments](#website-repository-deployments)
 - [GCS Restic Bucket Cleanup](#gcs-restic-bucket-cleanup)
 - [Root Command Audit Trail](#root-command-audit-trail)
@@ -284,54 +284,25 @@ Ansible by this repository.
 
 [Back to top](#operations)
 
-## Time Tracker Operations
+## Time Tracker Database Restore
 
-Normal convergence pulls the configured immutable image before changing the
-running Quadlet. Confirm service health and the running digest with:
+The Time Tracker database requires an application-generated encrypted backup,
+the matching SQLCipher passphrase, and the compatible immutable application
+image. A restore must preserve the current database generation for rollback,
+remove stale SQLite sidecars, restore managed ownership and SELinux context,
+and use systemd to control the container.
 
-```bash
-sudo systemctl status grayhaven-timetracker.service
-sudo podman container inspect \
-  --format '{{.ImageDigest}}' \
-  grayhaven-timetracker
-curl --fail --silent http://127.0.0.1:8000/health
-```
+Follow the authoritative
+[Time Tracker database restore procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#restore-a-backup-from-restic).
+That procedure includes artifact selection, isolated restoration and
+verification, service shutdown, database replacement, rollback preparation,
+and application validation.
 
-Application-specific credential generation, backup verification, restore, and
-SQLCipher rekey behavior is defined in the authoritative
-[Time Tracker operations documentation](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md).
-
-To roll back application code, restore the previously approved image digest in
-the environment's public `timetracker.image_digest` setting and run normal
-convergence. If a release changed persistent data incompatibly, restore the
-matching verified database artifact and matching SQLCipher passphrase as part
-of the rollback; changing the image alone is not a database rollback.
-
-Use this host-level flow for database recovery:
-
-1. Identify the restic snapshot, verified Time Tracker artifact, application
-   digest, and matching SQLCipher passphrase that form the recovery point.
-2. Run `sudo systemctl stop grayhaven-timetracker.service` and confirm the unit
-   is inactive. Do not use `podman stop`; systemd will treat the container exit
-   as unexpected and recreate it.
-3. Restore the encrypted artifact to an isolated root-only directory with
-   `grayhaven-backupctl`; never restore directly over the live database.
-4. Verify the isolated artifact with the approved application image and the
-   matching key by following the application operations guide.
-5. Preserve the current database, WAL, and SHM files in a root-only rollback
-   directory. Install the verified database as
-   `data_dir/timetracker.sqlite3`, remove stale sidecars from the live path,
-   set ownership to UID/GID 777, mode `0600`, and run `restorecon` on the
-   Time Tracker state directories.
-6. Start the service, require the local health check to succeed, verify the
-   running digest, and complete the documented application data checks.
-7. Retain the preserved prior database and key until the recovery is accepted.
-   If recovery fails, stop the service and restore that complete prior set
-   before retrying.
-
-Ansible refuses to replace the SQLCipher passphrase while an existing database
-and deployed key are present. Complete and verify the application's offline
-rekey workflow before updating the encrypted vault value.
+If the SQLCipher passphrase must also change, complete the authoritative
+[Time Tracker SQLCipher passphrase rotation procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#rotate-the-sqlcipher-passphrase)
+before updating the encrypted configuration value. Ansible refuses to replace
+the deployed passphrase while an existing database and deployed key are
+present.
 
 [Back to top](#operations)
 
