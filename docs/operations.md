@@ -311,7 +311,9 @@ Use this host-level flow for database recovery:
 
 1. Identify the restic snapshot, verified Time Tracker artifact, application
    digest, and matching SQLCipher passphrase that form the recovery point.
-2. Stop `grayhaven-timetracker.service`.
+2. Run `sudo systemctl stop grayhaven-timetracker.service` and confirm the unit
+   is inactive. Do not use `podman stop`; systemd will treat the container exit
+   as unexpected and recreate it.
 3. Restore the encrypted artifact to an isolated root-only directory with
    `grayhaven-backupctl`; never restore directly over the live database.
 4. Verify the isolated artifact with the approved application image and the
