@@ -14,6 +14,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
 - [Backup & Restoration Operations](#backup--restoration-operations)
 - [Time Tracker Database Restore](#time-tracker-database-restore)
+- [Changing the Managed Timezone](#changing-the-managed-timezone)
 - [Website Repository Deployments](#website-repository-deployments)
 - [GCS Restic Bucket Cleanup](#gcs-restic-bucket-cleanup)
 - [Root Command Audit Trail](#root-command-audit-trail)
@@ -303,6 +304,73 @@ If the SQLCipher passphrase must also change, complete the authoritative
 before updating the encrypted configuration value. Ansible refuses to replace
 the deployed passphrase while an existing database and deployed key are
 present.
+
+[Back to top](#operations)
+
+## Changing the Managed Timezone
+
+The `grayhaven_timezone` Ansible variable controls both the operating-system
+timezone and the Time Tracker container's `TZ` setting. Do not change the
+timezone directly on a managed host or inside the container.
+
+1. From the `grayhaven-config-ansible` repository root on the operator
+   workstation, open the baseline defaults file.
+
+   ```bash
+   "${EDITOR:-vi}" roles/baseline_validation/defaults/main.yml
+   ```
+
+2. Set `grayhaven_timezone` to the required IANA timezone name.
+
+   ```yaml
+   grayhaven_timezone: <Area/Location>
+   ```
+
+3. Confirm that the selected timezone exists in the workstation's timezone
+   database.
+
+   ```bash
+   TIMEZONE="<Area/Location>"
+   test -f "/usr/share/zoneinfo/${TIMEZONE}"
+   ```
+
+4. Validate the changed YAML, rendered Time Tracker configuration, Markdown,
+   and Git diff.
+
+   ```bash
+   yamllint roles/baseline_validation/defaults/main.yml
+   scripts/validate-rendered-timetracker-config
+   git ls-files '*.md' | xargs -r markdownlint-cli2
+   git diff --check
+   ```
+
+5. Follow the repository's [contribution workflow](../CONTRIBUTING.md#workflow)
+   to commit, review, and publish the configuration change on the branch
+   tracked by the target environment.
+
+6. From the active control bastion, start normal configuration convergence.
+
+   ```bash
+   sudo systemctl start grayhaven-ansible-runner.service
+   ```
+
+7. Review the convergence log and require a successful play recap.
+
+   ```bash
+   sudo tail -n 100 /var/run/grayhaven-ansible-runner/playbook.log
+   ```
+
+8. On a managed web host, verify the operating-system timezone and the Time
+   Tracker container timezone.
+
+   ```bash
+   timedatectl show --property=Timezone --value
+   sudo podman exec grayhaven-timetracker date '+%Z %z'
+   ```
+
+9. Follow the application
+   [service health procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#check-service-health),
+   then verify a representative time entry and report in the application.
 
 [Back to top](#operations)
 
