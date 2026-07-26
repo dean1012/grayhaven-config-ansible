@@ -14,6 +14,7 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
 - [Backup & Restoration Operations](#backup--restoration-operations)
 - [Time Tracker Database Restore](#time-tracker-database-restore)
+- [Checking Time Tracker Health](#checking-time-tracker-health)
 - [Changing the Managed Timezone](#changing-the-managed-timezone)
 - [Website Repository Deployments](#website-repository-deployments)
 - [GCS Restic Bucket Cleanup](#gcs-restic-bucket-cleanup)
@@ -293,17 +294,30 @@ image. A restore must preserve the current database generation for rollback,
 remove stale SQLite sidecars, restore managed ownership and SELinux context,
 and use systemd to control the container.
 
-Follow the authoritative
-[Time Tracker database restore procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#restore-a-backup-from-restic).
-That procedure includes artifact selection, isolated restoration and
-verification, service shutdown, database replacement, rollback preparation,
-and application validation.
+Prefer a suitable verified artifact already present in the Time Tracker backup
+directory. Follow the authoritative
+[local Time Tracker database restore procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#restore-a-local-backup)
+when one is available.
+
+When no suitable local artifact is available, follow the authoritative
+[Time Tracker database restore from restic procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#restore-a-backup-from-restic).
+`grayhaven-backupctl` prefers the local restic repository and then uses the
+remote restic repository when necessary.
 
 If the SQLCipher passphrase must also change, complete the authoritative
 [Time Tracker SQLCipher passphrase rotation procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#rotate-the-sqlcipher-passphrase)
 before updating the encrypted configuration value. Ansible refuses to replace
 the deployed passphrase while an existing database and deployed key are
 present.
+
+[Back to top](#operations)
+
+## Checking Time Tracker Health
+
+Use the authoritative
+[Time Tracker service health procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#check-service-health)
+to verify the systemd service, running immutable image digest, and application
+health endpoint after convergence or maintenance.
 
 [Back to top](#operations)
 
