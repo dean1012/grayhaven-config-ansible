@@ -54,6 +54,10 @@ def fixture_config() -> dict[str, object]:
             "cpu_percent": 80,
             "filesystem_inode_percent": 80,
             "filesystem_percent": 80,
+            "gcs_class_a_monthly_warning_operations": 4_000,
+            "gcs_class_b_monthly_warning_operations": 40_000,
+            "gcs_operation_stale_seconds": 10_800,
+            "gcs_stale_bucket_check_stale_seconds": 100_800,
             "memory_percent": 80,
             "restic_stale_seconds": 90_000,
             "swap_percent": 50,
@@ -69,6 +73,7 @@ def main() -> int:
         *namespace["service_rules"](config, "folder", "prometheus"),
         *namespace["host_metric_rules"](config, "folder", "prometheus"),
         *namespace["site_rules"](config, "folder", "prometheus"),
+        *namespace["external_service_rules"](config, "folder", "prometheus"),
     ]
     expected = {
         "grayhaven-core-prod-web-01 Time Tracker service": "0s",
@@ -88,6 +93,13 @@ def main() -> int:
     if actual != expected:
         raise RuntimeError(
             f"Generated Time Tracker alert contract mismatch: expected={expected!r}, actual={actual!r}"
+        )
+    gcs_stale_rule = next(
+        rule for rule in rules if rule["title"] == "GCS operation telemetry stale"
+    )
+    if gcs_stale_rule["for"] != "5m":
+        raise RuntimeError(
+            "Generated GCS operation telemetry stale alert must wait for the initial refresh"
         )
     return 0
 

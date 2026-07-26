@@ -48,6 +48,7 @@ jobs:
           roles/observability/files/grayhaven-irm-alert-groups-textfile
           roles/observability/files/grayhaven-observability-textfile
           scripts/validate-generated-grafana-alerts
+          scripts/validate-observability-textfile-cache
           scripts/validate-rendered-alloy-config
           scripts/validate-rendered-timetracker-config
 
@@ -74,6 +75,9 @@ jobs:
 
       - name: Validate generated Grafana alerts
         run: scripts/validate-generated-grafana-alerts
+
+      - name: Validate observability textfile cache
+        run: scripts/validate-observability-textfile-cache
 
       - name: Validate rendered Time Tracker config
         run: scripts/validate-rendered-timetracker-config
