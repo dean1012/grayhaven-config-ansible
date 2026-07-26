@@ -75,6 +75,11 @@ unavailable while still surfacing explicit untrusted-certificate alerts.
 
 The active control node publishes the full known-host inventory as textfile
 metrics so dashboards and alert rules can reason about all expected hosts.
+Calendar-month Google Cloud Storage operation totals are queried only for the
+expected restic buckets and cached for one hour. The collector republishes the
+cached totals during its normal one-minute cycle so Grafana retains fresh local
+telemetry without repeatedly querying Cloud Monitoring. A managed alert reports
+when the cached operation totals have not refreshed for three hours.
 When Grafana Cloud is enabled, the active control node also publishes sanitized
 Grafana IRM alert-group state as textfile metrics for operational reporting.
 The collector reads only current alert-group metadata and read-only user
