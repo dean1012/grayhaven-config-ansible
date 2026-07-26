@@ -84,9 +84,9 @@ telemetry without repeatedly querying Cloud Monitoring. A managed alert reports
 when the cached operation totals have not refreshed for three hours.
 Calendar-month Cloud Monitoring billed query series are independently queried
 and cached for one hour. The query uses server-side reduction to return a single
-series, and a managed alert reports when usage reaches 80 percent of the monthly
-free allotment. Separate managed alerts report stale usage telemetry, public
-service-health collection failure, and degraded Cloud Monitoring status.
+series, and a managed alert reports when usage reaches the configured monthly
+warning threshold. Separate managed alerts report stale usage telemetry,
+public service-health collection failure, and degraded Cloud Monitoring status.
 When Grafana Cloud is enabled, the active control node also publishes sanitized
 Grafana IRM alert-group state as textfile metrics for operational reporting.
 The collector reads only current alert-group metadata and read-only user

@@ -1036,7 +1036,7 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
                 },
             ),
             annotations={
-                "summary": "Google Monitoring series are approaching the monthly free limit",
+                "summary": "Google Monitoring series reached the monthly warning threshold",
                 "description": (
                     "Cloud Monitoring billed query series are at or above the configured "
                     "warning threshold."
