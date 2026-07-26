@@ -337,9 +337,8 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
             "contact_point": config["grafana"]["contact_point"],
         }
 
-        if site.get("dev_domain"):
-            rules.append(
-                alert_rule(
+        rules.append(
+            alert_rule(
                 title=f"{host['short_hostname']} metrics data",
                 expression=(
                     "max by (host, environment, role, project, client) "
