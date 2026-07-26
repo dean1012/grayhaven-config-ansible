@@ -247,6 +247,10 @@
         operation_cache_file: "{{ observability_gcs_operation_cache_file }}"
         operation_refresh_seconds: "{{ observability_gcs_operation_refresh_seconds }}"
         operation_stale_seconds: "{{ observability_gcs_operation_stale_seconds }}"
+        monitoring_usage_cache_file: "{{ observability_google_monitoring_usage_cache_file }}"
+        monitoring_usage_refresh_seconds: >-
+          {{ observability_google_monitoring_usage_refresh_seconds }}
+        monitoring_usage_stale_seconds: "{{ observability_google_monitoring_usage_stale_seconds }}"
       fail2ban:
         jails: "{{ observability_fail2ban_jails }}"
       proton:

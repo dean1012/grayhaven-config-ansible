@@ -27,6 +27,7 @@ TEXTFILE_DIR = pathlib.Path("/var/lib/grayhaven/observability/textfile")
 OUTPUT_PATH = TEXTFILE_DIR / "grayhaven.prom"
 GCS_MONITORING_SCOPE = "https://www.googleapis.com/auth/monitoring.read"
 GCS_OPERATION_CACHE_VERSION = 1
+GOOGLE_MONITORING_USAGE_CACHE_VERSION = 1
 GCS_OPERATION_CLASS_A_TERMS = (
     "compose",
     "copy",
@@ -47,6 +48,8 @@ GOOGLE_CLOUD_PRODUCTS_URL = "https://status.cloud.google.com/products.json"
 GOOGLE_CLOUD_INCIDENTS_URL = "https://status.cloud.google.com/incidents.json"
 GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE = "Google Cloud Storage"
 GOOGLE_CLOUD_STORAGE_PRODUCT_ID = "UwaYoXQ5bHYHG6EdiPB8"
+GOOGLE_CLOUD_MONITORING_PRODUCT_TITLE = "Cloud Monitoring"
+GOOGLE_CLOUD_MONITORING_PRODUCT_ID = "3zaaDb7antc73BM1UAVT"
 PROTON_COMPONENTS_URL = "https://status.proton.me/api/v2/components.json"
 PROTON_STATUS_OPERATIONAL = "operational"
 
@@ -311,6 +314,92 @@ def cached_gcs_operation_counts(
     return counts, refreshed_at, now - refreshed_at <= stale_seconds
 
 
+def monitoring_billed_series_total(project_id: str, token: str) -> float:
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    alignment_seconds = max(60, int((end_time - start_time).total_seconds()))
+    query = {
+        "filter": (
+            'metric.type = '
+            '"monitoring.googleapis.com/billing/time_series_billed_for_queries_count"'
+        ),
+        "interval.startTime": start_time.isoformat().replace("+00:00", "Z"),
+        "interval.endTime": end_time.isoformat().replace("+00:00", "Z"),
+        "aggregation.alignmentPeriod": f"{alignment_seconds}s",
+        "aggregation.perSeriesAligner": "ALIGN_SUM",
+        "aggregation.crossSeriesReducer": "REDUCE_SUM",
+        "pageSize": "10000",
+    }
+    response = monitoring_request(project_id, "timeSeries", query, token)
+    series = response.get("timeSeries", [])
+    if len(series) > 1 or response.get("nextPageToken"):
+        raise RuntimeError("Cloud Monitoring billing query returned unexpected cardinality")
+    return sum(point_value(point) for item in series for point in item.get("points", []))
+
+
+def load_google_monitoring_usage_cache(
+    path: pathlib.Path,
+    project_id: str,
+    month: str,
+) -> dict[str, Any] | None:
+    try:
+        cache = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(cache, dict):
+        return None
+    if cache.get("version") != GOOGLE_MONITORING_USAGE_CACHE_VERSION:
+        return None
+    if cache.get("project_id") != project_id or cache.get("month") != month:
+        return None
+    if not isinstance(cache.get("billed_series"), (int, float)):
+        return None
+    if not isinstance(cache.get("refreshed_at"), int):
+        return None
+    return cache
+
+
+def cached_google_monitoring_usage(gcs_config: dict[str, Any]) -> tuple[float, int, bool]:
+    project_id = str(gcs_config["project_id"])
+    cache_path = pathlib.Path(str(gcs_config["monitoring_usage_cache_file"]))
+    refresh_seconds = max(60, int(gcs_config["monitoring_usage_refresh_seconds"]))
+    stale_seconds = max(refresh_seconds, int(gcs_config["monitoring_usage_stale_seconds"]))
+    now = int(time.time())
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    cache = load_google_monitoring_usage_cache(cache_path, project_id, month)
+
+    if cache is None or now - int(cache["refreshed_at"]) >= refresh_seconds:
+        try:
+            token = monitoring_token(str(gcs_config["credentials_file"]))
+            billed_series = monitoring_billed_series_total(project_id, token)
+        except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError):
+            if cache is None:
+                raise
+        else:
+            cache = {
+                "billed_series": billed_series,
+                "month": month,
+                "project_id": project_id,
+                "refreshed_at": now,
+                "version": GOOGLE_MONITORING_USAGE_CACHE_VERSION,
+            }
+            atomic_write(
+                cache_path,
+                json.dumps(cache, separators=(",", ":"), sort_keys=True) + "\n",
+                mode=0o600,
+            )
+
+    if cache is None:
+        raise RuntimeError("Cloud Monitoring usage telemetry cache is unavailable")
+    refreshed_at = int(cache["refreshed_at"])
+    return (
+        float(cache["billed_series"]),
+        refreshed_at,
+        now - refreshed_at <= stale_seconds,
+    )
+
+
 # Google Cloud public service-health helpers
 
 def location_matches(configured_location: str, affected_locations: list[dict[str, Any]]) -> bool:
@@ -335,21 +424,25 @@ def location_matches(configured_location: str, affected_locations: list[dict[str
     return False
 
 
-def cloud_storage_product_id() -> str:
+def google_cloud_product_id(product_title: str, fallback_product_id: str) -> str:
     try:
         products = request_json(GOOGLE_CLOUD_PRODUCTS_URL).get("products", [])
     except (OSError, urllib.error.URLError, json.JSONDecodeError):
-        return GOOGLE_CLOUD_STORAGE_PRODUCT_ID
+        return fallback_product_id
 
     for product in products:
-        if product.get("title") == GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE:
-            return str(product.get("id", GOOGLE_CLOUD_STORAGE_PRODUCT_ID))
+        if product.get("title") == product_title:
+            return str(product.get("id", fallback_product_id))
 
-    return GOOGLE_CLOUD_STORAGE_PRODUCT_ID
+    return fallback_product_id
 
 
-def gcs_status(configured_location: str) -> tuple[str, int, int]:
-    product_id = cloud_storage_product_id()
+def google_cloud_status(
+    product_title: str,
+    fallback_product_id: str,
+    configured_location: str,
+) -> tuple[str, int, int]:
+    product_id = google_cloud_product_id(product_title, fallback_product_id)
     try:
         incidents = request_json(GOOGLE_CLOUD_INCIDENTS_URL)
     except (OSError, urllib.error.URLError, json.JSONDecodeError):
@@ -370,6 +463,22 @@ def gcs_status(configured_location: str) -> tuple[str, int, int]:
         return str(status).replace("_", " ").title(), 0, 1
 
     return "Operational", 1, 1
+
+
+def gcs_status(configured_location: str) -> tuple[str, int, int]:
+    return google_cloud_status(
+        GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE,
+        GOOGLE_CLOUD_STORAGE_PRODUCT_ID,
+        configured_location,
+    )
+
+
+def google_monitoring_status(configured_location: str) -> tuple[str, int, int]:
+    return google_cloud_status(
+        GOOGLE_CLOUD_MONITORING_PRODUCT_TITLE,
+        GOOGLE_CLOUD_MONITORING_PRODUCT_ID,
+        configured_location,
+    )
 
 
 # Proton public service-health helpers
@@ -584,6 +693,91 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
     return output
 
 
+def render_google_monitoring_metrics(config: dict[str, Any]) -> list[str]:
+    current_host = config["host"]
+    gcs_config = config.get("gcs", {})
+    if not current_host.get("control_node") or not gcs_config.get("enabled"):
+        return []
+
+    metric_base = {
+        "client": current_host["client"],
+        "environment": current_host["environment"],
+        "location": gcs_config.get("location", ""),
+        "project_id": gcs_config.get("project_id", ""),
+    }
+    status, status_value, service_telemetry_success = google_monitoring_status(
+        str(gcs_config.get("location", ""))
+    )
+    status_labels = dict(metric_base)
+    status_labels["product"] = GOOGLE_CLOUD_MONITORING_PRODUCT_TITLE
+    status_labels["status"] = status
+    output = [
+        (
+            "# HELP grayhaven_google_monitoring_service_telemetry_success "
+            "Cloud Monitoring public service-health telemetry collection success."
+        ),
+        "# TYPE grayhaven_google_monitoring_service_telemetry_success gauge",
+        (
+            "# HELP grayhaven_google_monitoring_service_status "
+            "Cloud Monitoring public service-health status."
+        ),
+        "# TYPE grayhaven_google_monitoring_service_status gauge",
+        line(
+            "grayhaven_google_monitoring_service_telemetry_success",
+            metric_base,
+            service_telemetry_success,
+        ),
+        (
+            "# HELP grayhaven_google_monitoring_telemetry_success "
+            "Cloud Monitoring billed-series telemetry collection success."
+        ),
+        "# TYPE grayhaven_google_monitoring_telemetry_success gauge",
+        (
+            "# HELP grayhaven_google_monitoring_telemetry_last_success_timestamp_seconds "
+            "Unix timestamp of the last successful Cloud Monitoring billed-series refresh."
+        ),
+        "# TYPE grayhaven_google_monitoring_telemetry_last_success_timestamp_seconds gauge",
+    ]
+    if service_telemetry_success:
+        output.append(line("grayhaven_google_monitoring_service_status", status_labels, status_value))
+
+    try:
+        billed_series, refreshed_at, telemetry_fresh = cached_google_monitoring_usage(gcs_config)
+    except (KeyError, OSError, RuntimeError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+        output.append(line("grayhaven_google_monitoring_telemetry_success", metric_base, 0))
+        return output
+
+    output.extend(
+        [
+            line(
+                "grayhaven_google_monitoring_telemetry_success",
+                metric_base,
+                int(telemetry_fresh),
+            ),
+            line(
+                "grayhaven_google_monitoring_telemetry_last_success_timestamp_seconds",
+                metric_base,
+                refreshed_at,
+            ),
+            (
+                "# HELP grayhaven_google_monitoring_monthly_billed_series_total "
+                "Cloud Monitoring billed query series in the current calendar month."
+            ),
+            "# TYPE grayhaven_google_monitoring_monthly_billed_series_total gauge",
+        ]
+    )
+    usage_labels = dict(metric_base)
+    usage_labels["month"] = datetime.now(timezone.utc).strftime("%Y-%m")
+    output.append(
+        line(
+            "grayhaven_google_monitoring_monthly_billed_series_total",
+            usage_labels,
+            int(billed_series),
+        )
+    )
+    return output
+
+
 def render_proton_metrics(config: dict[str, Any]) -> list[str]:
     current_host = config["host"]
     proton_config = config.get("proton", {})
@@ -711,6 +905,7 @@ def render(config: dict[str, Any]) -> str:
     output.extend(render_expected_restic_repositories(config))
     output.extend(render_fail2ban_metrics(config))
     output.extend(render_gcs_metrics(config))
+    output.extend(render_google_monitoring_metrics(config))
     output.extend(render_proton_metrics(config))
 
     return "\n".join(output) + "\n"
