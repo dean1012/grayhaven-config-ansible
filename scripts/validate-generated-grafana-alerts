@@ -58,6 +58,8 @@ def fixture_config() -> dict[str, object]:
             "gcs_class_b_monthly_warning_operations": 40_000,
             "gcs_operation_stale_seconds": 10_800,
             "gcs_stale_bucket_check_stale_seconds": 100_800,
+            "google_monitoring_monthly_warning_series": 800_000,
+            "google_monitoring_usage_stale_seconds": 10_800,
             "memory_percent": 80,
             "restic_stale_seconds": 90_000,
             "swap_percent": 50,

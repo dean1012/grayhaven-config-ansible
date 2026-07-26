@@ -786,7 +786,7 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             ),
             evaluator_type="lt",
             threshold=1,
-            duration="1m",
+            duration="5m",
             labels=base_labels(
                 config,
                 {
@@ -936,6 +936,111 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             annotations={
                 "summary": "GCS Class B operations are approaching monthly usage limit",
                 "description": "GCS Class B operations are at or above the configured warning threshold.",
+                "check_value": "{{ humanize $values.A.Value }}",
+                "month": "{{ $labels.month }}",
+            },
+            **common,
+        ),
+        alert_rule(
+            title="Google Monitoring service telemetry failed for >= 5 min",
+            expression=(
+                "max by (client, environment, location, project_id) "
+                f"(grayhaven_google_monitoring_service_telemetry_success{{{selector}}})"
+            ),
+            evaluator_type="lt",
+            threshold=1,
+            duration="5m",
+            labels=base_labels(
+                config,
+                {
+                    "check": "google_monitoring_service_telemetry_success",
+                    "service": "Google Cloud Monitoring",
+                },
+            ),
+            annotations={
+                "summary": "Google Monitoring service telemetry collection failed",
+                "description": (
+                    "The Cloud Monitoring public service-health collector is not reporting "
+                    "successful telemetry."
+                ),
+            },
+            no_data_state="Alerting",
+            **common,
+        ),
+        alert_rule(
+            title="Google Monitoring Degraded for >= 5 min",
+            expression=(
+                "max by (client, environment, location, product, project_id, status) "
+                f"(grayhaven_google_monitoring_service_status{{{selector}}})"
+            ),
+            evaluator_type="lt",
+            threshold=1,
+            duration="5m",
+            labels=base_labels(
+                config,
+                {
+                    "check": "google_monitoring_service_status",
+                    "service": "Google Cloud Monitoring",
+                },
+            ),
+            annotations={
+                "summary": "Google Monitoring is degraded",
+                "description": "Cloud Monitoring is not reporting Operational status.",
+                "service_status": "{{ $labels.status }}",
+            },
+            **common,
+        ),
+        alert_rule(
+            title="Google Monitoring telemetry stale",
+            expression=(
+                "time() - max by (client, environment, location, project_id) "
+                f"(grayhaven_google_monitoring_telemetry_last_success_timestamp_seconds"
+                f"{{{selector}}})"
+            ),
+            evaluator_type="gt",
+            threshold=float(
+                config["thresholds"]["google_monitoring_usage_stale_seconds"]
+            ),
+            duration="5m",
+            labels=base_labels(
+                config,
+                {
+                    "check": "google_monitoring_telemetry_stale",
+                    "service": "Google Cloud Monitoring",
+                },
+            ),
+            annotations={
+                "summary": "Google Monitoring telemetry is stale",
+                "description": (
+                    "Month-to-date Cloud Monitoring billed-series telemetry has not "
+                    "refreshed recently."
+                ),
+            },
+            no_data_state="Alerting",
+            **common,
+        ),
+        alert_rule(
+            title="Google Monitoring series >= 80% usage",
+            expression=(
+                "max by (client, environment, location, month, project_id) "
+                f"(grayhaven_google_monitoring_monthly_billed_series_total{{{selector}}})"
+                f' >= {float(config["thresholds"]["google_monitoring_monthly_warning_series"])}'
+            ),
+            evaluator_type="gt",
+            threshold=0,
+            labels=base_labels(
+                config,
+                {
+                    "check": "google_monitoring_monthly_billed_series",
+                    "service": "Google Cloud Monitoring",
+                },
+            ),
+            annotations={
+                "summary": "Google Monitoring series are approaching the monthly free limit",
+                "description": (
+                    "Cloud Monitoring billed query series are at or above the configured "
+                    "warning threshold."
+                ),
                 "check_value": "{{ humanize $values.A.Value }}",
                 "month": "{{ $labels.month }}",
             },
