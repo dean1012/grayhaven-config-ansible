@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Validate the generated Time Tracker Grafana alert contract."""
+
+from __future__ import annotations
+
+import pathlib
+import runpy
+
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+ALERT_SYNC = REPO_ROOT / "roles" / "observability" / "files" / "grayhaven-grafana-alert-sync"
+
+
+def fixture_config() -> dict[str, object]:
+    return {
+        "grafana": {
+            "contact_point": "Grayhaven IRM",
+            "evaluation_group": "grayhaven-production-1m",
+        },
+        "hosts": [
+            {
+                "client": "grayhaven",
+                "control_node": False,
+                "environment": "prod",
+                "fqdn": "grayhaven-core-prod-web-01.grayhavensystems.com",
+                "project": "core",
+                "role": "web",
+                "short_hostname": "grayhaven-core-prod-web-01",
+            }
+        ],
+        "labels": {"client": "grayhaven", "environment": "prod"},
+        "service_units": {
+            "common": [],
+            "control_node": [],
+            "web": [
+                {
+                    "check": "timetracker_service",
+                    "name": "grayhaven-timetracker.service",
+                    "summary": "Time Tracker service is down",
+                }
+            ],
+        },
+        "sites": [
+            {
+                "aliases": [],
+                "dev_domain": "",
+                "domain": "timetracker.grayhavensystems.com",
+                "kind": "application",
+                "root_name": "timetracker",
+            }
+        ],
+        "thresholds": {
+            "certificate_expiring_seconds": 1_209_600,
+            "cpu_percent": 80,
+            "filesystem_inode_percent": 80,
+            "filesystem_percent": 80,
+            "memory_percent": 80,
+            "restic_stale_seconds": 90_000,
+            "swap_percent": 50,
+        },
+        "tls_mode": "host",
+    }
+
+
+def main() -> int:
+    namespace = runpy.run_path(str(ALERT_SYNC))
+    config = fixture_config()
+    rules = [
+        *namespace["service_rules"](config, "folder", "prometheus"),
+        *namespace["host_metric_rules"](config, "folder", "prometheus"),
+        *namespace["site_rules"](config, "folder", "prometheus"),
+    ]
+    expected = {
+        "grayhaven-core-prod-web-01 Time Tracker service": "0s",
+        "grayhaven-core-prod-web-01 Time Tracker health check": "5m",
+        "timetracker.grayhavensystems.com HTTPS availability": "1m",
+        "timetracker.grayhavensystems.com HTTP to HTTPS redirects": "1m",
+        "timetracker.grayhavensystems.com SSL certificate expired": "0s",
+        "timetracker.grayhavensystems.com using untrusted SSL certificate": "1m",
+        "timetracker.grayhavensystems.com SSL certificate expiring within 14 days": "0s",
+    }
+    actual = {
+        rule["title"]: rule["for"]
+        for rule in rules
+        if "Time Tracker" in rule["title"]
+        or "timetracker.grayhavensystems.com" in rule["title"]
+    }
+    if actual != expected:
+        raise RuntimeError(
+            f"Generated Time Tracker alert contract mismatch: expected={expected!r}, actual={actual!r}"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
