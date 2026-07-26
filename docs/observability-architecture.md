@@ -62,6 +62,8 @@ Metrics include:
 - restic backup, integrity-check, retention, and restore-size status;
 - Google Cloud Storage public service-health status, calendar-month API
   operation totals, and daily stale restic bucket state;
+- Cloud Monitoring public service-health status and calendar-month billed query
+  series;
 - Proton public service-health status for Grayhaven Systems LLC-used services;
 - sanitized active Grafana IRM alert-group state;
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
@@ -80,6 +82,11 @@ expected restic buckets and cached for one hour. The collector republishes the
 cached totals during its normal one-minute cycle so Grafana retains fresh local
 telemetry without repeatedly querying Cloud Monitoring. A managed alert reports
 when the cached operation totals have not refreshed for three hours.
+Calendar-month Cloud Monitoring billed query series are independently queried
+and cached for one hour. The query uses server-side reduction to return a single
+series, and a managed alert reports when usage reaches 80 percent of the monthly
+free allotment. Separate managed alerts report stale usage telemetry, public
+service-health collection failure, and degraded Cloud Monitoring status.
 When Grafana Cloud is enabled, the active control node also publishes sanitized
 Grafana IRM alert-group state as textfile metrics for operational reporting.
 The collector reads only current alert-group metadata and read-only user
