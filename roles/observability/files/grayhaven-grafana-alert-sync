@@ -786,7 +786,7 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             ),
             evaluator_type="lt",
             threshold=1,
-            duration="5m",
+            duration="1m",
             labels=base_labels(
                 config,
                 {
@@ -832,7 +832,7 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             ),
             evaluator_type="gt",
             threshold=float(config["thresholds"]["gcs_stale_bucket_check_stale_seconds"]),
-            duration="1m",
+            duration="5m",
             labels=base_labels(
                 config,
                 {
@@ -868,6 +868,29 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
                 "description": "The daily stale GCS restic bucket check found one or more stale buckets.",
                 "check_value": "{{ humanize $values.A.Value }}",
             },
+            **common,
+        ),
+        alert_rule(
+            title="GCS operation telemetry stale",
+            expression=(
+                "time() - max by (client, environment, location, project_id) "
+                f"(grayhaven_gcs_restic_telemetry_last_success_timestamp_seconds{{{selector}}})"
+            ),
+            evaluator_type="gt",
+            threshold=float(config["thresholds"]["gcs_operation_stale_seconds"]),
+            duration="5m",
+            labels=base_labels(
+                config,
+                {
+                    "check": "gcs_operation_telemetry_stale",
+                    "service": "Google Cloud Storage",
+                },
+            ),
+            annotations={
+                "summary": "GCS operation telemetry is stale",
+                "description": "Month-to-date GCS operation telemetry has not refreshed recently.",
+            },
+            no_data_state="Alerting",
             **common,
         ),
         alert_rule(
