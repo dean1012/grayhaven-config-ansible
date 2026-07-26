@@ -101,6 +101,22 @@ def render_config(output_path: pathlib.Path) -> None:
     output_path.write_text(template.render(fixture_context()), encoding="utf-8")
 
 
+def validate_timetracker_contract(rendered_path: pathlib.Path) -> None:
+    rendered = rendered_path.read_text(encoding="utf-8")
+    required = (
+        'timetracker_health:',
+        'Host: "timetracker.grayhavensystems.com"',
+        'address = "http://127.0.0.1:8000/health"',
+        'module  = "timetracker_health"',
+        'check       = "timetracker_health"',
+        'selector = `{systemd_unit="grayhaven-timetracker.service"}`',
+        'expression = `.*"level":"(?:debug|info|warning)".*`',
+    )
+    missing = [value for value in required if value not in rendered]
+    if missing:
+        raise RuntimeError(f"Rendered Alloy Time Tracker contract is missing: {missing}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -114,6 +130,7 @@ def main() -> int:
         rendered_path = pathlib.Path(args.keep_rendered or pathlib.Path(temp_dir) / "config.alloy")
         rendered_path.parent.mkdir(parents=True, exist_ok=True)
         render_config(rendered_path)
+        validate_timetracker_contract(rendered_path)
         try:
             result = subprocess.run(["alloy", "validate", str(rendered_path)], check=False)
         except FileNotFoundError:
