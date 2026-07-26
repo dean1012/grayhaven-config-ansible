@@ -1,0 +1,4 @@
+---
+- name: Enforce Time Tracker on web hosts
+  ansible.builtin.include_tasks: web.yml
+  when: grayhaven_role == "web"

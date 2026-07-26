@@ -75,7 +75,7 @@
     group: root
     mode: "0644"
   notify:
-    - Reload systemd
+    - Reload website deployment systemd
     - Restart website deployment webhook
 
 - name: Install website deployment allowlist

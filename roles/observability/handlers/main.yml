@@ -6,6 +6,6 @@
     daemon_reload: true
   when: observability_metrics_enabled | default(false)
 
-- name: Reload systemd
+- name: Reload observability systemd
   ansible.builtin.systemd_service:
     daemon_reload: true

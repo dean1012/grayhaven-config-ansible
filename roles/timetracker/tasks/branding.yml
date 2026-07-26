@@ -1,0 +1,44 @@
+---
+- name: Install Time Tracker branding files
+  ansible.builtin.copy:
+    src: "{{ timetracker_branding_source_root }}/{{ item.source }}"
+    dest: "{{ timetracker.branding_dir }}/{{ item.destination }}"
+    owner: "{{ timetracker_user }}"
+    group: "{{ timetracker_group }}"
+    mode: "0400"
+  loop:
+    - source: logo/svg/grayhaven-logo-wordmark-dark.svg
+      destination: grayhaven-logo-wordmark-dark.svg
+    - source: web/assets/favicon.ico
+      destination: favicon.ico
+    - source: web/assets/favicon-16.png
+      destination: favicon-16.png
+    - source: web/assets/favicon-32.png
+      destination: favicon-32.png
+    - source: web/assets/apple-touch-icon.png
+      destination: apple-touch-icon.png
+  loop_control:
+    label: "{{ item.destination }}"
+  notify: Restart Time Tracker
+
+- name: Create Time Tracker branding font directory
+  ansible.builtin.file:
+    path: "{{ timetracker.branding_dir }}/fonts"
+    state: directory
+    owner: "{{ timetracker_user }}"
+    group: "{{ timetracker_group }}"
+    mode: "0700"
+
+- name: Install Time Tracker font files
+  ansible.builtin.copy:
+    src: "{{ timetracker_branding_source_root }}/assets/fonts/{{ item }}"
+    dest: "{{ timetracker.branding_dir }}/fonts/{{ item }}"
+    owner: "{{ timetracker_user }}"
+    group: "{{ timetracker_group }}"
+    mode: "0400"
+  loop:
+    - inter-400.ttf
+    - inter-500.ttf
+    - inter-600.ttf
+    - inter-700.ttf
+  notify: Restart Time Tracker

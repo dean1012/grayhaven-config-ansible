@@ -58,13 +58,14 @@ Metrics include:
 - active control-node metadata;
 - Ansible convergence status;
 - fail2ban jail status and ban counts;
+- Time Tracker service state and authentication-ban status;
 - restic backup, integrity-check, retention, and restore-size status;
 - Google Cloud Storage public service-health status, calendar-month API
   operation totals, and daily stale restic bucket state;
 - Proton public service-health status for Grayhaven Systems LLC-used services;
 - sanitized active Grafana IRM alert-group state;
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
-  domains.
+  domains and the Time Tracker application.
 
 HTTPS availability, development basic-auth, and certificate-expiry probes check
 site behavior while allowing untrusted certificate chains. Separate
@@ -90,10 +91,11 @@ selected logs to Grafana Cloud Loki.
 The log set is intentionally targeted:
 
 - Nginx access and error logs for configured domains;
+- Time Tracker Nginx logs with shared-report tokens redacted at the source;
 - audit logs;
 - Certbot logs;
 - systemd journal entries, including sudo and `grayhaven-root-command` command
-  audit entries.
+  audit entries and structured Time Tracker application events.
 
 Cloud-init logs are excluded. Shipped log lines pass through a defensive
 redaction stage for common secret-like key names before leaving the host, but
@@ -134,10 +136,11 @@ convergence from creating the silence again on the same control node.
 
 Managed alerts cover the same operational checks surfaced by the Grafana
 dashboards where alerting is useful, including host metrics, service state,
-backup freshness, Ansible convergence, web availability, development
-basic-auth behavior, certificate expiration, certificate-expiration warning,
-certificate trust, and external service-health state for Google Cloud Storage
-and Proton. Certificate-expiration warnings fire when a certificate is valid
+backup freshness, Ansible convergence, web and Time Tracker availability,
+development basic-auth behavior, certificate expiration,
+certificate-expiration warning, certificate trust, and external service-health
+state for Google Cloud Storage and Proton. Certificate-expiration warnings fire
+when a certificate is valid
 but expires within 14 days. CPU and external service-health alerts require five
 minutes above threshold before firing. Alert rules send to the configured
 Grafana IRM contact point.

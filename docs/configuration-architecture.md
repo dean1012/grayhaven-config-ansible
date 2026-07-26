@@ -12,6 +12,7 @@ full-playbook convergence.
 - [Managed Users](#managed-users)
 - [Operator Tmux Console](#operator-tmux-console)
 - [Web Hosting](#web-hosting)
+- [Time Tracker](#time-tracker)
 - [Firewalld Policy](#firewalld-policy)
 - [Backups](#backups)
 - [Observability](#observability)
@@ -287,6 +288,44 @@ repository.
 
 [Back to top](#configuration-architecture)
 
+## Time Tracker
+
+Time Tracker is a required web-host service. The public `timetracker` mapping
+in `grayhaven-vault/config.yml` selects its hostname, immutable application
+image digest, persistent directories, and optional verified-backup retention.
+The separate encrypted `timetracker_secrets` mapping in `vault/web.yml`
+supplies the Flask signing key, SQLCipher passphrase, and initial users.
+
+On every convergence, the branding role updates its control-node checkout from
+the public `grayhaven-branding` repository's `main` branch and verifies that
+the checkout matches the fetched remote revision. The Time Tracker role copies
+only the required wordmark, favicon, and font assets into the application
+branding directory. Neither Ansible nor the application image embeds private
+branding credentials.
+
+Web hosts run the application as a rootful system Quadlet so systemd and Podman
+own the container lifecycle. The application process itself runs as dedicated
+UID and GID 777. Convergence fails if either identifier belongs to another
+account. The container uses an immutable `@sha256:` image reference, a
+read-only root filesystem, loopback-only port publication, dropped
+capabilities, no-new-privileges enforcement, a PID limit, and explicit health
+checks. Persistent data, verified backups, branding, and secret files use
+separate SELinux-labeled bind mounts.
+
+Nginx is the only public application entry point. It terminates host TLS or
+accepts traffic from the managed load balancer, forwards a controlled HTTPS
+proxy context, and does not expose the container health endpoint publicly. The
+role persistently enables the SELinux `httpd_can_network_connect` boolean so
+Nginx can reach the loopback-only container upstream while SELinux remains
+enforcing. Time Tracker access logging removes query strings and redacts
+shared-report tokens before log files can be collected.
+
+Bootstrap users are reconciled only when the database has no users. Initial
+passwords must be changed at first sign-in. Once users exist, account management
+belongs to the application rather than repeated Ansible convergence.
+
+[Back to top](#configuration-architecture)
+
 ## Firewalld Policy
 
 The firewalld policy role reads the environment firewall policy from `firewall.yml`
@@ -338,6 +377,14 @@ By default, backups include:
 - configured homedir archive path;
 - `/home`;
 - `/var/log`.
+
+On web hosts, the backup service first asks the running Time Tracker container
+to create an encrypted online backup in its dedicated backup directory and
+verifies that artifact before publishing its final filename. Restic includes
+that verified-artifact directory and explicitly excludes the live SQLCipher
+database plus its WAL and SHM sidecars. Local artifacts are pruned only after
+all configured restic repositories complete successfully. Bastion backups skip
+the application snapshot step.
 
 When `backup.include` is set in `grayhaven-vault/config.yml`, that explicit
 list is appended after the configured homedir archive path. This keeps

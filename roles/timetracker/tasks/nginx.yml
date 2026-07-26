@@ -1,0 +1,25 @@
+---
+- name: Allow nginx to connect to the Time Tracker upstream
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+
+- name: Install Time Tracker nginx proxy
+  ansible.builtin.template:
+    src: grayhaven-timetracker.conf.j2
+    dest: /etc/nginx/conf.d/grayhaven-timetracker.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Time Tracker nginx configuration
+
+- name: Validate nginx configuration
+  ansible.builtin.command:
+    argv:
+      - nginx
+      - -t
+  changed_when: false
+
+- name: Apply pending Time Tracker nginx changes
+  ansible.builtin.meta: flush_handlers

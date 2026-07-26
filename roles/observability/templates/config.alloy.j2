@@ -10,7 +10,7 @@ prometheus.exporter.unix "node" {
   enable_collectors        = ["systemd"]
 
   systemd {
-    unit_include = "(sshd|firewalld|fail2ban|chronyd|auditd|do-agent|nginx|certbot-renew|grayhaven-website-deploy-webhook|grayhaven-restic-backup|grayhaven-restic-check|grayhaven-gcs-restic-stale-buckets|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
+    unit_include = "(sshd|firewalld|fail2ban|chronyd|auditd|do-agent|nginx|certbot-renew|grayhaven-timetracker|grayhaven-website-deploy-webhook|grayhaven-restic-backup|grayhaven-restic-check|grayhaven-gcs-restic-stale-buckets|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
     start_time   = true
   }
 
@@ -94,14 +94,15 @@ modules:
     }
   }
 
+{% for alias in site.aliases %}
   target {
-    name    = {{ (site_id ~ "_www_200") | to_json }}
-    address = {{ ("https://" ~ site.aliases[0] ~ "/") | to_json }}
+    name    = {{ (site_id ~ "_alias_" ~ loop.index ~ "_200") | to_json }}
+    address = {{ ("https://" ~ alias ~ "/") | to_json }}
     module  = "http_2xx_skip_tls_verify"
     labels  = {
       check       = "https_200",
       client      = {{ observability_client | to_json }},
-      domain      = {{ site.aliases[0] | to_json }},
+      domain      = {{ alias | to_json }},
       environment = {{ grayhaven_environment | to_json }},
       host        = {{ inventory_hostname | to_json }},
       project     = {{ observability_project | to_json }},
@@ -109,6 +110,8 @@ modules:
     }
   }
 
+{% endfor %}
+{% if site.dev_domain %}
   target {
     name    = {{ (site_id ~ "_dev_401") | to_json }}
     address = {{ ("https://" ~ site.dev_domain ~ "/") | to_json }}
@@ -124,6 +127,7 @@ modules:
     }
   }
 
+{% endif %}
   target {
     name    = {{ (site_id ~ "_cert") | to_json }}
     address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
@@ -154,7 +158,8 @@ modules:
     }
   }
 
-{% for redirect_domain in [site.domain, site.aliases[0], site.dev_domain] %}
+{% set redirect_domains = [site.domain] + site.aliases + ([site.dev_domain] if site.dev_domain else []) %}
+{% for redirect_domain in redirect_domains %}
   target {
     name    = {{ (site_id ~ "_redirect_" ~ loop.index) | to_json }}
     address = {{ ("http://" ~ redirect_domain ~ "/") | to_json }}
@@ -239,7 +244,7 @@ prometheus.remote_write "grafana" {
 {% if observability_logs_enabled %}
 {% for site in observability_web_sites %}
 {% set site_id = site.root_name | regex_replace('[^A-Za-z0-9_]', '_') %}
-{% for log_name in ['prod.access', 'prod.error', 'dev.access', 'dev.error'] %}
+{% for log_name in site.nginx_log_names %}
 local.file_match "nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]', '_') }}" {
   path_targets = [{
     "__path__"   = {{ ("/var/log/nginx/" ~ site.root_name ~ "." ~ log_name ~ ".log") | to_json }},
@@ -250,7 +255,7 @@ local.file_match "nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]
     "job"        = "nginx_{{ 'access' if 'access' in log_name else 'error' }}",
     "project"    = {{ observability_project | to_json }},
     "role"       = {{ observability_role | to_json }},
-    "site"       = "{{ 'dev' if log_name.startswith('dev') else 'prod' }}",
+    "site"       = "{{ site.kind if site.kind == 'application' else ('dev' if log_name.startswith('dev') else 'prod') }}",
   }]
 }
 

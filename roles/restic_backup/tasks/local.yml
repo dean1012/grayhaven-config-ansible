@@ -108,6 +108,10 @@
       GCS_CREDENTIALS_FILE=/etc/grayhaven/backup/gcs-credentials.json
       GCS_PROJECT_ID={{ restic_backup_remote_gcs_project_id | default('') | quote }}
       OBSERVABILITY_DASHBOARD_LOG=/var/lib/grayhaven/observability/restic-backup-dashboard.log
+      TIMETRACKER_BACKUP_ENABLED={{ 'true' if grayhaven_role == 'web' else 'false' }}
+      TIMETRACKER_BACKUP_DIR={{ (timetracker.backup_dir if grayhaven_role == 'web' else '') | quote }}
+      TIMETRACKER_BACKUP_RETENTION_DAYS={{ (timetracker.backup_retention_days | default(14)) | quote }}
+      TIMETRACKER_CONTAINER=grayhaven-timetracker
 
       export RESTIC_CACHE_DIR
 
@@ -181,6 +185,46 @@
       '
       }
 
+      create_timetracker_backup() {
+        local backup_name
+        local pending_name
+
+        [[ "$TIMETRACKER_BACKUP_ENABLED" == "true" ]] || return 0
+        systemctl is-active --quiet grayhaven-timetracker.service
+
+        backup_name="timetracker-$(date -u +%Y%m%dT%H%M%S%NZ).sqlite3"
+        pending_name=".${backup_name}.pending"
+        rm -f -- "$TIMETRACKER_BACKUP_DIR/$pending_name"
+        if ! podman exec "$TIMETRACKER_CONTAINER" \
+          python scripts/database_maintenance.py backup \
+            /app/data/timetracker.sqlite3 \
+            /run/secrets/sqlcipher_passphrase \
+            "/app/backups/${pending_name}"; then
+          rm -f -- "$TIMETRACKER_BACKUP_DIR/$pending_name"
+          return 1
+        fi
+        if ! podman exec "$TIMETRACKER_CONTAINER" \
+          python scripts/database_maintenance.py verify \
+            "/app/backups/${pending_name}" \
+            /run/secrets/sqlcipher_passphrase; then
+          rm -f -- "$TIMETRACKER_BACKUP_DIR/$pending_name"
+          return 1
+        fi
+        mv -- \
+          "$TIMETRACKER_BACKUP_DIR/$pending_name" \
+          "$TIMETRACKER_BACKUP_DIR/$backup_name"
+      }
+
+      prune_timetracker_backups() {
+        [[ "$TIMETRACKER_BACKUP_ENABLED" == "true" ]] || return 0
+        find "$TIMETRACKER_BACKUP_DIR" \
+          -maxdepth 1 \
+          -type f \
+          -name 'timetracker-*.sqlite3' \
+          -mtime "+${TIMETRACKER_BACKUP_RETENTION_DAYS}" \
+          -delete
+      }
+
       backup_repository() {
         local repository=$1
         local label=$2
@@ -229,6 +273,7 @@
         successful_repositories+=("$label")
       }
 
+      create_timetracker_backup
       backup_repository "$LOCAL_REPOSITORY" local
 
       if [[ "$REMOTE_ENABLED" == "true" ]]; then
@@ -236,6 +281,8 @@
         export GOOGLE_APPLICATION_CREDENTIALS="$GCS_CREDENTIALS_FILE"
         backup_repository "$REMOTE_REPOSITORY" remote
       fi
+
+      prune_timetracker_backups
 
       if [[ -d "$TEXTFILE_DIR" ]]; then
         tmp_file="$(mktemp "${TEXTFILE_DIR}/restic.XXXXXX")"

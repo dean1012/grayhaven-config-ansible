@@ -48,6 +48,7 @@ jobs:
           roles/observability/files/grayhaven-irm-alert-groups-textfile
           roles/observability/files/grayhaven-observability-textfile
           scripts/validate-rendered-alloy-config
+          scripts/validate-rendered-timetracker-config
 
       - name: Install Alloy validation tool
         run: |
@@ -70,6 +71,9 @@ jobs:
       - name: Validate rendered Alloy config
         run: scripts/validate-rendered-alloy-config
 
+      - name: Validate rendered Time Tracker config
+        run: scripts/validate-rendered-timetracker-config
+
       - name: Install Ansible Galaxy collections
         run: scripts/install-galaxy-collections
 
@@ -77,6 +81,9 @@ jobs:
         run: |
           find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
           | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
+
+      - name: Run Time Tracker contract check
+        run: ansible-playbook --check playbooks/validate-timetracker-contract.yml
 
       - name: Run ansible-lint
         run: ansible-lint .

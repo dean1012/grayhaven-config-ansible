@@ -1,0 +1,87 @@
+---
+- name: Inspect configured Time Tracker UID
+  ansible.builtin.command:
+    argv:
+      - getent
+      - passwd
+      - "{{ timetracker_uid | string }}"
+  register: timetracker_uid_lookup
+  changed_when: false
+  failed_when: false
+
+- name: Reject a conflicting Time Tracker UID
+  ansible.builtin.assert:
+    that:
+      - timetracker_uid_lookup.rc != 0 or timetracker_uid_lookup.stdout.split(':')[0] == timetracker_user
+    fail_msg: "Configured Time Tracker UID is already assigned to another account."
+    quiet: true
+
+- name: Inspect configured Time Tracker GID
+  ansible.builtin.command:
+    argv:
+      - getent
+      - group
+      - "{{ timetracker_gid | string }}"
+  register: timetracker_gid_lookup
+  changed_when: false
+  failed_when: false
+
+- name: Reject a conflicting Time Tracker GID
+  ansible.builtin.assert:
+    that:
+      - timetracker_gid_lookup.rc != 0 or timetracker_gid_lookup.stdout.split(':')[0] == timetracker_group
+    fail_msg: "Configured Time Tracker GID is already assigned to another group."
+    quiet: true
+
+- name: Create Time Tracker system group
+  ansible.builtin.group:
+    name: "{{ timetracker_group }}"
+    gid: "{{ timetracker_gid }}"
+    system: true
+
+- name: Create Time Tracker system user
+  ansible.builtin.user:
+    name: "{{ timetracker_user }}"
+    uid: "{{ timetracker_uid }}"
+    group: "{{ timetracker_group }}"
+    comment: Grayhaven Systems LLC Time Tracker Service Account
+    home: /nonexistent
+    create_home: false
+    shell: /sbin/nologin
+    password: "!"
+    system: true
+
+- name: Create Time Tracker state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: /var/lib/grayhaven/timetracker
+      owner: root
+      group: "{{ timetracker_group }}"
+      mode: "0750"
+    - path: "{{ timetracker.data_dir }}"
+      owner: "{{ timetracker_user }}"
+      group: "{{ timetracker_group }}"
+      mode: "0700"
+    - path: "{{ timetracker.branding_dir }}"
+      owner: "{{ timetracker_user }}"
+      group: "{{ timetracker_group }}"
+      mode: "0700"
+    - path: "{{ timetracker.secrets_dir }}"
+      owner: root
+      group: "{{ timetracker_group }}"
+      mode: "0750"
+    - path: "{{ timetracker.backup_dir }}"
+      owner: "{{ timetracker_user }}"
+      group: "{{ timetracker_group }}"
+      mode: "0700"
+    - path: "{{ timetracker_quadlet_dir }}"
+      owner: root
+      group: root
+      mode: "0755"
+  loop_control:
+    label: "{{ item.path }}"

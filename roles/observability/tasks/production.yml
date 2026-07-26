@@ -1,0 +1,12 @@
+---
+- name: Validate observability configuration
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Derive observability metadata
+  ansible.builtin.import_tasks: facts.yml
+
+- name: Enforce Grafana Alloy telemetry shipping
+  ansible.builtin.import_tasks: alloy.yml
+
+- name: Enforce Grafana Cloud managed alert rules
+  ansible.builtin.import_tasks: alerts.yml
