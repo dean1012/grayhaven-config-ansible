@@ -75,10 +75,39 @@ modules:
       fail_if_header_not_matches:
         - header: Location
           regexp: '^https://'
+{% for site in observability_web_sites if site.kind == "application" %}
+{% set site_id = site.root_name | regex_replace('[^A-Za-z0-9_]', '_') %}
+  {{ site_id }}_health:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4
+      headers:
+        Host: {{ site.domain | to_json }}
+      valid_status_codes:
+        - 200
+{% endfor %}
 `
 
 {% for site in observability_web_sites %}
 {% set site_id = site.root_name | regex_replace('[^A-Za-z0-9_]', '_') %}
+{% if site.kind == "application" %}
+  target {
+    name    = {{ (site_id ~ "_health") | to_json }}
+    address = "http://127.0.0.1:8000/health"
+    module  = {{ (site_id ~ "_health") | to_json }}
+    labels  = {
+      check       = "timetracker_health",
+      client      = {{ observability_client | to_json }},
+      domain      = {{ site.domain | to_json }},
+      environment = {{ grayhaven_environment | to_json }},
+      host        = {{ inventory_hostname | to_json }},
+      project     = {{ observability_project | to_json }},
+      role        = {{ observability_role | to_json }},
+    }
+  }
+
+{% endif %}
   target {
     name    = {{ (site_id ~ "_apex_200") | to_json }}
     address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
@@ -877,6 +906,14 @@ loki.process "grayhaven_dashboard_system_errors" {
   stage.match {
     selector = `{systemd_unit="fail2ban.service"}`
     action   = "drop"
+  }
+
+  stage.match {
+    selector = `{systemd_unit="grayhaven-timetracker.service"}`
+
+    stage.drop {
+      expression = `.*"level":"(?:debug|info|warning)".*`
+    }
   }
 
   stage.drop {

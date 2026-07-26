@@ -329,6 +329,10 @@ def service_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) 
 def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> list[dict[str, Any]]:
     rules = []
     thresholds = config["thresholds"]
+    timetracker_site = next(
+        (site for site in config["sites"] if site.get("kind") == "application"),
+        None,
+    )
     for host in config["hosts"]:
         common = {
             "folder_uid": folder_uid,
@@ -356,6 +360,40 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 **common,
             )
         )
+
+        if host["role"] == "web" and timetracker_site is not None:
+            rules.append(
+                alert_rule(
+                    title=f"{host['short_hostname']} Time Tracker health check",
+                    expression=(
+                        "max by (host, domain, environment, role, project, client) "
+                        f'(probe_success{{{host_selector(host["fqdn"])},'
+                        f'domain="{promql_string(timetracker_site["domain"])}",'
+                        'check="timetracker_health"})'
+                    ),
+                    evaluator_type="lt",
+                    threshold=1,
+                    duration="5m",
+                    labels=base_labels(
+                        config,
+                        {
+                            "check": "timetracker_health",
+                            "domain": timetracker_site["domain"],
+                            "host": host["fqdn"],
+                            "project": host["project"],
+                            "role": "web",
+                        },
+                    ),
+                    annotations={
+                        "summary": "Time Tracker health check failed",
+                        "description": (
+                            f"{host['fqdn']} Time Tracker local health endpoint "
+                            "has not returned 200 OK for at least five minutes."
+                        ),
+                    },
+                    **common,
+                )
+            )
 
         rules.append(
             alert_rule(

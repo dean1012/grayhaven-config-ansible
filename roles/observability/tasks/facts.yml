@@ -126,7 +126,10 @@
       nginx_log_names:
         - access
         - error
-  when: grayhaven_role == "web"
+  when:
+    - timetracker is defined
+    - timetracker is mapping
+    - timetracker.hostname is defined
 
 - name: Initialize observability fail2ban jail metadata
   ansible.builtin.set_fact:
