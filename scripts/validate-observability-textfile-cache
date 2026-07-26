@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Validate the GCS operation telemetry cache contract."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import pathlib
+import runpy
+import tempfile
+import urllib.error
+
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+COLLECTOR = (
+    REPO_ROOT / "roles" / "observability" / "files" / "grayhaven-observability-textfile"
+)
+
+
+def main() -> int:
+    namespace = runpy.run_path(str(COLLECTOR))
+    module_globals = namespace["cached_gcs_operation_counts"].__globals__
+    now = [1_000]
+    query_count = [0]
+    requested_filters: list[str] = []
+    buckets = {"grayhaven-core-prod-web-01-restic", "grayhaven-sec-prod-bastion-01-restic"}
+
+    def operation_counts(
+        project_id: str,
+        token: str,
+        bucket_names: set[str],
+    ) -> dict[str, float]:
+        del project_id, token
+        query_count[0] += 1
+        if bucket_names != buckets:
+            raise RuntimeError("Unexpected bucket set")
+        return {"Class A": 10.0 + query_count[0], "Class B": 20.0 + query_count[0]}
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cache_path = pathlib.Path(temp_dir) / "gcs-operation-counts.json"
+        config = {
+            "credentials_file": "/unused/test-credentials.json",
+            "operation_cache_file": str(cache_path),
+            "operation_refresh_seconds": 3_600,
+            "operation_stale_seconds": 10_800,
+            "project_id": "grayhaven",
+        }
+        module_globals["time"].time = lambda: now[0]
+        module_globals["monitoring_token"] = lambda credentials_file: "test-token"
+        module_globals["gcs_operation_counts"] = operation_counts
+
+        counts, refreshed_at, fresh = namespace["cached_gcs_operation_counts"](config, buckets)
+        if counts != {"Class A": 11.0, "Class B": 21.0} or refreshed_at != 1_000 or not fresh:
+            raise RuntimeError("Initial GCS operation telemetry refresh failed")
+        if cache_path.stat().st_mode & 0o777 != 0o600:
+            raise RuntimeError("GCS operation telemetry cache must use mode 0600")
+
+        now[0] = 1_100
+        cached = namespace["cached_gcs_operation_counts"](config, buckets)
+        if cached != (counts, refreshed_at, True) or query_count[0] != 1:
+            raise RuntimeError("Fresh GCS operation telemetry cache was not reused")
+
+        now[0] = 4_601
+        counts, refreshed_at, fresh = namespace["cached_gcs_operation_counts"](config, buckets)
+        if counts != {"Class A": 12.0, "Class B": 22.0} or refreshed_at != 4_601 or not fresh:
+            raise RuntimeError("Expired GCS operation telemetry cache was not refreshed")
+
+        def failed_operation_counts(*args: object, **kwargs: object) -> dict[str, float]:
+            del args, kwargs
+            raise urllib.error.URLError("expected validation failure")
+
+        module_globals["gcs_operation_counts"] = failed_operation_counts
+        now[0] = 8_202
+        if namespace["cached_gcs_operation_counts"](config, buckets) != (
+            counts,
+            refreshed_at,
+            True,
+        ):
+            raise RuntimeError("Valid cached telemetry was not retained after a refresh failure")
+
+        now[0] = 15_402
+        if namespace["cached_gcs_operation_counts"](config, buckets) != (
+            counts,
+            refreshed_at,
+            False,
+        ):
+            raise RuntimeError("Stale cached telemetry was not marked stale")
+
+        month = datetime.now(timezone.utc).strftime("%Y-%m")
+        if namespace["load_gcs_operation_cache"](
+            cache_path,
+            "grayhaven",
+            {"unexpected-bucket"},
+            month,
+        ) is not None:
+            raise RuntimeError("GCS operation telemetry cache accepted a different bucket set")
+
+    def monitoring_request(
+        project_id: str,
+        path: str,
+        query: dict[str, str],
+        token: str,
+    ) -> dict[str, object]:
+        del project_id, path, token
+        requested_filters.append(query["filter"])
+        return {"timeSeries": []}
+
+    module_globals["monitoring_request"] = monitoring_request
+    namespace["gcs_operation_counts"]("grayhaven", "test-token", buckets)
+    if len(requested_filters) != 1 or not all(
+        f'resource.labels.bucket_name = "{bucket}"' in requested_filters[0]
+        for bucket in buckets
+    ):
+        raise RuntimeError("Cloud Monitoring query was not filtered to expected GCS buckets")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

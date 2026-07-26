@@ -11,6 +11,7 @@ observability_alert_initial_silence_marker_file: "{{ observability_config_dir }}
 observability_irm_alert_groups_config_file: "{{ observability_config_dir }}/irm-alert-groups.json"
 observability_textfile_config_file: "{{ observability_config_dir }}/textfile-metrics.json"
 observability_textfile_dir: /var/lib/grayhaven/observability/textfile
+observability_gcs_operation_cache_file: "{{ observability_textfile_dir }}/gcs-operation-counts.json"
 observability_alloy_http_url: http://127.0.0.1:12345
 observability_alloy_ready_retries: 30
 observability_alloy_ready_delay: 2
@@ -31,6 +32,8 @@ observability_swap_warning_percent: 80
 observability_certificate_expiring_seconds: 1209600
 observability_restic_stale_seconds: 100800
 observability_gcs_stale_bucket_check_stale_seconds: 100800
+observability_gcs_operation_refresh_seconds: 3600
+observability_gcs_operation_stale_seconds: 10800
 observability_gcs_class_a_monthly_warning_operations: 4000
 observability_gcs_class_b_monthly_warning_operations: 40000
 
