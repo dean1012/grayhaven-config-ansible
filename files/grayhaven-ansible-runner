@@ -1083,4 +1083,6 @@ main() {
   done
 }
 
-main "$@"
+if [[ "${GRAYHAVEN_UNIT_TEST_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
