@@ -157,5 +157,8 @@
 - name: Enforce managed sudo user audit rules
   ansible.builtin.import_tasks: audit.yml
 
+- name: Enforce bastion playbook log access
+  ansible.builtin.import_tasks: playbook-log.yml
+
 - name: Enforce managed user tmux and shell helpers
   ansible.builtin.import_tasks: tmux.yml

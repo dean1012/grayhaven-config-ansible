@@ -44,6 +44,17 @@ missing session. They should create the session named by
 `GRAYHAVEN_TMUX_SESSION_NAME` and then exit. The operator's SSH session stays
 inside `gtmux`; the workspace file should not attach to tmux itself.
 
+On bastion hosts, members of `wheel` may follow the clean Ansible playbook log
+without an interactive sudo prompt by running exactly:
+
+```bash
+sudo -n /usr/bin/tail -F /var/run/grayhaven-ansible-runner/playbook.log
+```
+
+The managed sudoers rule authorizes only that executable, option, and path. It
+does not authorize arbitrary `tail` commands or other passwordless root
+commands. The rule is removed from non-bastion hosts.
+
 [Back to top](#operator-tmux-architecture)
 
 ## Capturing A Workspace
