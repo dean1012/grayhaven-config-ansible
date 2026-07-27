@@ -74,6 +74,7 @@ def validate(rendered: dict[str, str]) -> None:
     )
     required_nginx = (
         "server_name timetracker.example.invalid;",
+        'add_header X-Robots-Tag "noindex, nofollow, noarchive" always;',
         "proxy_pass http://127.0.0.1:8000;",
         "proxy_set_header X-Forwarded-Proto https;",
         "location = /health",
@@ -86,6 +87,11 @@ def validate(rendered: dict[str, str]) -> None:
     ]
     if missing:
         raise RuntimeError(f"Rendered Time Tracker configuration is missing: {missing}")
+    indexing_header = 'add_header X-Robots-Tag "noindex, nofollow, noarchive" always;'
+    if nginx.count(indexing_header) != 2:
+        raise RuntimeError(
+            "Time Tracker indexing policy must cover both HTTP and HTTPS servers"
+        )
     if "0.0.0.0:8000" in quadlet:
         raise RuntimeError("Time Tracker container port must remain loopback-only")
     required_service_probe = (

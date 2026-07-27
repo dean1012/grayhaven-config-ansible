@@ -172,4 +172,6 @@ main() {
   persist_ref "${STATE_DIR}/vault.ref" "$vault_ref"
 }
 
-main "$@"
+if [[ "${GRAYHAVEN_UNIT_TEST_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi

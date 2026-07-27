@@ -84,6 +84,7 @@ ansible-lint .
 find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
   | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
 shellcheck files/grayhaven-ansible-runner files/grayhaven-ansible-poller roles/admin_access/files/gtmux
+python3 -m ruff check files roles scripts tests
 python3 -m py_compile \
   files/grayhaven-gcs-restic-bucket-cleanup \
   files/grayhaven-reboot-notify \
@@ -100,6 +101,10 @@ scripts/validate-rendered-alloy-config
 scripts/validate-generated-grafana-alerts
 scripts/validate-observability-textfile-cache
 scripts/validate-rendered-timetracker-config
+python3 -m coverage run -m unittest discover -s tests -v
+python3 -m coverage report
+python3 -m coverage xml
+test -s shell-coverage.xml
 ansible-playbook --check playbooks/validate-timetracker-contract.yml
 git ls-files '*.md' | xargs -r markdownlint-cli2
 ```

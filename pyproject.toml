@@ -1,0 +1,28 @@
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.coverage.run]
+branch = true
+include = [
+  "files/grayhaven-gcs-restic-bucket-cleanup",
+  "files/grayhaven-reboot-notify",
+  "files/grayhaven-refresh-motd",
+  "roles/deploy_websites/files/grayhaven-website-deploy",
+  "roles/observability/files/grayhaven-grafana-alert-sync",
+  "roles/observability/files/grayhaven-irm-alert-groups-textfile",
+  "roles/observability/files/grayhaven-observability-textfile",
+  "scripts/validate-generated-grafana-alerts",
+  "scripts/validate-observability-textfile-cache",
+  "scripts/validate-rendered-alloy-config",
+  "scripts/validate-rendered-timetracker-config",
+]
+relative_files = true
+
+[tool.coverage.report]
+fail_under = 90
+omit = ["tests/*"]
+show_missing = true
