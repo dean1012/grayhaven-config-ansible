@@ -13,6 +13,7 @@ log_format grayhaven_timetracker
 server {
     listen 80;
     server_name {{ timetracker.hostname }};
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
 
 {% if timetracker_tls_mode == "host" %}
     return 301 https://{{ timetracker.hostname }}$request_uri;
@@ -41,6 +42,7 @@ server {
 server {
     listen 443 ssl;
     server_name {{ timetracker.hostname }};
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
 
     access_log /var/log/nginx/timetracker.access.log grayhaven_timetracker;
     error_log /var/log/nginx/timetracker.error.log;
