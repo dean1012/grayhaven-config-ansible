@@ -8,9 +8,22 @@
 # Logs
 *.log
 
+# Coverage data
+.coverage
+.coverage.*
+coverage.xml
+shell-coverage.lines
+shell-coverage.xml
+
+# Ruff cache
+.ruff_cache/
+
 # Ansible runtime artifacts
 *.retry
 ansible.log
 
 # Python runtime artifacts
 __pycache__/
+*.pyc
+*.pyo
+*.pyd

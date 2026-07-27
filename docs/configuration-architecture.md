@@ -16,6 +16,7 @@ full-playbook convergence.
 - [Firewalld Policy](#firewalld-policy)
 - [Backups](#backups)
 - [Observability](#observability)
+- [Unit Testing](#unit-testing)
 - [Access Model](#access-model)
 
 ## Bootstrap Phase
@@ -440,6 +441,40 @@ observability components.
 The [observability architecture](observability-architecture.md) documentation
 describes the metrics, logs, alert ownership boundary, and production-only
 behavior.
+
+[Back to top](#configuration-architecture)
+
+## Unit Testing
+
+The unit suite exercises the repository's managed Python programs and the
+significant decision logic in its shell programs. Python coverage is measured
+with branch coverage. Shell line coverage uses an isolated Bash `DEBUG` trap
+for `gtmux` and the Ansible Galaxy collection installer. Runner and poller
+tests source those programs behind a test-only execution guard and exercise
+their argument handling, command dispatch, and repository-change decisions.
+
+The unit-testing boundary has these limitations:
+
+- It does not run integration tests. External APIs, subprocesses, filesystem
+  failures, and remote responses are represented with temporary paths and
+  controlled test doubles.
+- It tests Python and shell programs, not Ansible playbooks, roles, modules, or
+  convergence behavior. Ansible syntax checks, linting, contract playbooks,
+  staging convergence, and production convergence are separate validation
+  layers.
+- It does not prove live systemd, Podman, SELinux, Nginx, restic, Grafana,
+  DigitalOcean, Google Cloud, GitHub, or network behavior.
+- It does not simulate an entire managed host merely to execute runner and
+  poller integration paths. Those paths are validated through real
+  convergence and operational verification.
+- Direct command-entry wrappers and their final process-exit handling may not
+  be included in coverage when the underlying `main()` behavior is already
+  exercised directly.
+- Generated-configuration validators verify selected security and operational
+  contracts. They do not replace applying the rendered configuration to a
+  representative managed environment.
+- Timing, concurrency, service-restart ordering, and failure recovery across
+  multiple hosts remain integration and operational concerns.
 
 [Back to top](#configuration-architecture)
 
