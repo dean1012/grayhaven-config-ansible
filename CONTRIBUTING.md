@@ -127,7 +127,7 @@ Pull requests must meet all of these requirements to be merged:
 - Reference or close a GitHub issue as appropriate.
 - Contain signed commits.
 - Have no open review conversations.
-- Pass all CI checks.
+- Pass all required CI and unit-test checks.
 - Document all changes appropriately.
 
 [Back to top](#contributing)
