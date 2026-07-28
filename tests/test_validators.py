@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import pathlib
 import tempfile
@@ -26,6 +27,25 @@ timetracker = load_program(
 
 
 class ValidatorTests(unittest.TestCase):
+    @staticmethod
+    def changed_rule_namespace(
+        generator: str,
+        predicate: object,
+        mutation: object,
+    ) -> dict[str, object]:
+        namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        original = namespace[generator]
+
+        def changed(*args: object, **kwargs: object) -> list[dict[str, object]]:
+            rules = original(*args, **kwargs)
+            for rule in rules:
+                if predicate(rule):
+                    mutation(rule)
+            return rules
+
+        namespace[generator] = changed
+        return namespace
+
     def test_generated_alerts_and_cache_contracts(self) -> None:
         config = alerts.fixture_config()
         self.assertEqual(config["tls_mode"], "host")
@@ -74,9 +94,136 @@ class ValidatorTests(unittest.TestCase):
                 }
             )
         alerts.validate_live_registry(namespace, registry, live_rules)
+        self.assertEqual(
+            alerts.imported_identity({"labels": {"host": "host", "check": "check"}}),
+            "host:host:check",
+        )
+        self.assertEqual(
+            alerts.imported_identity(
+                {"labels": {"domain": "example.invalid", "check": "check"}}
+            ),
+            "domain:example.invalid:check",
+        )
+        self.assertEqual(
+            alerts.imported_identity(
+                {"labels": {"service": "service", "check": "check"}}
+            ),
+            "service:service:check",
+        )
+        self.assertEqual(
+            alerts.imported_identity({"labels": {"check": "check"}}),
+            "check:check",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "count does not match"):
+            alerts.validate_live_registry(namespace, registry, live_rules[:-1])
         live_rules[0]["uid"] = "wrong"
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             alerts.validate_live_registry(namespace, registry, live_rules)
+
+        live_rules = self.live_rules(registry)
+        identity = next(iter(registry))
+        invalid_registry = dict(registry)
+        invalid_registry[identity] = "invalid"
+        live_rules[0]["uid"] = "invalid"
+        with self.assertRaisesRegex(RuntimeError, "invalid UID"):
+            alerts.validate_live_registry(namespace, invalid_registry, live_rules)
+
+        identities = list(registry)
+        duplicate_registry = dict(registry)
+        duplicate_registry[identities[1]] = duplicate_registry[identities[0]]
+        live_rules = self.live_rules(duplicate_registry)
+        with self.assertRaisesRegex(RuntimeError, "not unique"):
+            alerts.validate_live_registry(namespace, duplicate_registry, live_rules)
+
+        changed_registry = dict(registry)
+        renamed_identity = next(
+            identity
+            for identity, uid in changed_registry.items()
+            if uid in alerts.RENAMED_TITLES
+        )
+        changed_registry[renamed_identity] = "123e4567-e89b-42d3-a456-426614174000"
+        with self.assertRaisesRegex(RuntimeError, "exactly eight"):
+            alerts.validate_live_registry(
+                namespace, changed_registry, self.live_rules(changed_registry)
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export = pathlib.Path(temp_dir) / "live.json"
+            export.write_text(json.dumps(self.live_rules(registry)), encoding="utf-8")
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                self.assertEqual(alerts.main(["--live-export", str(export)]), 0)
+            self.assertIn("identity_created=0", stdout.getvalue())
+
+    @staticmethod
+    def live_rules(registry: dict[str, str]) -> list[dict[str, object]]:
+        rules = []
+        for identity, uid in registry.items():
+            scope, resource, check = identity.split(":", 2)
+            rules.append(
+                {
+                    "uid": uid,
+                    "labels": {
+                        "configured_by": "ansible",
+                        scope: resource,
+                        "check": check,
+                    },
+                }
+            )
+        return rules
+
+    def test_generated_alert_validator_rejects_format_and_identity_drift(self) -> None:
+        cases = (
+            (
+                "external_service_rules",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
+                lambda rule: rule["annotations"].update(check_value="bad"),
+                "comma-grouped integer",
+            ),
+            (
+                "host_metric_rules",
+                lambda rule: rule["labels"]["check"] == "filesystem_inode",
+                lambda rule: rule["annotations"].update(check_value="bad"),
+                "fixed percentage",
+            ),
+            (
+                "host_metric_rules",
+                lambda rule: rule["labels"]["check"] == "cpu_utilization",
+                lambda rule: rule["annotations"].update(check_value="bad"),
+                "format changed",
+            ),
+            (
+                "site_rules",
+                lambda rule: rule["labels"]["check"] == "ssl_certificate_expiring",
+                lambda rule: rule["annotations"].update(check_value="bad"),
+                "duration annotation",
+            ),
+            (
+                "host_metric_rules",
+                lambda rule: rule["uid"] in alerts.RENAMED_TITLES,
+                lambda rule: rule.update(title="bad"),
+                "title mismatch",
+            ),
+        )
+        for generator, predicate, mutation, message in cases:
+            with self.subTest(message=message):
+                namespace = self.changed_rule_namespace(generator, predicate, mutation)
+                with (
+                    mock.patch.object(alerts.runpy, "run_path", return_value=namespace),
+                    self.assertRaisesRegex(RuntimeError, message),
+                ):
+                    alerts.main([])
+
+        config = alerts.fixture_config()
+        config["uid_registry"] = dict(config["uid_registry"])
+        config["uid_registry"].pop(next(iter(config["uid_registry"])))
+        with (
+            mock.patch.object(alerts, "fixture_config", return_value=config),
+            self.assertRaisesRegex(RuntimeError, "Expected 76"),
+        ):
+            alerts.main([])
 
     def test_cache_validator_accepts_good_and_rejects_bad_values(self) -> None:
         counts = {"Class A": 11.0, "Class B": 21.0, "Free": 31.0, "Unknown": 0.0}

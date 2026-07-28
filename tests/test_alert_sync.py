@@ -113,6 +113,63 @@ class AlertRuleTests(unittest.TestCase):
             "2026-01-01T00:00:00.000Z",
         )
 
+    def test_uid_registry_rejects_invalid_shapes_and_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = pathlib.Path(temp_dir) / "uids.json"
+            for value, message in (
+                ([], "non-empty object"),
+                ({}, "non-empty object"),
+                ({"identity": "invalid"}, "invalid identity or UID"),
+                (
+                    {"": "123e4567-e89b-42d3-a456-426614174000"},
+                    "invalid identity or UID",
+                ),
+                (
+                    {
+                        "one": "123e4567-e89b-42d3-a456-426614174000",
+                        "two": "123e4567-e89b-42d3-a456-426614174000",
+                    },
+                    "duplicate UIDs",
+                ),
+            ):
+                path.write_text(json.dumps(value), encoding="utf-8")
+                with self.assertRaisesRegex(alert_sync.GrafanaError, message):
+                    alert_sync.load_uid_registry(str(path))
+
+            expected = {"identity": "123e4567-e89b-42d3-a456-426614174000"}
+            path.write_text(json.dumps(expected), encoding="utf-8")
+            self.assertEqual(alert_sync.load_uid_registry(str(path)), expected)
+
+    def test_desired_rules_rejects_duplicate_identities_and_uids(self) -> None:
+        config = complete_config()
+        first = {"_identity": "duplicate", "uid": "one"}
+        second = {"_identity": "duplicate", "uid": "two"}
+        with (
+            mock.patch.object(
+                alert_sync, "host_metric_rules", return_value=[first, second]
+            ),
+            mock.patch.object(alert_sync, "service_rules", return_value=[]),
+            mock.patch.object(alert_sync, "site_rules", return_value=[]),
+            mock.patch.object(alert_sync, "external_service_rules", return_value=[]),
+            self.assertRaisesRegex(
+                alert_sync.GrafanaError, "identities are not unique"
+            ),
+        ):
+            alert_sync.desired_rules(config, "folder", "prom")
+
+        first = {"_identity": "one", "uid": "duplicate"}
+        second = {"_identity": "two", "uid": "duplicate"}
+        with (
+            mock.patch.object(
+                alert_sync, "host_metric_rules", return_value=[first, second]
+            ),
+            mock.patch.object(alert_sync, "service_rules", return_value=[]),
+            mock.patch.object(alert_sync, "site_rules", return_value=[]),
+            mock.patch.object(alert_sync, "external_service_rules", return_value=[]),
+            self.assertRaisesRegex(alert_sync.GrafanaError, "UIDs are not unique"),
+        ):
+            alert_sync.desired_rules(config, "folder", "prom")
+
     def test_grafana_client_request_and_helpers(self) -> None:
         client = alert_sync.GrafanaClient("https://grafana.example.invalid/", "token")
         with mock.patch.object(
@@ -125,6 +182,13 @@ class AlertRuleTests(unittest.TestCase):
             alert_sync.urllib.request, "urlopen", return_value=Response("", 204)
         ):
             self.assertIsNone(client.request("DELETE", "/test", expected=(204,)))
+        with mock.patch.object(
+            alert_sync.urllib.request, "urlopen", return_value=Response("{}")
+        ) as urlopen:
+            self.assertEqual(client.request("PUT", "/test", {"value": 1}), {})
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.data, b'{"value": 1}')
+        self.assertEqual(request.headers["Content-type"], "application/json")
 
         error = urllib.error.HTTPError(
             "url", 400, "bad", {}, io.BytesIO(b"bad request")
@@ -289,6 +353,26 @@ class AlertRuleTests(unittest.TestCase):
         self.assertEqual(deleted, 1)
         fake.update_rule.assert_called_once_with(first_uid, first_rule)
         fake.delete_rule.assert_called_once_with("stale")
+
+        unchanged = mock.Mock()
+        unchanged.datasource_uid.return_value = "prom"
+        unchanged.folder_uid.return_value = "folder"
+        unchanged.alert_rules.return_value = list(desired.values())
+        unchanged.update_rule_group_interval.return_value = False
+        with mock.patch.object(alert_sync, "GrafanaClient", return_value=unchanged):
+            self.assertEqual(alert_sync.sync(config), (0, 0, 0))
+        unchanged.update_rule.assert_not_called()
+
+        empty = mock.Mock()
+        empty.datasource_uid.return_value = "prom"
+        empty.folder_uid.return_value = "folder"
+        empty.alert_rules.return_value = []
+        with (
+            mock.patch.object(alert_sync, "GrafanaClient", return_value=empty),
+            mock.patch.object(alert_sync, "desired_rules", return_value={}),
+        ):
+            self.assertEqual(alert_sync.sync(config), (0, 0, 0))
+        empty.update_rule_group_interval.assert_not_called()
 
         with self.assertRaises(alert_sync.GrafanaError):
             alert_sync.create_initial_silence(config, 0)
