@@ -49,7 +49,14 @@ def host(*, control_node: bool = True) -> dict[str, object]:
 def full_config() -> dict[str, object]:
     return {
         "host": host(),
-        "hosts": [host(), {**host(control_node=False), "short_hostname": "web", "fqdn": "web.grayhavensystems.com"}],
+        "hosts": [
+            host(),
+            {
+                **host(control_node=False),
+                "short_hostname": "web",
+                "fqdn": "web.grayhavensystems.com",
+            },
+        ],
         "restic": {"repositories": ["local", "remote"]},
         "gcs": {
             "enabled": True,
@@ -85,7 +92,9 @@ class HttpAndGoogleTests(unittest.TestCase):
         with mock.patch.object(
             collector.urllib.request, "urlopen", return_value=Response({"ok": True})
         ):
-            self.assertEqual(collector.request_json("https://example.invalid"), {"ok": True})
+            self.assertEqual(
+                collector.request_json("https://example.invalid"), {"ok": True}
+            )
             self.assertEqual(
                 collector.post_form_json("https://example.invalid", {"a": "b"}),
                 {"ok": True},
@@ -124,7 +133,11 @@ class HttpAndGoogleTests(unittest.TestCase):
                 self.assertEqual(collector.monitoring_token(str(path)), "token")
             self.assertIn("assertion", post.call_args.args[1])
             with (
-                mock.patch.object(collector.serialization, "load_pem_private_key", return_value=object()),
+                mock.patch.object(
+                    collector.serialization,
+                    "load_pem_private_key",
+                    return_value=object(),
+                ),
                 self.assertRaisesRegex(RuntimeError, "not an RSA"),
             ):
                 collector.google_token(str(path), "scope")
@@ -135,16 +148,42 @@ class HttpAndGoogleTests(unittest.TestCase):
                 collector.google_token(str(path), "scope")
 
     def test_monitoring_queries_and_operation_classes(self) -> None:
-        with mock.patch.object(collector, "request_json", return_value={"ok": True}) as request:
+        with mock.patch.object(
+            collector, "request_json", return_value={"ok": True}
+        ) as request:
             self.assertEqual(
-                collector.monitoring_request("project/name", "timeSeries", {"a": "b"}, "token"),
+                collector.monitoring_request(
+                    "project/name", "timeSeries", {"a": "b"}, "token"
+                ),
                 {"ok": True},
             )
         self.assertIn("projects/project%2Fname/timeSeries", request.call_args.args[0])
-        self.assertEqual(collector.gcs_operation_class("storage.objects.insert"), "Class A")
-        self.assertEqual(collector.gcs_operation_class("storage.objects.get"), "Class B")
-        self.assertEqual(collector.gcs_operation_class("unknown"), "")
-        self.assertEqual(collector.gcs_operation_counts("project", "token", set()), {"Class A": 0.0, "Class B": 0.0})
+        self.assertEqual(
+            collector.gcs_operation_class("storage.objects.insert"), "Class A"
+        )
+        self.assertEqual(
+            collector.gcs_operation_class("storage.objects.get"), "Class B"
+        )
+        self.assertEqual(collector.gcs_operation_class("WriteObject"), "Class A")
+        self.assertEqual(collector.gcs_operation_class("CloneObject.From"), "Class A")
+        self.assertEqual(
+            collector.gcs_operation_class("UpdateBucketMetadata"), "Class A"
+        )
+        self.assertEqual(collector.gcs_operation_class("ReadObject"), "Class B")
+        self.assertEqual(collector.gcs_operation_class("GetObjectMetadata"), "Class B")
+        self.assertEqual(collector.gcs_operation_class("GetBucketMetadata"), "Class B")
+        self.assertEqual(collector.gcs_operation_class("DeleteObject"), "Free")
+        self.assertEqual(
+            collector.gcs_operation_class("storage.buckets.delete"), "Free"
+        )
+        self.assertEqual(collector.gcs_operation_class("unknown"), "Unknown")
+        self.assertEqual(
+            collector.gcs_operation_class("storage.objects.getter"), "Unknown"
+        )
+        self.assertEqual(
+            collector.gcs_operation_counts("project", "token", set()),
+            {"Class A": 0.0, "Class B": 0.0, "Free": 0.0, "Unknown": 0.0},
+        )
 
         pages = [
             {
@@ -168,14 +207,26 @@ class HttpAndGoogleTests(unittest.TestCase):
                         "resource": {"labels": {"bucket_name": "bucket"}},
                         "metric": {"labels": {"method": "storage.objects.get"}},
                         "points": [{"value": {"doubleValue": 3.5}}],
-                    }
+                    },
+                    {
+                        "resource": {"labels": {"bucket_name": "bucket"}},
+                        "metric": {"labels": {"method": "DeleteObject"}},
+                        "points": [{"value": {"int64Value": "4"}}],
+                    },
+                    {
+                        "resource": {"labels": {"bucket_name": "bucket"}},
+                        "metric": {"labels": {"method": "future.method"}},
+                        "points": [{"value": {"int64Value": "5"}}],
+                    },
                 ]
             },
         ]
-        with mock.patch.object(collector, "monitoring_request", side_effect=pages) as request:
+        with mock.patch.object(
+            collector, "monitoring_request", side_effect=pages
+        ) as request:
             self.assertEqual(
                 collector.gcs_operation_counts("project", "token", {"bucket"}),
-                {"Class A": 2.0, "Class B": 3.5},
+                {"Class A": 2.0, "Class B": 3.5, "Free": 4.0, "Unknown": 5.0},
             )
         self.assertEqual(request.call_count, 2)
 
@@ -186,7 +237,9 @@ class HttpAndGoogleTests(unittest.TestCase):
                 "timeSeries": [{"points": [{"value": {"int64Value": "12"}}]}]
             },
         ):
-            self.assertEqual(collector.monitoring_billed_series_total("project", "token"), 12)
+            self.assertEqual(
+                collector.monitoring_billed_series_total("project", "token"), 12
+            )
         with (
             mock.patch.object(
                 collector,
@@ -203,27 +256,33 @@ class CacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = pathlib.Path(temp_dir) / "cache.json"
             self.assertIsNone(
-                collector.load_gcs_operation_cache(path, "project", {"bucket"}, "2026-07")
+                collector.load_gcs_operation_cache(
+                    path, "project", {"bucket"}, "2026-07"
+                )
             )
             valid = {
-                "version": 1,
+                "version": 2,
                 "project_id": "project",
                 "month": "2026-07",
                 "bucket_names": ["bucket"],
-                "counts": {"Class A": 1, "Class B": 2},
+                "counts": {"Class A": 1, "Class B": 2, "Free": 3, "Unknown": 4},
                 "refreshed_at": 100,
             }
             path.write_text(json.dumps(valid), encoding="utf-8")
             self.assertEqual(
-                collector.load_gcs_operation_cache(path, "project", {"bucket"}, "2026-07"),
+                collector.load_gcs_operation_cache(
+                    path, "project", {"bucket"}, "2026-07"
+                ),
                 valid,
             )
             path.write_text("[]", encoding="utf-8")
             self.assertIsNone(
-                collector.load_gcs_operation_cache(path, "project", {"bucket"}, "2026-07")
+                collector.load_gcs_operation_cache(
+                    path, "project", {"bucket"}, "2026-07"
+                )
             )
             for key, value in (
-                ("version", 2),
+                ("version", 1),
                 ("project_id", "other"),
                 ("month", "2026-06"),
                 ("bucket_names", []),
@@ -239,10 +298,17 @@ class CacheTests(unittest.TestCase):
                     )
                 )
             invalid = dict(valid)
-            invalid["counts"] = {"Class A": "bad", "Class B": 2}
+            invalid["counts"] = {
+                "Class A": "bad",
+                "Class B": 2,
+                "Free": 3,
+                "Unknown": 4,
+            }
             path.write_text(json.dumps(invalid), encoding="utf-8")
             self.assertIsNone(
-                collector.load_gcs_operation_cache(path, "project", {"bucket"}, "2026-07")
+                collector.load_gcs_operation_cache(
+                    path, "project", {"bucket"}, "2026-07"
+                )
             )
 
             usage = {
@@ -254,7 +320,9 @@ class CacheTests(unittest.TestCase):
             }
             path.write_text(json.dumps(usage), encoding="utf-8")
             self.assertEqual(
-                collector.load_google_monitoring_usage_cache(path, "project", "2026-07"),
+                collector.load_google_monitoring_usage_cache(
+                    path, "project", "2026-07"
+                ),
                 usage,
             )
             for key, value in (
@@ -297,12 +365,16 @@ class CacheTests(unittest.TestCase):
                 mock.patch.object(
                     collector,
                     "gcs_operation_counts",
-                    return_value={"Class A": 1, "Class B": 2},
+                    return_value={"Class A": 1, "Class B": 2, "Free": 3, "Unknown": 4},
                 ),
             ):
                 self.assertEqual(
                     collector.cached_gcs_operation_counts(config, {"bucket"}),
-                    ({"Class A": 1.0, "Class B": 2.0}, 1000, True),
+                    (
+                        {"Class A": 1.0, "Class B": 2.0, "Free": 3.0, "Unknown": 4.0},
+                        1000,
+                        True,
+                    ),
                 )
             self.assertEqual(gcs_path.stat().st_mode & 0o777, 0o600)
             with (
@@ -313,7 +385,7 @@ class CacheTests(unittest.TestCase):
             ):
                 self.assertEqual(
                     collector.cached_gcs_operation_counts(config, {"bucket"})[0],
-                    {"Class A": 1.0, "Class B": 2.0},
+                    {"Class A": 1.0, "Class B": 2.0, "Free": 3.0, "Unknown": 4.0},
                 )
             gcs_path.unlink()
             with (
@@ -360,7 +432,8 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
             return_value={"products": [{"title": "Cloud Monitoring", "id": "found"}]},
         ):
             self.assertEqual(
-                collector.google_cloud_product_id("Cloud Monitoring", "fallback"), "found"
+                collector.google_cloud_product_id("Cloud Monitoring", "fallback"),
+                "found",
             )
         with mock.patch.object(
             collector, "request_json", side_effect=urllib.error.URLError("expected")
@@ -378,7 +451,9 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
             }
         ]
         with (
-            mock.patch.object(collector, "google_cloud_product_id", return_value="product"),
+            mock.patch.object(
+                collector, "google_cloud_product_id", return_value="product"
+            ),
             mock.patch.object(collector, "request_json", return_value=incidents),
         ):
             self.assertEqual(
@@ -386,7 +461,9 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
                 ("Service Disruption", 0, 1),
             )
         with (
-            mock.patch.object(collector, "google_cloud_product_id", return_value="product"),
+            mock.patch.object(
+                collector, "google_cloud_product_id", return_value="product"
+            ),
             mock.patch.object(collector, "request_json", return_value=[]),
         ):
             self.assertEqual(
@@ -401,7 +478,9 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
                 ("Unknown", 0, 0),
             )
         with (
-            mock.patch.object(collector, "google_cloud_product_id", return_value="product"),
+            mock.patch.object(
+                collector, "google_cloud_product_id", return_value="product"
+            ),
             mock.patch.object(
                 collector,
                 "request_json",
@@ -444,7 +523,9 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
     def test_fail2ban_parsing(self) -> None:
         self.assertEqual(collector.normalize_ip_token("[192.0.2.1],"), "192.0.2.1")
         self.assertEqual(collector.normalize_ip_token("invalid"), "")
-        self.assertEqual(collector.format_fail2ban_expiry_date("permanent"), "permanent")
+        self.assertEqual(
+            collector.format_fail2ban_expiry_date("permanent"), "permanent"
+        )
         self.assertRegex(
             collector.format_fail2ban_expiry_date("expires=2026-07-27 09:00:00"),
             r"2026-07-27 \d{1,2}:00 (AM|PM)",
@@ -498,16 +579,29 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
 class RenderingTests(unittest.TestCase):
     def test_render_sections_and_failures(self) -> None:
         config = full_config()
-        self.assertEqual(collector.render_expected_restic_repositories({"host": host(control_node=False)}), [])
+        self.assertEqual(
+            collector.render_expected_restic_repositories(
+                {"host": host(control_node=False)}
+            ),
+            [],
+        )
         with (
-            mock.patch.object(collector, "gcs_status", return_value=("Operational", 1, 1)),
+            mock.patch.object(
+                collector, "gcs_status", return_value=("Operational", 1, 1)
+            ),
             mock.patch.object(
                 collector,
                 "cached_gcs_operation_counts",
-                return_value=({"Class A": 10, "Class B": 20}, 1000, True),
+                return_value=(
+                    {"Class A": 10, "Class B": 20, "Free": 30, "Unknown": 0},
+                    1000,
+                    True,
+                ),
             ),
             mock.patch.object(
-                collector, "google_monitoring_status", return_value=("Operational", 1, 1)
+                collector,
+                "google_monitoring_status",
+                return_value=("Operational", 1, 1),
             ),
             mock.patch.object(
                 collector,
@@ -573,7 +667,9 @@ class RenderingTests(unittest.TestCase):
                 "\n".join(collector.render_proton_metrics(config)),
             )
         self.assertEqual(
-            collector.render_proton_metrics({"host": host(), "proton": {"enabled": True}}),
+            collector.render_proton_metrics(
+                {"host": host(), "proton": {"enabled": True}}
+            ),
             [],
         )
         self.assertEqual(collector.render_fail2ban_metrics({"host": host()}), [])
@@ -583,7 +679,9 @@ class RenderingTests(unittest.TestCase):
             root = pathlib.Path(temp_dir)
             output = root / "metrics.prom"
             config_path = root / "config.json"
-            config_path.write_text(json.dumps({"host": host(control_node=False)}), encoding="utf-8")
+            config_path.write_text(
+                json.dumps({"host": host(control_node=False)}), encoding="utf-8"
+            )
             collector.atomic_write(output, "content\n", mode=0o600)
             self.assertEqual(output.stat().st_mode & 0o777, 0o600)
             with mock.patch.object(

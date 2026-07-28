@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 import pathlib
 import tempfile
 import unittest
@@ -25,10 +27,29 @@ timetracker = load_program(
 
 
 class ValidatorTests(unittest.TestCase):
+    @staticmethod
+    def changed_rule_namespace(
+        generator: str,
+        predicate: object,
+        mutation: object,
+    ) -> dict[str, object]:
+        namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        original = namespace[generator]
+
+        def changed(*args: object, **kwargs: object) -> list[dict[str, object]]:
+            rules = original(*args, **kwargs)
+            for rule in rules:
+                if predicate(rule):
+                    mutation(rule)
+            return rules
+
+        namespace[generator] = changed
+        return namespace
+
     def test_generated_alerts_and_cache_contracts(self) -> None:
         config = alerts.fixture_config()
         self.assertEqual(config["tls_mode"], "host")
-        self.assertEqual(alerts.main(), 0)
+        self.assertEqual(alerts.main([]), 0)
         self.assertEqual(cache.main(), 0)
 
         original_run_path = alerts.runpy.run_path
@@ -37,10 +58,12 @@ class ValidatorTests(unittest.TestCase):
         missing_rules["service_rules"] = lambda *args, **kwargs: []
         with mock.patch.object(alerts.runpy, "run_path", return_value=missing_rules):
             with self.assertRaisesRegex(RuntimeError, "alert contract mismatch"):
-                alerts.main()
+                alerts.main([])
         original_external = namespace["external_service_rules"]
 
-        def changed_external(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        def changed_external(
+            *args: object, **kwargs: object
+        ) -> list[dict[str, object]]:
             rules = original_external(*args, **kwargs)
             for rule in rules:
                 if rule["title"] == "GCS operation telemetry stale":
@@ -52,13 +75,166 @@ class ValidatorTests(unittest.TestCase):
             mock.patch.object(alerts.runpy, "run_path", return_value=namespace),
             self.assertRaisesRegex(RuntimeError, "must wait"),
         ):
-            alerts.main()
+            alerts.main([])
+
+    def test_live_uid_registry_validation(self) -> None:
+        registry = json.loads(alerts.UID_REGISTRY.read_text(encoding="utf-8"))
+        namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        live_rules = []
+        for identity, uid in registry.items():
+            scope, resource, check = identity.split(":", 2)
+            live_rules.append(
+                {
+                    "uid": uid,
+                    "labels": {
+                        "configured_by": "ansible",
+                        scope: resource,
+                        "check": check,
+                    },
+                }
+            )
+        alerts.validate_live_registry(namespace, registry, live_rules)
+        self.assertEqual(
+            alerts.imported_identity({"labels": {"host": "host", "check": "check"}}),
+            "host:host:check",
+        )
+        self.assertEqual(
+            alerts.imported_identity(
+                {"labels": {"domain": "example.invalid", "check": "check"}}
+            ),
+            "domain:example.invalid:check",
+        )
+        self.assertEqual(
+            alerts.imported_identity(
+                {"labels": {"service": "service", "check": "check"}}
+            ),
+            "service:service:check",
+        )
+        self.assertEqual(
+            alerts.imported_identity({"labels": {"check": "check"}}),
+            "check:check",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "count does not match"):
+            alerts.validate_live_registry(namespace, registry, live_rules[:-1])
+        live_rules[0]["uid"] = "wrong"
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            alerts.validate_live_registry(namespace, registry, live_rules)
+
+        live_rules = self.live_rules(registry)
+        identity = next(iter(registry))
+        invalid_registry = dict(registry)
+        invalid_registry[identity] = "invalid"
+        live_rules[0]["uid"] = "invalid"
+        with self.assertRaisesRegex(RuntimeError, "invalid UID"):
+            alerts.validate_live_registry(namespace, invalid_registry, live_rules)
+
+        identities = list(registry)
+        duplicate_registry = dict(registry)
+        duplicate_registry[identities[1]] = duplicate_registry[identities[0]]
+        live_rules = self.live_rules(duplicate_registry)
+        with self.assertRaisesRegex(RuntimeError, "not unique"):
+            alerts.validate_live_registry(namespace, duplicate_registry, live_rules)
+
+        changed_registry = dict(registry)
+        renamed_identity = next(
+            identity
+            for identity, uid in changed_registry.items()
+            if uid in alerts.RENAMED_TITLES
+        )
+        changed_registry[renamed_identity] = "123e4567-e89b-42d3-a456-426614174000"
+        with self.assertRaisesRegex(RuntimeError, "exactly eight"):
+            alerts.validate_live_registry(
+                namespace, changed_registry, self.live_rules(changed_registry)
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export = pathlib.Path(temp_dir) / "live.json"
+            export.write_text(json.dumps(self.live_rules(registry)), encoding="utf-8")
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                self.assertEqual(alerts.main(["--live-export", str(export)]), 0)
+            self.assertIn("identity_created=0", stdout.getvalue())
+
+    @staticmethod
+    def live_rules(registry: dict[str, str]) -> list[dict[str, object]]:
+        rules = []
+        for identity, uid in registry.items():
+            scope, resource, check = identity.split(":", 2)
+            rules.append(
+                {
+                    "uid": uid,
+                    "labels": {
+                        "configured_by": "ansible",
+                        scope: resource,
+                        "check": check,
+                    },
+                }
+            )
+        return rules
+
+    def test_generated_alert_validator_rejects_format_and_identity_drift(self) -> None:
+        cases = (
+            (
+                "external_service_rules",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
+                lambda rule: rule["annotations"].update(check_value="bad"),
+                "comma-grouped integer",
+            ),
+            (
+                "host_metric_rules",
+                lambda rule: rule["labels"]["check"] == "filesystem_inode",
+                lambda rule: rule["annotations"].update(check_value="bad"),
+                "fixed percentage",
+            ),
+            (
+                "host_metric_rules",
+                lambda rule: rule["labels"]["check"] == "cpu_utilization",
+                lambda rule: rule["annotations"].update(check_value="bad"),
+                "format changed",
+            ),
+            (
+                "site_rules",
+                lambda rule: rule["labels"]["check"] == "ssl_certificate_expiring",
+                lambda rule: rule["annotations"].update(check_value="bad"),
+                "duration annotation",
+            ),
+            (
+                "host_metric_rules",
+                lambda rule: rule["uid"] in alerts.RENAMED_TITLES,
+                lambda rule: rule.update(title="bad"),
+                "title mismatch",
+            ),
+        )
+        for generator, predicate, mutation, message in cases:
+            with self.subTest(message=message):
+                namespace = self.changed_rule_namespace(generator, predicate, mutation)
+                with (
+                    mock.patch.object(alerts.runpy, "run_path", return_value=namespace),
+                    self.assertRaisesRegex(RuntimeError, message),
+                ):
+                    alerts.main([])
+
+        config = alerts.fixture_config()
+        config["uid_registry"] = dict(config["uid_registry"])
+        config["uid_registry"].pop(next(iter(config["uid_registry"])))
+        with (
+            mock.patch.object(alerts, "fixture_config", return_value=config),
+            self.assertRaisesRegex(RuntimeError, "Expected 76"),
+        ):
+            alerts.main([])
 
     def test_cache_validator_accepts_good_and_rejects_bad_values(self) -> None:
-        counts = {"Class A": 11.0, "Class B": 21.0}
+        counts = {"Class A": 11.0, "Class B": 21.0, "Free": 31.0, "Unknown": 0.0}
         cache.validate_initial_refresh(counts, 1_000, True, 0o600)
         for values in (
-            ({"Class A": 0.0, "Class B": 0.0}, 1_000, True, 0o600),
+            (
+                {"Class A": 0.0, "Class B": 0.0, "Free": 0.0, "Unknown": 0.0},
+                1_000,
+                True,
+                0o600,
+            ),
             (counts, 999, True, 0o600),
             (counts, 1_000, False, 0o600),
         ):
@@ -75,7 +251,7 @@ class ValidatorTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "not reused"):
                 cache.validate_fresh_reuse(cached, counts, 1_000, query_count)
 
-        refreshed = {"Class A": 12.0, "Class B": 22.0}
+        refreshed = {"Class A": 12.0, "Class B": 22.0, "Free": 32.0, "Unknown": 0.0}
         cache.validate_expired_refresh(refreshed, 4_601, True)
         for values in (
             (counts, 4_601, True),
@@ -132,7 +308,9 @@ class ValidatorTests(unittest.TestCase):
 
         with (
             mock.patch("sys.argv", ["validate-rendered-alloy-config"]),
-            mock.patch.object(alloy.subprocess, "run", return_value=mock.Mock(returncode=0)),
+            mock.patch.object(
+                alloy.subprocess, "run", return_value=mock.Mock(returncode=0)
+            ),
         ):
             self.assertEqual(alloy.main(), 0)
         with (
@@ -163,7 +341,9 @@ class ValidatorTests(unittest.TestCase):
                 timetracker.validate(broken)
 
             broken = dict(rendered)
-            broken["grayhaven-timetracker.container"] += "\nPublishPort=0.0.0.0:8000:8000\n"
+            broken["grayhaven-timetracker.container"] += (
+                "\nPublishPort=0.0.0.0:8000:8000\n"
+            )
             with self.assertRaisesRegex(RuntimeError, "loopback-only"):
                 timetracker.validate(broken)
 

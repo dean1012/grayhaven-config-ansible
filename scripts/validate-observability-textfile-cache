@@ -23,7 +23,12 @@ def validate_initial_refresh(
     cache_mode: int,
 ) -> None:
     """Validate the first cache population and its protected metadata."""
-    if counts != {"Class A": 11.0, "Class B": 21.0} or refreshed_at != 1_000 or not fresh:
+    if counts != {
+        "Class A": 11.0,
+        "Class B": 21.0,
+        "Free": 31.0,
+        "Unknown": 0.0,
+    } or refreshed_at != 1_000 or not fresh:
         raise RuntimeError("Initial GCS operation telemetry refresh failed")
     if cache_mode != 0o600:
         raise RuntimeError("GCS operation telemetry cache must use mode 0600")
@@ -44,7 +49,12 @@ def validate_expired_refresh(
     counts: dict[str, float], refreshed_at: int, fresh: bool
 ) -> None:
     """Validate collection after the refresh interval expires."""
-    if counts != {"Class A": 12.0, "Class B": 22.0} or refreshed_at != 4_601 or not fresh:
+    if counts != {
+        "Class A": 12.0,
+        "Class B": 22.0,
+        "Free": 32.0,
+        "Unknown": 0.0,
+    } or refreshed_at != 4_601 or not fresh:
         raise RuntimeError("Expired GCS operation telemetry cache was not refreshed")
 
 
@@ -93,7 +103,12 @@ def main() -> int:
         query_count[0] += 1
         if bucket_names != buckets:
             raise RuntimeError("Unexpected bucket set")
-        return {"Class A": 10.0 + query_count[0], "Class B": 20.0 + query_count[0]}
+        return {
+            "Class A": 10.0 + query_count[0],
+            "Class B": 20.0 + query_count[0],
+            "Free": 30.0 + query_count[0],
+            "Unknown": 0.0,
+        }
 
     with tempfile.TemporaryDirectory() as temp_dir:
         cache_path = pathlib.Path(temp_dir) / "gcs-operation-counts.json"
