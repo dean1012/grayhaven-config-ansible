@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pathlib
 import tempfile
 import unittest
@@ -28,7 +29,7 @@ class ValidatorTests(unittest.TestCase):
     def test_generated_alerts_and_cache_contracts(self) -> None:
         config = alerts.fixture_config()
         self.assertEqual(config["tls_mode"], "host")
-        self.assertEqual(alerts.main(), 0)
+        self.assertEqual(alerts.main([]), 0)
         self.assertEqual(cache.main(), 0)
 
         original_run_path = alerts.runpy.run_path
@@ -37,10 +38,12 @@ class ValidatorTests(unittest.TestCase):
         missing_rules["service_rules"] = lambda *args, **kwargs: []
         with mock.patch.object(alerts.runpy, "run_path", return_value=missing_rules):
             with self.assertRaisesRegex(RuntimeError, "alert contract mismatch"):
-                alerts.main()
+                alerts.main([])
         original_external = namespace["external_service_rules"]
 
-        def changed_external(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        def changed_external(
+            *args: object, **kwargs: object
+        ) -> list[dict[str, object]]:
             rules = original_external(*args, **kwargs)
             for rule in rules:
                 if rule["title"] == "GCS operation telemetry stale":
@@ -52,13 +55,39 @@ class ValidatorTests(unittest.TestCase):
             mock.patch.object(alerts.runpy, "run_path", return_value=namespace),
             self.assertRaisesRegex(RuntimeError, "must wait"),
         ):
-            alerts.main()
+            alerts.main([])
+
+    def test_live_uid_registry_validation(self) -> None:
+        registry = json.loads(alerts.UID_REGISTRY.read_text(encoding="utf-8"))
+        namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        live_rules = []
+        for identity, uid in registry.items():
+            scope, resource, check = identity.split(":", 2)
+            live_rules.append(
+                {
+                    "uid": uid,
+                    "labels": {
+                        "configured_by": "ansible",
+                        scope: resource,
+                        "check": check,
+                    },
+                }
+            )
+        alerts.validate_live_registry(namespace, registry, live_rules)
+        live_rules[0]["uid"] = "wrong"
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            alerts.validate_live_registry(namespace, registry, live_rules)
 
     def test_cache_validator_accepts_good_and_rejects_bad_values(self) -> None:
-        counts = {"Class A": 11.0, "Class B": 21.0}
+        counts = {"Class A": 11.0, "Class B": 21.0, "Free": 31.0, "Unknown": 0.0}
         cache.validate_initial_refresh(counts, 1_000, True, 0o600)
         for values in (
-            ({"Class A": 0.0, "Class B": 0.0}, 1_000, True, 0o600),
+            (
+                {"Class A": 0.0, "Class B": 0.0, "Free": 0.0, "Unknown": 0.0},
+                1_000,
+                True,
+                0o600,
+            ),
             (counts, 999, True, 0o600),
             (counts, 1_000, False, 0o600),
         ):
@@ -75,7 +104,7 @@ class ValidatorTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "not reused"):
                 cache.validate_fresh_reuse(cached, counts, 1_000, query_count)
 
-        refreshed = {"Class A": 12.0, "Class B": 22.0}
+        refreshed = {"Class A": 12.0, "Class B": 22.0, "Free": 32.0, "Unknown": 0.0}
         cache.validate_expired_refresh(refreshed, 4_601, True)
         for values in (
             (counts, 4_601, True),
@@ -132,7 +161,9 @@ class ValidatorTests(unittest.TestCase):
 
         with (
             mock.patch("sys.argv", ["validate-rendered-alloy-config"]),
-            mock.patch.object(alloy.subprocess, "run", return_value=mock.Mock(returncode=0)),
+            mock.patch.object(
+                alloy.subprocess, "run", return_value=mock.Mock(returncode=0)
+            ),
         ):
             self.assertEqual(alloy.main(), 0)
         with (
@@ -163,7 +194,9 @@ class ValidatorTests(unittest.TestCase):
                 timetracker.validate(broken)
 
             broken = dict(rendered)
-            broken["grayhaven-timetracker.container"] += "\nPublishPort=0.0.0.0:8000:8000\n"
+            broken["grayhaven-timetracker.container"] += (
+                "\nPublishPort=0.0.0.0:8000:8000\n"
+            )
             with self.assertRaisesRegex(RuntimeError, "loopback-only"):
                 timetracker.validate(broken)
 

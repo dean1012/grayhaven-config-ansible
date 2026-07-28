@@ -3,16 +3,33 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 import pathlib
 import runpy
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 ALERT_SYNC = REPO_ROOT / "roles" / "observability" / "files" / "grayhaven-grafana-alert-sync"
+UID_REGISTRY = REPO_ROOT / "roles" / "observability" / "files" / "grafana-alert-rule-uids.json"
+RENAMED_TITLES = {
+    "gh-79edbe7173f989f291f19515": "grayhaven-core-prod-web-01 filesystem space utilization",
+    "gh-bf07dab7be3a98d5cf6328c7": "grayhaven-sec-prod-bastion-01 filesystem space utilization",
+    "gh-d3ff61fcdc6c03e6335beec4": "grayhaven-core-prod-web-01 filesystem inode utilization",
+    "gh-6b66fb489062cc56929fc903": "grayhaven-sec-prod-bastion-01 filesystem inode utilization",
+}
+COMMA_CHECKS = {
+    "gcs_stale_bucket_count",
+    "gcs_class_a_monthly_operations",
+    "gcs_class_b_monthly_operations",
+    "google_monitoring_monthly_billed_series",
+}
 
 
 def fixture_config() -> dict[str, object]:
     return {
+        "uid_registry": json.loads(UID_REGISTRY.read_text(encoding="utf-8")),
+        "uid_registry_file": str(UID_REGISTRY),
         "grafana": {
             "contact_point": "Grayhaven IRM",
             "evaluation_group": "grayhaven-production-1m",
@@ -68,7 +85,58 @@ def fixture_config() -> dict[str, object]:
     }
 
 
-def main() -> int:
+def imported_identity(rule: dict[str, object]) -> str:
+    labels = rule["labels"]
+    check = labels["check"]
+    if "host" in labels:
+        return f"host:{labels['host']}:{check}"
+    if "domain" in labels:
+        return f"domain:{labels['domain']}:{check}"
+    if "service" in labels:
+        return f"service:{labels['service']}:{check}"
+    return f"check:{check}"
+
+
+def validate_live_registry(
+    namespace: dict[str, object], registry: dict[str, str], live_rules: list[dict[str, object]]
+) -> None:
+    managed = [
+        rule
+        for rule in live_rules
+        if rule.get("labels", {}).get("configured_by") == "ansible"
+    ]
+    if len(managed) != len(registry):
+        raise RuntimeError(
+            f"Live managed-rule count does not match registry: live={len(managed)}, "
+            f"registry={len(registry)}"
+        )
+    imported = {imported_identity(rule): rule["uid"] for rule in managed}
+    if imported != registry:
+        raise RuntimeError("Live managed-rule UID inventory does not match the registry")
+    if not all(namespace["valid_rule_uid"](uid) for uid in registry.values()):
+        raise RuntimeError("Registry contains an invalid UID")
+    if len(set(registry.values())) != len(registry):
+        raise RuntimeError("Registry UIDs are not unique")
+    expected_updates = {
+        rule["uid"]
+        for rule in managed
+        if rule["uid"] in RENAMED_TITLES
+        or rule.get("labels", {}).get("check") in COMMA_CHECKS
+    }
+    if len(expected_updates) != 8:
+        raise RuntimeError(
+            f"Expected exactly eight alert updates, found {len(expected_updates)}"
+        )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--live-export",
+        type=pathlib.Path,
+        help="Validate the committed UID registry against a Grafana provisioning export",
+    )
+    args = parser.parse_args(argv)
     namespace = runpy.run_path(str(ALERT_SYNC))
     config = fixture_config()
     rules = [
@@ -103,6 +171,33 @@ def main() -> int:
         raise RuntimeError(
             "Generated GCS operation telemetry stale alert must wait for the initial refresh"
         )
+    by_check = {rule["labels"]["check"]: rule for rule in rules}
+    for check in COMMA_CHECKS:
+        if by_check[check]["annotations"].get("check_value") != namespace["COMMA_INTEGER_TEMPLATE"]:
+            raise RuntimeError(f"Generated {check} annotation is not a full comma-grouped integer")
+    if by_check["filesystem_inode"]["annotations"].get("check_value") != (
+        '{{ printf "%.3f" $values.A.Value }}%'
+    ):
+        raise RuntimeError("Generated inode annotation is not a fixed percentage")
+    for check in ("cpu_utilization", "memory_utilization", "filesystem_space", "swap_utilization"):
+        if by_check[check]["annotations"].get("check_value") != "{{ humanize $values.A.Value }}%":
+            raise RuntimeError(f"Excluded {check} annotation format changed")
+    if by_check["ssl_certificate_expiring"]["annotations"].get("check_value") != (
+        "{{ humanizeDuration $values.A.Value }}"
+    ):
+        raise RuntimeError("Certificate duration annotation format changed")
+    generated_by_uid = {rule["uid"]: rule for rule in rules}
+    for uid, title in RENAMED_TITLES.items():
+        if uid in generated_by_uid and generated_by_uid[uid]["title"] != title:
+            raise RuntimeError(f"Generated title mismatch for permanent UID {uid}")
+
+    registry = config["uid_registry"]
+    if len(registry) != 76:
+        raise RuntimeError(f"Expected 76 permanent rule identities, found {len(registry)}")
+    if args.live_export:
+        live_rules = json.loads(args.live_export.read_text(encoding="utf-8"))
+        validate_live_registry(namespace, registry, live_rules)
+        print("identity_created=0 identity_updated=0 identity_deleted=0 expected_rule_updates=8")
     return 0
 
 

@@ -55,9 +55,17 @@ def complete_config() -> dict[str, object]:
 
 class AlertRuleTests(unittest.TestCase):
     def test_helpers_and_rule_generation(self) -> None:
-        self.assertEqual(alert_sync.stable_uid("Title"), alert_sync.stable_uid("Title"))
+        self.assertTrue(alert_sync.valid_rule_uid("gh-f06f6e7870b532624240919a"))
+        self.assertTrue(
+            alert_sync.valid_rule_uid("123e4567-e89b-42d3-a456-426614174000")
+        )
+        self.assertFalse(alert_sync.valid_rule_uid("not-a-uid"))
+        with self.assertRaisesRegex(alert_sync.GrafanaError, "not registered"):
+            alert_sync.rule_uid("missing", {})
         self.assertEqual(alert_sync.promql_string('a"b\\c'), 'a\\"b\\\\c')
-        self.assertIn(r"example\\.invalid", alert_sync.domain_regex(["example.invalid"]))
+        self.assertIn(
+            r"example\\.invalid", alert_sync.domain_regex(["example.invalid"])
+        )
         self.assertEqual(alert_sync.duration_seconds(5), 5)
         self.assertEqual(alert_sync.duration_seconds("2h"), 7200)
         with self.assertRaises(alert_sync.GrafanaError):
@@ -68,6 +76,8 @@ class AlertRuleTests(unittest.TestCase):
         self.assertEqual(query["model"]["expr"], "up")
         self.assertEqual(threshold["model"]["conditions"][0]["evaluator"]["type"], "lt")
         rule = alert_sync.alert_rule(
+            identity="test:example",
+            uid_registry={"test:example": "123e4567-e89b-42d3-a456-426614174000"},
             title="Example",
             folder_uid="folder",
             rule_group="group",
@@ -79,7 +89,10 @@ class AlertRuleTests(unittest.TestCase):
             annotations={"summary": "Example"},
             contact_point="IRM",
         )
-        self.assertEqual(rule["labels"][alert_sync.MANAGED_LABEL], alert_sync.MANAGED_VALUE)
+        self.assertEqual(
+            rule["labels"][alert_sync.MANAGED_LABEL], alert_sync.MANAGED_VALUE
+        )
+        self.assertEqual(rule["uid"], "123e4567-e89b-42d3-a456-426614174000")
 
         config = complete_config()
         desired = alert_sync.desired_rules(config, "folder", "prom")
@@ -87,7 +100,9 @@ class AlertRuleTests(unittest.TestCase):
         self.assertIn("grayhaven-core-prod-web-01 Time Tracker service", titles)
         self.assertIn("Google Monitoring series >= 80% usage", titles)
         self.assertEqual(len(desired), len(set(desired)))
-        self.assertTrue(alert_sync.is_managed(next(iter(desired.values())), "grayhaven"))
+        self.assertTrue(
+            alert_sync.is_managed(next(iter(desired.values())), "grayhaven")
+        )
         self.assertFalse(alert_sync.is_managed({}, "grayhaven"))
         self.assertEqual(
             alert_sync.comparable({**rule, "unmanaged": True}),
@@ -101,7 +116,9 @@ class AlertRuleTests(unittest.TestCase):
     def test_grafana_client_request_and_helpers(self) -> None:
         client = alert_sync.GrafanaClient("https://grafana.example.invalid/", "token")
         with mock.patch.object(
-            alert_sync.urllib.request, "urlopen", return_value=Response('{"uid":"prom"}')
+            alert_sync.urllib.request,
+            "urlopen",
+            return_value=Response('{"uid":"prom"}'),
         ):
             self.assertEqual(client.request("GET", "/test"), {"uid": "prom"})
         with mock.patch.object(
@@ -109,7 +126,9 @@ class AlertRuleTests(unittest.TestCase):
         ):
             self.assertIsNone(client.request("DELETE", "/test", expected=(204,)))
 
-        error = urllib.error.HTTPError("url", 400, "bad", {}, io.BytesIO(b"bad request"))
+        error = urllib.error.HTTPError(
+            "url", 400, "bad", {}, io.BytesIO(b"bad request")
+        )
         with (
             mock.patch.object(alert_sync.urllib.request, "urlopen", side_effect=error),
             self.assertRaisesRegex(alert_sync.GrafanaError, "HTTP 400"),
@@ -135,7 +154,9 @@ class AlertRuleTests(unittest.TestCase):
         ):
             self.assertEqual(client.request("GET", "/test"), {})
         with (
-            mock.patch.object(alert_sync.urllib.request, "urlopen", return_value=Response("{}", 201)),
+            mock.patch.object(
+                alert_sync.urllib.request, "urlopen", return_value=Response("{}", 201)
+            ),
             self.assertRaisesRegex(alert_sync.GrafanaError, "unexpected HTTP status"),
         ):
             client.request("GET", "/test")
@@ -204,6 +225,22 @@ class AlertRuleTests(unittest.TestCase):
             }
         ]
         config["sites"][0]["dev_domain"] = "dev.example.invalid"
+        config["uid_registry"].update(
+            {
+                "host:bastion.example.invalid:ansible_convergence": "00000000-0000-4000-8000-000000000001",
+                "host:bastion.example.invalid:common_service": "00000000-0000-4000-8000-000000000002",
+                "host:bastion.example.invalid:control_service": "00000000-0000-4000-8000-000000000003",
+                "host:bastion.example.invalid:cpu_utilization": "00000000-0000-4000-8000-000000000004",
+                "host:bastion.example.invalid:filesystem_inode": "00000000-0000-4000-8000-000000000005",
+                "host:bastion.example.invalid:filesystem_space": "00000000-0000-4000-8000-000000000006",
+                "host:bastion.example.invalid:memory_utilization": "00000000-0000-4000-8000-000000000007",
+                "host:bastion.example.invalid:metrics_data": "00000000-0000-4000-8000-000000000008",
+                "host:bastion.example.invalid:restic_stale_backup": "00000000-0000-4000-8000-000000000009",
+                "host:bastion.example.invalid:swap_utilization": "00000000-0000-4000-8000-000000000010",
+                "host:grayhaven-core-prod-web-01.grayhavensystems.com:common_service": "00000000-0000-4000-8000-000000000011",
+                "domain:dev.example.invalid:dev_basic_auth_401": "00000000-0000-4000-8000-000000000012",
+            }
+        )
         titles = {
             rule["title"]
             for rule in alert_sync.desired_rules(config, "folder", "prom").values()
@@ -271,7 +308,9 @@ class AlertRuleTests(unittest.TestCase):
                 mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
             ):
                 self.assertEqual(alert_sync.main(), 0)
-            self.assertIn("changed=true created=1 updated=2 deleted=3", stdout.getvalue())
+            self.assertIn(
+                "changed=true created=1 updated=2 deleted=3", stdout.getvalue()
+            )
             with (
                 mock.patch(
                     "sys.argv",
@@ -284,7 +323,9 @@ class AlertRuleTests(unittest.TestCase):
                         "10",
                     ],
                 ),
-                mock.patch.object(alert_sync, "create_initial_silence", return_value="id"),
+                mock.patch.object(
+                    alert_sync, "create_initial_silence", return_value="id"
+                ),
                 mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
             ):
                 self.assertEqual(alert_sync.main(), 0)
