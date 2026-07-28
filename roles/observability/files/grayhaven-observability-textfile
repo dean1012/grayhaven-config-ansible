@@ -26,24 +26,51 @@ CONFIG_PATH = pathlib.Path("/etc/grayhaven/observability/textfile-metrics.json")
 TEXTFILE_DIR = pathlib.Path("/var/lib/grayhaven/observability/textfile")
 OUTPUT_PATH = TEXTFILE_DIR / "grayhaven.prom"
 GCS_MONITORING_SCOPE = "https://www.googleapis.com/auth/monitoring.read"
-GCS_OPERATION_CACHE_VERSION = 1
+GCS_OPERATION_CACHE_VERSION = 2
 GOOGLE_MONITORING_USAGE_CACHE_VERSION = 1
-GCS_OPERATION_CLASS_A_TERMS = (
-    "compose",
-    "copy",
-    "create",
-    "delete",
-    "insert",
-    "list",
-    "patch",
-    "rewrite",
-    "update",
-    "clone",
-)
-GCS_OPERATION_CLASS_B_TERMS = (
-    "get",
-    "read",
-)
+GCS_OPERATION_CLASSES = {
+    "CloneObject.From": "Class A",
+    "ComposeObject": "Class A",
+    "CopyObject": "Class A",
+    "CreateBucket": "Class A",
+    "ListBuckets": "Class A",
+    "ListObjects": "Class A",
+    "MoveObject": "Class A",
+    "RewriteObject": "Class A",
+    "UpdateBucket": "Class A",
+    "UpdateBucketMetadata": "Class A",
+    "UpdateObject": "Class A",
+    "WriteObject": "Class A",
+    "storage.buckets.insert": "Class A",
+    "storage.buckets.list": "Class A",
+    "storage.buckets.patch": "Class A",
+    "storage.buckets.setIamPolicy": "Class A",
+    "storage.buckets.update": "Class A",
+    "storage.objects.compose": "Class A",
+    "storage.objects.copy": "Class A",
+    "storage.objects.insert": "Class A",
+    "storage.objects.list": "Class A",
+    "storage.objects.patch": "Class A",
+    "storage.objects.restore": "Class A",
+    "storage.objects.rewrite": "Class A",
+    "storage.objects.setIamPolicy": "Class A",
+    "storage.objects.update": "Class A",
+    "GetBucket": "Class B",
+    "GetBucketMetadata": "Class B",
+    "GetIamPolicy": "Class B",
+    "GetObject": "Class B",
+    "GetObjectMetadata": "Class B",
+    "ReadObject": "Class B",
+    "storage.buckets.get": "Class B",
+    "storage.buckets.getIamPolicy": "Class B",
+    "storage.objects.get": "Class B",
+    "storage.objects.getIamPolicy": "Class B",
+    "DeleteBucket": "Free",
+    "DeleteObject": "Free",
+    "storage.buckets.delete": "Free",
+    "storage.objects.delete": "Free",
+}
+GCS_OPERATION_CLASSES_REPORTED = ("Class A", "Class B", "Free", "Unknown")
 GOOGLE_CLOUD_PRODUCTS_URL = "https://status.cloud.google.com/products.json"
 GOOGLE_CLOUD_INCIDENTS_URL = "https://status.cloud.google.com/incidents.json"
 GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE = "Google Cloud Storage"
@@ -182,12 +209,7 @@ def point_value(point: dict[str, Any]) -> float:
 
 
 def gcs_operation_class(method: str) -> str:
-    normalized_method = method.lower()
-    if any(term in normalized_method for term in GCS_OPERATION_CLASS_A_TERMS):
-        return "Class A"
-    if any(term in normalized_method for term in GCS_OPERATION_CLASS_B_TERMS):
-        return "Class B"
-    return ""
+    return GCS_OPERATION_CLASSES.get(method, "Unknown")
 
 
 def gcs_operation_counts(
@@ -196,7 +218,7 @@ def gcs_operation_counts(
     bucket_names: set[str],
 ) -> dict[str, float]:
     if not bucket_names:
-        return {"Class A": 0.0, "Class B": 0.0}
+        return {operation_class: 0.0 for operation_class in GCS_OPERATION_CLASSES_REPORTED}
 
     end_time = datetime.now(timezone.utc)
     start_time = end_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -217,7 +239,7 @@ def gcs_operation_counts(
         "aggregation.perSeriesAligner": "ALIGN_DELTA",
         "pageSize": "10000",
     }
-    counts = {"Class A": 0.0, "Class B": 0.0}
+    counts = {operation_class: 0.0 for operation_class in GCS_OPERATION_CLASSES_REPORTED}
 
     while True:
         response = monitoring_request(project_id, "timeSeries", query, token)
@@ -228,9 +250,6 @@ def gcs_operation_counts(
 
             method = str(series.get("metric", {}).get("labels", {}).get("method", ""))
             operation_class = gcs_operation_class(method)
-            if not operation_class:
-                continue
-
             counts[operation_class] += sum(point_value(point) for point in series.get("points", []))
 
         next_page = response.get("nextPageToken")
@@ -264,7 +283,7 @@ def load_gcs_operation_cache(
         return None
     if not all(
         isinstance(counts.get(operation_class), (int, float))
-        for operation_class in ("Class A", "Class B")
+        for operation_class in GCS_OPERATION_CLASSES_REPORTED
     ):
         return None
     return cache
@@ -309,7 +328,7 @@ def cached_gcs_operation_counts(
     refreshed_at = int(cache["refreshed_at"])
     counts = {
         operation_class: float(cache["counts"][operation_class])
-        for operation_class in ("Class A", "Class B")
+        for operation_class in GCS_OPERATION_CLASSES_REPORTED
     }
     return counts, refreshed_at, now - refreshed_at <= stale_seconds
 
