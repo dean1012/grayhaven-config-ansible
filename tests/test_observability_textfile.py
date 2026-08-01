@@ -153,6 +153,17 @@ class HttpAndGoogleTests(unittest.TestCase):
             self.assertEqual((start, end, actual_month), (utc(start_value), utc(end_value), month))
 
         self.assertEqual(collector.GOOGLE_BILLING_TIMEZONE.key, "America/Los_Angeles")
+        with mock.patch.object(collector, "datetime") as clock:
+            clock.now.return_value = utc("2026-08-01T06:59:59Z")
+            self.assertEqual(
+                collector.google_billing_window(),
+                (
+                    utc("2026-07-01T07:00:00Z"),
+                    utc("2026-08-01T06:59:59Z"),
+                    "2026-07",
+                ),
+            )
+            clock.now.assert_called_once_with(collector.timezone.utc)
         with self.assertRaisesRegex(ValueError, "timezone-aware"):
             collector.google_billing_window(datetime(2026, 8, 1, 7, 0, 0))
         with (
@@ -553,6 +564,15 @@ class CacheTests(unittest.TestCase):
                     collector.cached_google_monitoring_usage(config),
                     (123.0, 2000, False, "2026-07"),
                 )
+            usage_path.unlink()
+            with (
+                mock.patch.object(collector, "google_billing_window", return_value=window_at(2200)),
+                mock.patch.object(
+                    collector, "monitoring_token", side_effect=RuntimeError("expected")
+                ),
+                self.assertRaises(RuntimeError),
+            ):
+                collector.cached_google_monitoring_usage(config)
 
     def test_refresh_cadence_before_at_and_after_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -594,6 +614,10 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
         self.assertTrue(collector.location_matches("US-EAST1", []))
         self.assertTrue(collector.location_matches("US", [{"title": "United States"}]))
         self.assertTrue(collector.location_matches("US-EAST1", [{"id": "global"}]))
+        self.assertTrue(collector.location_matches("US-EAST1", [{"id": "us-east1"}]))
+        self.assertTrue(
+            collector.location_matches("US-EAST1", [{"title": "region us-east1 zone"}])
+        )
         self.assertFalse(collector.location_matches("US-EAST1", [{"id": "europe"}]))
         with mock.patch.object(
             collector,
@@ -606,6 +630,15 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
             )
         with mock.patch.object(
             collector, "request_json", side_effect=urllib.error.URLError("expected")
+        ):
+            self.assertEqual(
+                collector.google_cloud_product_id("Cloud Monitoring", "fallback"),
+                "fallback",
+            )
+        with mock.patch.object(
+            collector,
+            "request_json",
+            return_value={"products": [{"title": "Other", "id": "other"}]},
         ):
             self.assertEqual(
                 collector.google_cloud_product_id("Cloud Monitoring", "fallback"),
@@ -691,6 +724,7 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
 
     def test_fail2ban_parsing(self) -> None:
         self.assertEqual(collector.normalize_ip_token("[192.0.2.1],"), "192.0.2.1")
+        self.assertEqual(collector.normalize_ip_token("192.0.2.1:"), "192.0.2.1")
         self.assertEqual(collector.normalize_ip_token("invalid"), "")
         self.assertEqual(
             collector.format_fail2ban_expiry_date("permanent"), "permanent"
@@ -698,6 +732,10 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
         self.assertRegex(
             collector.format_fail2ban_expiry_date("expires=2026-07-27 09:00:00"),
             r"2026-07-27 \d{1,2}:00 (AM|PM)",
+        )
+        self.assertEqual(
+            collector.format_fail2ban_expiry_date("expires=2026-02-30 09:00:00"),
+            "expires=2026-02-30 09:00:00",
         )
         success = subprocess.CompletedProcess(
             [],
@@ -722,6 +760,18 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
             ),
         ):
             self.assertIn("192.0.2.1", collector.fail2ban_ban_expiry_dates("sshd"))
+        with mock.patch.object(
+            collector.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                [],
+                0,
+                stdout="ignored-token 192.0.2.2 2026-07-27 09:00:00\n",
+                stderr="",
+            ),
+        ):
+            expiry_dates = collector.fail2ban_ban_expiry_dates("sshd")
+        self.assertIn("192.0.2.2", expiry_dates)
         for result in (
             OSError("expected"),
             subprocess.CompletedProcess([], 1, stdout="", stderr=""),
@@ -743,6 +793,20 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
             return_value=subprocess.CompletedProcess([], 1, stdout="", stderr=""),
         ):
             self.assertEqual(collector.fail2ban_status("sshd"), (0, 0, 0, []))
+        malformed_counts = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=(
+                "|- Currently banned: many\n"
+                "|- Total banned: unknown\n"
+                "`- Banned IP list: 192.0.2.3\n"
+            ),
+            stderr="",
+        )
+        with mock.patch.object(collector.subprocess, "run", return_value=malformed_counts):
+            self.assertEqual(
+                collector.fail2ban_status("sshd"), (1, 0, 0, ["192.0.2.3"])
+            )
 
 
 class RenderingTests(unittest.TestCase):

@@ -117,11 +117,16 @@ class ConfigurationAndHtmlTests(unittest.TestCase):
             source.mkdir()
             (source / "index.html").write_text(html, encoding="utf-8")
             (source / "asset.txt").write_text("asset", encoding="utf-8")
+            (source / "nested").mkdir()
+            (source / "nested" / "file.txt").write_text("nested", encoding="utf-8")
+            (source / "broken-link").symlink_to(source / "missing-target")
             (target / "stale").mkdir(parents=True)
             (target / "stale" / "file").write_text("stale", encoding="utf-8")
             self.assertTrue(deploy.render_dev_source(source, target))
             self.assertIn("[Dev]", (target / "index.html").read_text(encoding="utf-8"))
             self.assertEqual((target / "asset.txt").read_text(encoding="utf-8"), "asset")
+            self.assertEqual((target / "nested" / "file.txt").read_text(encoding="utf-8"), "nested")
+            self.assertFalse((target / "broken-link").exists())
             self.assertFalse((target / "stale").exists())
             self.assertFalse(deploy.render_dev_source(source, target))
             self.assertFalse(deploy.inject_dev_cues(target))
@@ -164,6 +169,14 @@ class DeploymentHelperTests(unittest.TestCase):
             deploy.run_command(["true"], user="ansible", cwd=pathlib.Path("/tmp"))
             self.assertEqual(deploy.run_output(["echo"], user="ansible"), "output")
             self.assertTrue(deploy.git_commit_is_ancestor(pathlib.Path("/tmp"), "a", "b"))
+            self.assertEqual(
+                run.call_args_list[0].args[0],
+                ["runuser", "-u", "ansible", "--", "true"],
+            )
+            self.assertEqual(
+                run.call_args_list[1].args[0],
+                ["runuser", "-u", "ansible", "--", "echo"],
+            )
         with (
             mock.patch.object(deploy, "run_command") as command,
             mock.patch.object(deploy, "run_output", return_value="sha"),
@@ -242,6 +255,71 @@ class DeploymentHelperTests(unittest.TestCase):
                     delivery_id="delivery",
                     role="coordinator",
                 )
+
+            item.branches["main"] = deploy.BranchDeployment(
+                name="main",
+                checkout=item.branches["main"].checkout,
+                source=item.branches["main"].source,
+                destination=item.branches["main"].destination,
+                render_source=root / "missing-render-source",
+            )
+            with (
+                mock.patch.object(deploy, "git_branch_head", return_value=sha),
+                mock.patch.object(deploy, "git_commit_is_ancestor", return_value=False),
+                mock.patch.object(deploy, "run_command"),
+                self.assertRaisesRegex(deploy.DeployError, "does not contain"),
+            ):
+                deploy.deploy_branch(
+                    item,
+                    "main",
+                    sha,
+                    state_dir=state,
+                    delivery_id="delivery",
+                    role="coordinator",
+                    force=True,
+                )
+
+            item.branches["main"] = deploy.BranchDeployment(
+                name="main",
+                checkout=item.branches["main"].checkout,
+                source=root / "missing-source",
+                destination=item.branches["main"].destination,
+                render_source=None,
+            )
+            with (
+                mock.patch.object(deploy, "git_branch_head", return_value=sha),
+                mock.patch.object(deploy, "git_commit_is_ancestor", return_value=False),
+                mock.patch.object(deploy, "run_command"),
+                self.assertRaisesRegex(deploy.DeployError, "does not contain"),
+            ):
+                deploy.deploy_branch(
+                    item,
+                    "main",
+                    sha,
+                    state_dir=state,
+                    delivery_id="delivery",
+                    role="coordinator",
+                    force=True,
+                )
+
+            with (
+                mock.patch.object(deploy, "git_branch_head", return_value=sha),
+                mock.patch.object(deploy, "run_command"),
+                mock.patch.object(deploy, "restore_selinux_context"),
+                mock.patch.object(deploy, "inject_dev_cues") as inject,
+            ):
+                self.assertEqual(
+                    deploy.deploy_branch(
+                        item,
+                        "dev",
+                        sha,
+                        state_dir=state,
+                        delivery_id="delivery",
+                        role="coordinator",
+                    ),
+                    "deployed",
+                )
+            inject.assert_called_once_with(item.branches["dev"].destination)
 
             older = "b" * 40
             with (
@@ -444,6 +522,23 @@ class WebhookTests(unittest.TestCase):
         handler.headers = {"Content-Length": "bad"}
         self.assertIsNone(handler.read_json_body())
 
+        invalid_public = self.handler(b"{")
+        invalid_public.deployments = []
+        invalid_public.handle_public_deploy()
+        self.assertEqual(invalid_public.responses[-1], (HTTPStatus.BAD_REQUEST, "invalid json payload"))
+
+        invalid_fanout = self.handler(b"{")
+        invalid_fanout.fanout = deploy.FanoutConfig(True, "secret", [], 8791, 1, 0)
+        invalid_fanout.handle_fanout_deploy()
+        self.assertEqual(invalid_fanout.responses[-1], (HTTPStatus.BAD_REQUEST, "invalid json payload"))
+
+        with (
+            mock.patch.object(handler, "address_string", return_value="client"),
+            mock.patch.object(deploy.LOG, "info") as log,
+        ):
+            handler.log_message("request %s", "completed")
+        log.assert_called_once_with("%s - %s", "client", "request completed")
+
         handler = deploy.DeploymentRequestHandler.__new__(deploy.DeploymentRequestHandler)
         handler.wfile = io.BytesIO()
         handler.send_response = mock.Mock()
@@ -567,6 +662,23 @@ class WebhookTests(unittest.TestCase):
                 handler.handle_fanout_deploy()
             self.assertEqual(handler.responses[-1], (HTTPStatus.OK, "deployment deployed"))
 
+            unsupported_payload = {**fanout_payload, "branch": "feature"}
+            unsupported_body = json.dumps(unsupported_payload).encode()
+            unsupported_signature = hmac.new(
+                b"fanout", unsupported_body, hashlib.sha256
+            ).hexdigest()
+            unsupported_target = self.handler(unsupported_body)
+            unsupported_target.headers["X-Grayhaven-Fanout-Signature"] = (
+                f"sha256={unsupported_signature}"
+            )
+            unsupported_target.deployments = [item]
+            unsupported_target.fanout = deploy.FanoutConfig(True, "fanout", [], 8791, 1, 0)
+            unsupported_target.handle_fanout_deploy()
+            self.assertEqual(
+                unsupported_target.responses[-1],
+                (HTTPStatus.FORBIDDEN, "unsupported fanout target"),
+            )
+
             disabled = self.handler(fanout_body)
             disabled.fanout = deploy.FanoutConfig(False, "", [], 8791, 1, 0)
             disabled.handle_fanout_deploy()
@@ -625,6 +737,11 @@ class WebhookTests(unittest.TestCase):
         ):
             self.assertEqual(deploy.main(), 0)
         serve.assert_called_once()
+        parser = mock.Mock()
+        parser.parse_args.return_value = mock.Mock(command="unexpected")
+        with mock.patch.object(deploy, "build_parser", return_value=parser):
+            with self.assertRaisesRegex(AssertionError, "Unhandled command"):
+                deploy.main()
 
     def test_server_configuration(self) -> None:
         config = mock.Mock(deployments=["deployment"], fanout="fanout")

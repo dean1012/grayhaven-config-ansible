@@ -280,7 +280,39 @@ class ValidatorTests(unittest.TestCase):
             alerts.main([])
 
     def test_generated_usage_contract_rejects_metric_threshold_and_metadata_drift(self) -> None:
+        namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        original_external = namespace["external_service_rules"]
+
+        def missing_usage_rule(*args: object, **kwargs: object) -> list[dict[str, object]]:
+            return [
+                rule
+                for rule in original_external(*args, **kwargs)
+                if rule["labels"]["check"] != "gcs_class_a_monthly_operations"
+            ]
+
+        namespace["external_service_rules"] = missing_usage_rule
+        with (
+            mock.patch.object(alerts.runpy, "run_path", return_value=namespace),
+            self.assertRaisesRegex(RuntimeError, "missing: gcs_class_a_monthly_operations"),
+        ):
+            alerts.main([])
+
         cases = (
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule.update(_identity="service:changed:check"),
+                "Generated identity changed",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule.update(uid="changed"),
+                "Generated UID changed",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule.update(title="changed"),
+                "Generated title changed",
+            ),
             (
                 lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
                 lambda rule: rule["data"][0]["model"].update(
@@ -288,6 +320,13 @@ class ValidatorTests(unittest.TestCase):
                         "grayhaven_gcs_restic_billing_month_operations_total",
                         "grayhaven_gcs_restic_monthly_operations_total",
                     )
+                ),
+                "raw usage query",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule["data"][0]["model"].update(
+                    expr=rule["data"][0]["model"]["expr"].replace("max by", "sum by", 1)
                 ),
                 "raw usage query",
             ),
@@ -304,6 +343,11 @@ class ValidatorTests(unittest.TestCase):
                     params=[0]
                 ),
                 "evaluator threshold",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule["data"][1]["model"].update(expression="B"),
+                "does not evaluate query A",
             ),
             (
                 lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
@@ -346,6 +390,24 @@ class ValidatorTests(unittest.TestCase):
                     self.assertRaisesRegex(RuntimeError, message),
                 ):
                     alerts.main([])
+
+        contract_namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        contract_config = alerts.fixture_config()
+        contract_rules = [
+            *contract_namespace["service_rules"](contract_config, "folder", "prometheus"),
+            *contract_namespace["host_metric_rules"](contract_config, "folder", "prometheus"),
+            *contract_namespace["site_rules"](contract_config, "folder", "prometheus"),
+            *contract_namespace["external_service_rules"](contract_config, "folder", "prometheus"),
+        ]
+        for invalid_threshold in (True, 1.5, -1):
+            invalid_config = alerts.fixture_config()
+            invalid_config["thresholds"] = dict(invalid_config["thresholds"])
+            invalid_config["thresholds"]["gcs_class_a_monthly_warning_operations"] = invalid_threshold
+            with self.subTest(invalid_threshold=invalid_threshold):
+                with self.assertRaisesRegex(RuntimeError, "Configured usage threshold is invalid"):
+                    alerts.usage_rule_contracts(
+                        contract_namespace, invalid_config, contract_rules
+                    )
 
         for check in (
             "gcs_service_telemetry_success",
@@ -430,6 +492,89 @@ class ValidatorTests(unittest.TestCase):
         for filters in ([], [valid_filter[0], valid_filter[0]], ["bucket-a"]):
             with self.assertRaisesRegex(RuntimeError, "not filtered"):
                 cache.validate_query_scope(filters, buckets)
+
+        start_time = cache.billing_window(1_000)[0]
+        end_time = cache.billing_window(1_000)[1]
+        cache.validate_billing_query(
+            [
+                {
+                    "interval.startTime": start_time.isoformat().replace("+00:00", "Z"),
+                    "interval.endTime": end_time.isoformat().replace("+00:00", "Z"),
+                }
+            ],
+            start_time,
+            end_time,
+        )
+        with self.assertRaisesRegex(RuntimeError, "Expected one"):
+            cache.validate_billing_query([], start_time, end_time)
+        with self.assertRaisesRegex(RuntimeError, "Expected one"):
+            cache.validate_billing_query([{}, {}], start_time, end_time)
+        valid_request = {
+            "interval.startTime": start_time.isoformat().replace("+00:00", "Z"),
+            "interval.endTime": end_time.isoformat().replace("+00:00", "Z"),
+        }
+        with self.assertRaisesRegex(RuntimeError, "start"):
+            cache.validate_billing_query(
+                [{**valid_request, "interval.startTime": "wrong"}], start_time, end_time
+            )
+        with self.assertRaisesRegex(RuntimeError, "end"):
+            cache.validate_billing_query(
+                [{**valid_request, "interval.endTime": "wrong"}], start_time, end_time
+            )
+
+        namespace = cache.runpy.run_path(str(cache.COLLECTOR))
+        module_globals = namespace["cached_gcs_operation_counts"].__globals__
+        missing_metrics = dict(namespace)
+        missing_metrics["render_gcs_metrics"] = lambda config: [
+            "grayhaven_gcs_restic_billing_month_operations_total"
+        ]
+        missing_metrics["render_google_monitoring_metrics"] = lambda config: []
+        with self.assertRaisesRegex(RuntimeError, "Canonical Google billing metric names"):
+            cache.validate_canonical_metrics(missing_metrics, module_globals)
+
+        wrong_labels = dict(namespace)
+        wrong_labels["render_gcs_metrics"] = lambda config: [
+            "grayhaven_gcs_restic_billing_month_operations_total"
+        ]
+        wrong_labels["render_google_monitoring_metrics"] = lambda config: [
+            "grayhaven_google_monitoring_billing_month_series_total"
+        ]
+        with self.assertRaisesRegex(RuntimeError, "Canonical Google billing metric labels"):
+            cache.validate_canonical_metrics(wrong_labels, module_globals)
+
+    def test_cache_validator_rejects_unexpected_collection_inputs(self) -> None:
+        namespace = cache.runpy.run_path(str(cache.COLLECTOR))
+        original = namespace["cached_gcs_operation_counts"]
+        wrapped = mock.Mock()
+        wrapped.__globals__ = original.__globals__
+        wrapped.side_effect = lambda config, buckets: original(config, {"unexpected"})
+        namespace["cached_gcs_operation_counts"] = wrapped
+        with (
+            mock.patch.object(cache.runpy, "run_path", return_value=namespace),
+            self.assertRaisesRegex(RuntimeError, "Unexpected bucket set"),
+        ):
+            cache.main()
+
+        namespace = cache.runpy.run_path(str(cache.COLLECTOR))
+        original = namespace["cached_gcs_operation_counts"]
+        wrapped = mock.Mock()
+        wrapped.__globals__ = original.__globals__
+
+        def mismatched_window(config: dict[str, object], buckets: set[str]) -> object:
+            original.__globals__["google_billing_window"] = lambda: (
+                cache.BILLING_START,
+                cache.datetime.fromtimestamp(9_999, cache.timezone.utc),
+                "wrong",
+            )
+            return original(config, buckets)
+
+        wrapped.side_effect = mismatched_window
+        namespace["cached_gcs_operation_counts"] = wrapped
+        with (
+            mock.patch.object(cache.runpy, "run_path", return_value=namespace),
+            self.assertRaisesRegex(RuntimeError, "deterministic billing window"),
+        ):
+            cache.main()
 
     def test_alloy_render_validation_and_main(self) -> None:
         self.assertEqual(alloy.regex_replace("abc", "b", "x"), "axc")
