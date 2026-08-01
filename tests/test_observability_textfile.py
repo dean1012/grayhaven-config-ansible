@@ -544,6 +544,17 @@ class CacheTests(unittest.TestCase):
                 )
             self.assertEqual(usage_path.stat().st_mode & 0o777, 0o600)
             with (
+                mock.patch.object(collector, "google_billing_window", return_value=window_at(2050)),
+                mock.patch.object(collector, "monitoring_token") as token,
+                mock.patch.object(collector, "monitoring_billed_series_total") as query,
+            ):
+                self.assertEqual(
+                    collector.cached_google_monitoring_usage(config),
+                    (123.0, 2000, True, "2026-07"),
+                )
+            token.assert_not_called()
+            query.assert_not_called()
+            with (
                 mock.patch.object(collector, "google_billing_window", return_value=window_at(2100)),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=RuntimeError("expected")
@@ -772,6 +783,18 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
         ):
             expiry_dates = collector.fail2ban_ban_expiry_dates("sshd")
         self.assertIn("192.0.2.2", expiry_dates)
+        with mock.patch.object(
+            collector.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                [],
+                0,
+                stdout="not-an-ip\n192.0.2.4 2026-07-27 09:00:00\n",
+                stderr="",
+            ),
+        ):
+            expiry_dates = collector.fail2ban_ban_expiry_dates("sshd")
+        self.assertEqual(set(expiry_dates), {"192.0.2.4"})
         for result in (
             OSError("expected"),
             subprocess.CompletedProcess([], 1, stdout="", stderr=""),

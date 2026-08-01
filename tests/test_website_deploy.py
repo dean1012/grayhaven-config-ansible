@@ -166,15 +166,21 @@ class DeploymentHelperTests(unittest.TestCase):
 
         with mock.patch.object(deploy.subprocess, "run") as run:
             run.return_value = mock.Mock(stdout=" output\n", returncode=0)
+            original_command = ["true"]
+            original_output = ["echo"]
+            deploy.run_command(original_command)
+            self.assertEqual(deploy.run_output(original_output), "output")
+            self.assertEqual(run.call_args_list[0].args[0], original_command)
+            self.assertEqual(run.call_args_list[1].args[0], original_output)
             deploy.run_command(["true"], user="ansible", cwd=pathlib.Path("/tmp"))
             self.assertEqual(deploy.run_output(["echo"], user="ansible"), "output")
             self.assertTrue(deploy.git_commit_is_ancestor(pathlib.Path("/tmp"), "a", "b"))
             self.assertEqual(
-                run.call_args_list[0].args[0],
+                run.call_args_list[2].args[0],
                 ["runuser", "-u", "ansible", "--", "true"],
             )
             self.assertEqual(
-                run.call_args_list[1].args[0],
+                run.call_args_list[3].args[0],
                 ["runuser", "-u", "ansible", "--", "echo"],
             )
         with (
@@ -320,6 +326,35 @@ class DeploymentHelperTests(unittest.TestCase):
                     "deployed",
                 )
             inject.assert_called_once_with(item.branches["dev"].destination)
+
+            render_source = root / "render-source"
+            render_source.mkdir()
+            item.branches["dev"] = deploy.BranchDeployment(
+                name="dev",
+                checkout=item.branches["dev"].checkout,
+                source=item.branches["dev"].source,
+                destination=item.branches["dev"].destination,
+                render_source=render_source,
+            )
+            with (
+                mock.patch.object(deploy, "git_branch_head", return_value=sha),
+                mock.patch.object(deploy, "run_command"),
+                mock.patch.object(deploy, "restore_selinux_context"),
+                mock.patch.object(deploy, "render_dev_source", return_value=True) as render,
+            ):
+                self.assertEqual(
+                    deploy.deploy_branch(
+                        item,
+                        "dev",
+                        sha,
+                        state_dir=state,
+                        delivery_id="delivery-render",
+                        role="coordinator",
+                        force=True,
+                    ),
+                    "deployed",
+                )
+            render.assert_called_once_with(render_source, item.branches["dev"].source)
 
             older = "b" * 40
             with (

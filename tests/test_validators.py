@@ -576,6 +576,80 @@ class ValidatorTests(unittest.TestCase):
         ):
             cache.main()
 
+    def test_cache_validator_rejects_invalid_cache_contracts_in_main(self) -> None:
+        def run_case(loader_name: str, replacement: object, message: str) -> None:
+            namespace = cache.runpy.run_path(str(cache.COLLECTOR))
+            original = namespace[loader_name]
+            namespace[loader_name] = replacement(original)
+            with (
+                mock.patch.object(cache.runpy, "run_path", return_value=namespace),
+                self.assertRaisesRegex(RuntimeError, message),
+            ):
+                cache.main()
+
+        def invalid_gcs_version(original: object) -> object:
+            def wrapped(path: pathlib.Path, project_id: str, buckets: set[str], month: str) -> object:
+                result = original(path, project_id, buckets, month)
+                if path.exists() and result is None:
+                    try:
+                        if json.loads(path.read_text(encoding="utf-8")).get("version") == 2:
+                            return {}
+                    except json.JSONDecodeError:
+                        pass
+                return result
+
+            return wrapped
+
+        def malformed_gcs(original: object) -> object:
+            def wrapped(path: pathlib.Path, project_id: str, buckets: set[str], month: str) -> object:
+                result = original(path, project_id, buckets, month)
+                if path.exists() and result is None and path.read_text(encoding="utf-8") == "malformed":
+                    return {}
+                return result
+
+            return wrapped
+
+        def valid_monitoring(original: object) -> object:
+            def wrapped(path: pathlib.Path, project_id: str, month: str) -> object:
+                result = original(path, project_id, month)
+                if result == {
+                    "version": 2,
+                    "project_id": "grayhaven",
+                    "month": "2026-07",
+                    "billed_series": 10,
+                    "refreshed_at": 1_000,
+                }:
+                    return None
+                return result
+
+            return wrapped
+
+        def invalid_monitoring_version(original: object) -> object:
+            def wrapped(path: pathlib.Path, project_id: str, month: str) -> object:
+                result = original(path, project_id, month)
+                if path.exists() and result is None:
+                    try:
+                        if json.loads(path.read_text(encoding="utf-8")).get("version") == 1:
+                            return {}
+                    except json.JSONDecodeError:
+                        pass
+                return result
+
+            return wrapped
+
+        run_case("load_gcs_operation_cache", invalid_gcs_version, "GCS cache accepted invalid version")
+        run_case("load_gcs_operation_cache", malformed_gcs, "GCS cache accepted malformed JSON")
+        run_case(
+            "load_google_monitoring_usage_cache",
+            valid_monitoring,
+            "Valid Cloud Monitoring usage cache was rejected",
+        )
+        run_case(
+            "load_google_monitoring_usage_cache",
+            invalid_monitoring_version,
+            "Cloud Monitoring usage cache accepted invalid version",
+        )
+
     def test_alloy_render_validation_and_main(self) -> None:
         self.assertEqual(alloy.regex_replace("abc", "b", "x"), "axc")
         environment = alloy.build_environment()
