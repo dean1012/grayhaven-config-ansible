@@ -117,6 +117,22 @@ class ValidatorTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "count does not match"):
             alerts.validate_live_registry(namespace, registry, live_rules[:-1])
+        with self.assertRaisesRegex(RuntimeError, "count does not match"):
+            alerts.validate_live_registry(
+                namespace,
+                registry,
+                live_rules
+                + [
+                    {
+                        "uid": "gh-000000000000000000000000",
+                        "labels": {
+                            "configured_by": "ansible",
+                            "service": "unexpected",
+                            "check": "created",
+                        },
+                    }
+                ],
+            )
         live_rules[0]["uid"] = "wrong"
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             alerts.validate_live_registry(namespace, registry, live_rules)
@@ -148,6 +164,44 @@ class ValidatorTests(unittest.TestCase):
                 namespace, changed_registry, self.live_rules(changed_registry)
             )
 
+        config = alerts.fixture_config()
+        generated_rules = [
+            *namespace["service_rules"](config, "folder", "prometheus"),
+            *namespace["host_metric_rules"](config, "folder", "prometheus"),
+            *namespace["site_rules"](config, "folder", "prometheus"),
+            *namespace["external_service_rules"](config, "folder", "prometheus"),
+        ]
+        generated_by_uid = {rule["uid"]: rule for rule in generated_rules}
+        live_rules = self.live_rules(registry)
+        live_by_uid = {rule["uid"]: rule for rule in live_rules}
+        for uid, rule in generated_by_uid.items():
+            live_by_uid[uid] = json.loads(json.dumps(rule))
+        expected_updates = {
+            uid
+            for uid, rule in generated_by_uid.items()
+            if uid in alerts.RENAMED_TITLES
+            or rule["labels"]["check"] in alerts.COMMA_CHECKS
+        }
+        for uid in expected_updates:
+            live_by_uid[uid]["annotations"] = {
+                **live_by_uid[uid]["annotations"],
+                "legacy": "changed",
+            }
+        full_live_rules = list(live_by_uid.values())
+        alerts.validate_live_registry(
+            namespace, registry, full_live_rules, generated_rules
+        )
+        unexpected_update = json.loads(json.dumps(full_live_rules))
+        next(
+            rule
+            for rule in unexpected_update
+            if rule["uid"] in generated_by_uid and rule["uid"] not in expected_updates
+        )["annotations"] = {"unexpected": "change"}
+        with self.assertRaisesRegex(RuntimeError, "unexpected rule updates"):
+            alerts.validate_live_registry(
+                namespace, registry, unexpected_update, generated_rules
+            )
+
         with tempfile.TemporaryDirectory() as temp_dir:
             export = pathlib.Path(temp_dir) / "live.json"
             export.write_text(json.dumps(self.live_rules(registry)), encoding="utf-8")
@@ -177,7 +231,7 @@ class ValidatorTests(unittest.TestCase):
             (
                 "external_service_rules",
                 lambda rule: (
-                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                    rule["labels"]["check"] == "gcs_stale_bucket_count"
                 ),
                 lambda rule: rule["annotations"].update(check_value="bad"),
                 "comma-grouped integer",
@@ -224,6 +278,92 @@ class ValidatorTests(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, "Expected 76"),
         ):
             alerts.main([])
+
+    def test_generated_usage_contract_rejects_metric_threshold_and_metadata_drift(self) -> None:
+        cases = (
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule["data"][0]["model"].update(
+                    expr=rule["data"][0]["model"]["expr"].replace(
+                        "grayhaven_gcs_restic_billing_month_operations_total",
+                        "grayhaven_gcs_restic_monthly_operations_total",
+                    )
+                ),
+                "raw usage query",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_b_monthly_operations",
+                lambda rule: rule["data"][0]["model"].update(
+                    expr=rule["data"][0]["model"]["expr"] + " >= 40000"
+                ),
+                "embeds a threshold",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "google_monitoring_monthly_billed_series",
+                lambda rule: rule["data"][1]["model"]["conditions"][0]["evaluator"].update(
+                    params=[0]
+                ),
+                "evaluator threshold",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule.update(noDataState="Alerting"),
+                "NoData policy",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule["labels"].update(service="changed"),
+                "labels changed",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule["annotations"].update(summary="changed"),
+                "annotations changed",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule.update(folderUID="changed"),
+                "folder changed",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule.update(ruleGroup="changed"),
+                "rule group changed",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: rule["notification_settings"].update(receiver="changed"),
+                "contact point changed",
+            ),
+        )
+        for predicate, mutation, message in cases:
+            with self.subTest(message=message):
+                namespace = self.changed_rule_namespace(
+                    "external_service_rules", predicate, mutation
+                )
+                with (
+                    mock.patch.object(alerts.runpy, "run_path", return_value=namespace),
+                    self.assertRaisesRegex(RuntimeError, message),
+                ):
+                    alerts.main([])
+
+        for check in (
+            "gcs_service_telemetry_success",
+            "gcs_operation_telemetry_stale",
+            "google_monitoring_service_telemetry_success",
+            "google_monitoring_telemetry_stale",
+        ):
+            with self.subTest(check=check):
+                namespace = self.changed_rule_namespace(
+                    "external_service_rules",
+                    lambda rule, check=check: rule["labels"]["check"] == check,
+                    lambda rule: rule.update(noDataState="OK"),
+                )
+                with (
+                    mock.patch.object(alerts.runpy, "run_path", return_value=namespace),
+                    self.assertRaisesRegex(RuntimeError, "Telemetry NoData policy"),
+                ):
+                    alerts.main([])
 
     def test_cache_validator_accepts_good_and_rejects_bad_values(self) -> None:
         counts = {"Class A": 11.0, "Class B": 21.0, "Free": 31.0, "Unknown": 0.0}

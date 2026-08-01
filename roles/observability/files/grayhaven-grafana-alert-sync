@@ -234,6 +234,14 @@ def duration_seconds(value: str | int) -> int:
     return amount * multipliers[unit]
 
 
+def integer_at_least_threshold(value: object) -> int:
+    """Translate a non-negative integer `>= value` into strict `gt` semantics."""
+
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise GrafanaError("usage threshold must be a non-negative integer")
+    return value - 1
+
+
 def query_data(ref_id: str, datasource_uid: str, expression: str) -> dict[str, Any]:
     return {
         "refId": ref_id,
@@ -988,11 +996,12 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             title="GCS Class A operations >= 80% usage",
             expression=(
                 "max by (client, environment, location, month, operation_class, project_id) "
-                f'(grayhaven_gcs_restic_monthly_operations_total{{{selector},operation_class="Class A"}})'
-                f' >= {float(config["thresholds"]["gcs_class_a_monthly_warning_operations"])}'
+                f'(grayhaven_gcs_restic_billing_month_operations_total{{{selector},operation_class="Class A"}})'
             ),
             evaluator_type="gt",
-            threshold=0,
+            threshold=integer_at_least_threshold(
+                config["thresholds"]["gcs_class_a_monthly_warning_operations"]
+            ),
             labels=base_labels(
                 config,
                 {
@@ -1015,11 +1024,12 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             title="GCS Class B operations >= 80% usage",
             expression=(
                 "max by (client, environment, location, month, operation_class, project_id) "
-                f'(grayhaven_gcs_restic_monthly_operations_total{{{selector},operation_class="Class B"}})'
-                f' >= {float(config["thresholds"]["gcs_class_b_monthly_warning_operations"])}'
+                f'(grayhaven_gcs_restic_billing_month_operations_total{{{selector},operation_class="Class B"}})'
             ),
             evaluator_type="gt",
-            threshold=0,
+            threshold=integer_at_least_threshold(
+                config["thresholds"]["gcs_class_b_monthly_warning_operations"]
+            ),
             labels=base_labels(
                 config,
                 {
@@ -1129,11 +1139,12 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             title="Google Monitoring series >= 80% usage",
             expression=(
                 "max by (client, environment, location, month, project_id) "
-                f"(grayhaven_google_monitoring_monthly_billed_series_total{{{selector}}})"
-                f' >= {float(config["thresholds"]["google_monitoring_monthly_warning_series"])}'
+                f"(grayhaven_google_monitoring_billing_month_series_total{{{selector}}})"
             ),
             evaluator_type="gt",
-            threshold=0,
+            threshold=integer_at_least_threshold(
+                config["thresholds"]["google_monitoring_monthly_warning_series"]
+            ),
             labels=base_labels(
                 config,
                 {

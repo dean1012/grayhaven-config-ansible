@@ -113,6 +113,65 @@ class AlertRuleTests(unittest.TestCase):
             "2026-01-01T00:00:00.000Z",
         )
 
+    def test_usage_thresholds_are_strict_integer_boundaries(self) -> None:
+        for value, expected in ((0, -1), (1, 0), (4_000, 3_999)):
+            self.assertEqual(alert_sync.integer_at_least_threshold(value), expected)
+        for value in (True, False, 1.5, -1, "4000", "4.0", "invalid", None, object()):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                alert_sync.GrafanaError, "non-negative integer"
+            ):
+                alert_sync.integer_at_least_threshold(value)
+
+    def test_usage_rules_use_canonical_raw_metrics_and_ownership(self) -> None:
+        config = complete_config()
+        rules = {
+            rule["labels"]["check"]: rule
+            for rule in alert_sync.external_service_rules(config, "folder", "prom")
+        }
+        contracts = {
+            "gcs_class_a_monthly_operations": (
+                "grayhaven_gcs_restic_billing_month_operations_total",
+                "grayhaven_gcs_restic_monthly_operations_total",
+                4_000,
+                "gh-ebe005a9676dd3b8bc285f57",
+            ),
+            "gcs_class_b_monthly_operations": (
+                "grayhaven_gcs_restic_billing_month_operations_total",
+                "grayhaven_gcs_restic_monthly_operations_total",
+                40_000,
+                "gh-1b623645313da0fc789b1e43",
+            ),
+            "google_monitoring_monthly_billed_series": (
+                "grayhaven_google_monitoring_billing_month_series_total",
+                "grayhaven_google_monitoring_monthly_billed_series_total",
+                800_000,
+                "gh-4114f9f64c8c20c1465e15c1",
+            ),
+        }
+        for check, (metric, old_metric, minimum, uid) in contracts.items():
+            with self.subTest(check=check):
+                rule = rules[check]
+                query = rule["data"][0]["model"]["expr"]
+                evaluator = rule["data"][1]["model"]["conditions"][0]["evaluator"]
+                self.assertIn(metric, query)
+                self.assertNotIn(old_metric, query)
+                self.assertNotRegex(query, r"(?:>=|>|<=|<|==|!=)\s*-?\d")
+                self.assertEqual(rule["uid"], uid)
+                self.assertEqual(evaluator, {"params": [minimum - 1], "type": "gt"})
+                self.assertEqual(rule["data"][1]["model"]["expression"], "A")
+                self.assertEqual(rule["noDataState"], "OK")
+                for value in (minimum - 1, minimum, minimum + 1):
+                    self.assertEqual(value > evaluator["params"][0], value >= minimum)
+                self.assertFalse((minimum - 1) > evaluator["params"][0])
+
+        for check in (
+            "gcs_service_telemetry_success",
+            "gcs_operation_telemetry_stale",
+            "google_monitoring_service_telemetry_success",
+            "google_monitoring_telemetry_stale",
+        ):
+            self.assertEqual(rules[check]["noDataState"], "Alerting")
+
     def test_uid_registry_rejects_invalid_shapes_and_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = pathlib.Path(temp_dir) / "uids.json"
@@ -362,6 +421,35 @@ class AlertRuleTests(unittest.TestCase):
         with mock.patch.object(alert_sync, "GrafanaClient", return_value=unchanged):
             self.assertEqual(alert_sync.sync(config), (0, 0, 0))
         unchanged.update_rule.assert_not_called()
+
+        old_usage = json.loads(json.dumps(list(desired.values())))
+        old_metrics = {
+            "gcs_class_a_monthly_operations": "grayhaven_gcs_restic_monthly_operations_total",
+            "gcs_class_b_monthly_operations": "grayhaven_gcs_restic_monthly_operations_total",
+            "google_monitoring_monthly_billed_series": "grayhaven_google_monitoring_monthly_billed_series_total",
+        }
+        for rule in old_usage:
+            check = rule["labels"].get("check")
+            if check in old_metrics:
+                rule["data"][0]["model"]["expr"] = rule["data"][0]["model"]["expr"].replace(
+                    {
+                        "gcs_class_a_monthly_operations": "grayhaven_gcs_restic_billing_month_operations_total",
+                        "gcs_class_b_monthly_operations": "grayhaven_gcs_restic_billing_month_operations_total",
+                        "google_monitoring_monthly_billed_series": "grayhaven_google_monitoring_billing_month_series_total",
+                    }[check],
+                    old_metrics[check],
+                )
+                rule["data"][1]["model"]["conditions"][0]["evaluator"]["params"] = [0]
+        update_only = mock.Mock()
+        update_only.datasource_uid.return_value = "prom"
+        update_only.folder_uid.return_value = "folder"
+        update_only.alert_rules.return_value = old_usage
+        update_only.update_rule_group_interval.return_value = False
+        with mock.patch.object(alert_sync, "GrafanaClient", return_value=update_only):
+            self.assertEqual(alert_sync.sync(config), (0, 3, 0))
+        self.assertEqual(update_only.update_rule.call_count, 3)
+        update_only.create_rule.assert_not_called()
+        update_only.delete_rule.assert_not_called()
 
         empty = mock.Mock()
         empty.datasource_uid.return_value = "prom"
