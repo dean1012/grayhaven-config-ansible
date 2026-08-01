@@ -59,6 +59,10 @@
     cmd: git -C "{{ backupctl_checkout_dir }}" config --get remote.origin.url
   become: true
   become_user: ansible
+  environment:
+    HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
   register: backupctl_existing_origin
   changed_when: false
   failed_when: false
