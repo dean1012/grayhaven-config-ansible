@@ -63,8 +63,8 @@ Metrics include:
 - restic backup, integrity-check, retention, and restore-size status;
 - Google Cloud Storage public service-health status, Pacific billing-month API
   operation totals, and daily stale restic bucket state;
-- Cloud Monitoring public service-health status and Pacific billing-month billed query
-  series;
+- Cloud Monitoring public service-health status and Pacific billing-month billed
+  query series;
 - Proton public service-health status for Grayhaven Systems LLC-used services;
 - sanitized active Grafana IRM alert-group state;
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
