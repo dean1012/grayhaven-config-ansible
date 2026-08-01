@@ -134,17 +134,10 @@ Their NoData state is `OK`; collection-success and telemetry-staleness alerts
 own missing or stale telemetry and use `Alerting` for NoData. This keeps a
 telemetry gap from being mistaken for a usage-limit breach.
 
-The canonical metric identities supersede the former usage identities. After a
-post-cutoff deployment, the first successful post-convergence collection
-establishes August under the canonical identities. The old identities remain
-unused and expire naturally. No historical copy, reconstruction, or write is
-performed.
-
 For durable verification, confirm that collected usage has the canonical metric
 name and current Pacific `month` label, that the managed rule retains a raw
 PromQL expression and exact integer Grafana-side threshold, and that usage and
-telemetry-health NoData ownership remain separate. A rollback preserves this
-contract; it does not restore the old identities or backfill historical usage.
+telemetry-health NoData ownership remain separate.
 
 [Back to top](#observability-architecture)
 
