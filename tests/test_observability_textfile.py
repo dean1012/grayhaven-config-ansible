@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import pathlib
+import runpy
 import subprocess
 import tempfile
 import unittest
 import urllib.error
 from unittest import mock
+from zoneinfo import ZoneInfoNotFoundError
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -18,6 +21,20 @@ collector = load_program(
     "grayhaven_observability_textfile",
     "roles/observability/files/grayhaven-observability-textfile",
 )
+
+
+def utc(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def window_at(timestamp: int, month: str = "2026-07") -> tuple[datetime, datetime, str]:
+    end = datetime.fromtimestamp(timestamp, timezone.utc)
+    return BILLING_START, end, month
+
+
+BILLING_START = utc("2026-07-01T07:00:00Z")
+BILLING_END = utc("2026-07-27T12:00:00Z")
+BILLING_WINDOW = (BILLING_START, BILLING_END, "2026-07")
 
 
 class Response:
@@ -88,6 +105,60 @@ def full_config() -> dict[str, object]:
 
 
 class HttpAndGoogleTests(unittest.TestCase):
+    def test_google_billing_windows_are_deterministic_and_pacific(self) -> None:
+        cases = (
+            (
+                "2026-08-01T06:59:59Z",
+                "2026-07-01T07:00:00Z",
+                "2026-07",
+            ),
+            (
+                "2026-08-01T07:00:00Z",
+                "2026-08-01T07:00:00Z",
+                "2026-08",
+            ),
+            (
+                "2026-05-15T12:34:56Z",
+                "2026-05-01T07:00:00Z",
+                "2026-05",
+            ),
+            (
+                "2026-01-15T12:34:56Z",
+                "2026-01-01T08:00:00Z",
+                "2026-01",
+            ),
+            (
+                "2028-02-29T12:34:56Z",
+                "2028-02-01T08:00:00Z",
+                "2028-02",
+            ),
+            (
+                "2027-01-01T00:00:00Z",
+                "2027-01-01T08:00:00Z",
+                "2027-01",
+            ),
+        )
+        for end_value, start_value, month in cases:
+            start, end, actual_month = collector.google_billing_window(utc(end_value))
+            self.assertEqual((start, end, actual_month), (utc(start_value), utc(end_value), month))
+
+        self.assertEqual(collector.GOOGLE_BILLING_TIMEZONE.key, "America/Los_Angeles")
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            collector.google_billing_window(datetime(2026, 8, 1, 7, 0, 0))
+        with (
+            mock.patch(
+                "zoneinfo.ZoneInfo",
+                side_effect=ZoneInfoNotFoundError("expected invalid timezone"),
+            ),
+            self.assertRaises(ZoneInfoNotFoundError),
+        ):
+            runpy.run_path(
+                str(
+                    pathlib.Path(__file__).parents[1]
+                    / "roles/observability/files/grayhaven-observability-textfile"
+                )
+            )
+
     def test_http_token_and_values(self) -> None:
         with mock.patch.object(
             collector.urllib.request, "urlopen", return_value=Response({"ok": True})
@@ -181,7 +252,9 @@ class HttpAndGoogleTests(unittest.TestCase):
             collector.gcs_operation_class("storage.objects.getter"), "Unknown"
         )
         self.assertEqual(
-            collector.gcs_operation_counts("project", "token", set()),
+            collector.gcs_operation_counts(
+                "project", "token", set(), BILLING_START, BILLING_END
+            ),
             {"Class A": 0.0, "Class B": 0.0, "Free": 0.0, "Unknown": 0.0},
         )
 
@@ -225,10 +298,16 @@ class HttpAndGoogleTests(unittest.TestCase):
             collector, "monitoring_request", side_effect=pages
         ) as request:
             self.assertEqual(
-                collector.gcs_operation_counts("project", "token", {"bucket"}),
+                collector.gcs_operation_counts(
+                    "project", "token", {"bucket"}, BILLING_START, BILLING_END
+                ),
                 {"Class A": 2.0, "Class B": 3.5, "Free": 4.0, "Unknown": 5.0},
             )
         self.assertEqual(request.call_count, 2)
+        query = request.call_args_list[0].args[2]
+        self.assertEqual(query["interval.startTime"], "2026-07-01T07:00:00Z")
+        self.assertEqual(query["interval.endTime"], "2026-07-27T12:00:00Z")
+        self.assertEqual(query["aggregation.alignmentPeriod"], "2264400s")
 
         with mock.patch.object(
             collector,
@@ -236,10 +315,16 @@ class HttpAndGoogleTests(unittest.TestCase):
             return_value={
                 "timeSeries": [{"points": [{"value": {"int64Value": "12"}}]}]
             },
-        ):
+        ) as request:
             self.assertEqual(
-                collector.monitoring_billed_series_total("project", "token"), 12
+                collector.monitoring_billed_series_total(
+                    "project", "token", BILLING_START, BILLING_END
+                ),
+                12,
             )
+        query = request.call_args.args[2]
+        self.assertEqual(query["interval.startTime"], "2026-07-01T07:00:00Z")
+        self.assertEqual(query["interval.endTime"], "2026-07-27T12:00:00Z")
         with (
             mock.patch.object(
                 collector,
@@ -248,7 +333,9 @@ class HttpAndGoogleTests(unittest.TestCase):
             ),
             self.assertRaisesRegex(RuntimeError, "cardinality"),
         ):
-            collector.monitoring_billed_series_total("project", "token")
+            collector.monitoring_billed_series_total(
+                "project", "token", BILLING_START, BILLING_END
+            )
 
 
 class CacheTests(unittest.TestCase):
@@ -261,7 +348,7 @@ class CacheTests(unittest.TestCase):
                 )
             )
             valid = {
-                "version": 2,
+                "version": collector.GCS_OPERATION_CACHE_VERSION,
                 "project_id": "project",
                 "month": "2026-07",
                 "bucket_names": ["bucket"],
@@ -282,12 +369,14 @@ class CacheTests(unittest.TestCase):
                 )
             )
             for key, value in (
-                ("version", 1),
+                ("version", collector.GCS_OPERATION_CACHE_VERSION - 1),
                 ("project_id", "other"),
                 ("month", "2026-06"),
                 ("bucket_names", []),
                 ("counts", []),
                 ("refreshed_at", "bad"),
+                ("bucket_names", "bucket"),
+                ("refreshed_at", True),
             ):
                 invalid = dict(valid)
                 invalid[key] = value
@@ -299,7 +388,7 @@ class CacheTests(unittest.TestCase):
                 )
             invalid = dict(valid)
             invalid["counts"] = {
-                "Class A": "bad",
+                "Class A": True,
                 "Class B": 2,
                 "Free": 3,
                 "Unknown": 4,
@@ -310,9 +399,17 @@ class CacheTests(unittest.TestCase):
                     path, "project", {"bucket"}, "2026-07"
                 )
             )
+            missing = dict(valid)
+            del missing["counts"]
+            path.write_text(json.dumps(missing), encoding="utf-8")
+            self.assertIsNone(
+                collector.load_gcs_operation_cache(
+                    path, "project", {"bucket"}, "2026-07"
+                )
+            )
 
             usage = {
-                "version": 1,
+                "version": collector.GOOGLE_MONITORING_USAGE_CACHE_VERSION,
                 "project_id": "project",
                 "month": "2026-07",
                 "billed_series": 10,
@@ -326,11 +423,13 @@ class CacheTests(unittest.TestCase):
                 usage,
             )
             for key, value in (
-                ("version", 2),
+                ("version", collector.GOOGLE_MONITORING_USAGE_CACHE_VERSION - 1),
                 ("project_id", "other"),
                 ("month", "2026-06"),
                 ("billed_series", "bad"),
                 ("refreshed_at", "bad"),
+                ("billed_series", True),
+                ("refreshed_at", True),
             ):
                 invalid_usage = dict(usage)
                 invalid_usage[key] = value
@@ -341,6 +440,12 @@ class CacheTests(unittest.TestCase):
                     )
                 )
             path.write_text("[]", encoding="utf-8")
+            self.assertIsNone(
+                collector.load_google_monitoring_usage_cache(path, "project", "2026-07")
+            )
+            missing_usage = dict(usage)
+            del missing_usage["billed_series"]
+            path.write_text(json.dumps(missing_usage), encoding="utf-8")
             self.assertIsNone(
                 collector.load_google_monitoring_usage_cache(path, "project", "2026-07")
             )
@@ -360,7 +465,7 @@ class CacheTests(unittest.TestCase):
                 "project_id": "project",
             }
             with (
-                mock.patch.object(collector.time, "time", return_value=1000),
+                mock.patch.object(collector, "google_billing_window", return_value=window_at(1000)),
                 mock.patch.object(collector, "monitoring_token", return_value="token"),
                 mock.patch.object(
                     collector,
@@ -374,11 +479,12 @@ class CacheTests(unittest.TestCase):
                         {"Class A": 1.0, "Class B": 2.0, "Free": 3.0, "Unknown": 4.0},
                         1000,
                         True,
+                        "2026-07",
                     ),
                 )
             self.assertEqual(gcs_path.stat().st_mode & 0o777, 0o600)
             with (
-                mock.patch.object(collector.time, "time", return_value=1100),
+                mock.patch.object(collector, "google_billing_window", return_value=window_at(1100)),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=OSError("expected")
                 ),
@@ -387,9 +493,16 @@ class CacheTests(unittest.TestCase):
                     collector.cached_gcs_operation_counts(config, {"bucket"})[0],
                     {"Class A": 1.0, "Class B": 2.0, "Free": 3.0, "Unknown": 4.0},
                 )
+            with (
+                mock.patch.object(collector, "google_billing_window", return_value=window_at(1201)),
+                mock.patch.object(
+                    collector, "monitoring_token", side_effect=OSError("expected")
+                ),
+            ):
+                self.assertFalse(collector.cached_gcs_operation_counts(config, {"bucket"})[2])
             gcs_path.unlink()
             with (
-                mock.patch.object(collector.time, "time", return_value=1200),
+                mock.patch.object(collector, "google_billing_window", return_value=window_at(1200)),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=OSError("expected")
                 ),
@@ -398,7 +511,7 @@ class CacheTests(unittest.TestCase):
                 collector.cached_gcs_operation_counts(config, {"bucket"})
 
             with (
-                mock.patch.object(collector.time, "time", return_value=2000),
+                mock.patch.object(collector, "google_billing_window", return_value=window_at(2000)),
                 mock.patch.object(collector, "monitoring_token", return_value="token"),
                 mock.patch.object(
                     collector, "monitoring_billed_series_total", return_value=123
@@ -406,10 +519,11 @@ class CacheTests(unittest.TestCase):
             ):
                 self.assertEqual(
                     collector.cached_google_monitoring_usage(config),
-                    (123.0, 2000, True),
+                    (123.0, 2000, True, "2026-07"),
                 )
+            self.assertEqual(usage_path.stat().st_mode & 0o777, 0o600)
             with (
-                mock.patch.object(collector.time, "time", return_value=2100),
+                mock.patch.object(collector, "google_billing_window", return_value=window_at(2100)),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=RuntimeError("expected")
                 ),
@@ -418,6 +532,51 @@ class CacheTests(unittest.TestCase):
                     collector.cached_google_monitoring_usage(config)[:2],
                     (123.0, 2000),
                 )
+
+            with (
+                mock.patch.object(collector, "google_billing_window", return_value=window_at(2201)),
+                mock.patch.object(
+                    collector, "monitoring_token", side_effect=RuntimeError("expected")
+                ),
+            ):
+                self.assertEqual(
+                    collector.cached_google_monitoring_usage(config),
+                    (123.0, 2000, False, "2026-07"),
+                )
+
+    def test_refresh_cadence_before_at_and_after_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = pathlib.Path(temp_dir) / "gcs.json"
+            config = {
+                "credentials_file": "credentials",
+                "operation_cache_file": str(path),
+                "operation_refresh_seconds": 60,
+                "operation_stale_seconds": 120,
+                "project_id": "project",
+            }
+            query = mock.Mock(
+                side_effect=[
+                    {"Class A": 1, "Class B": 0, "Free": 0, "Unknown": 0},
+                    {"Class A": 2, "Class B": 0, "Free": 0, "Unknown": 0},
+                    {"Class A": 3, "Class B": 0, "Free": 0, "Unknown": 0},
+                ]
+            )
+            windows = [
+                window_at(1000),
+                window_at(1059),
+                window_at(1060),
+                window_at(1061, "2026-08"),
+            ]
+            with (
+                mock.patch.object(collector, "google_billing_window", side_effect=windows),
+                mock.patch.object(collector, "monitoring_token", return_value="token"),
+                mock.patch.object(collector, "gcs_operation_counts", query),
+            ):
+                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[0]["Class A"], 1.0)
+                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[0]["Class A"], 1.0)
+                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[0]["Class A"], 2.0)
+                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[3], "2026-08")
+            self.assertEqual(query.call_count, 3)
 
 
 class PublicStatusAndFail2banTests(unittest.TestCase):
@@ -579,6 +738,14 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
 class RenderingTests(unittest.TestCase):
     def test_render_sections_and_failures(self) -> None:
         config = full_config()
+        disabled = full_config()
+        disabled["gcs"]["enabled"] = False
+        self.assertEqual(collector.render_gcs_metrics(disabled), [])
+        non_control = full_config()
+        non_control["host"] = host(control_node=False)
+        self.assertEqual(collector.render_gcs_metrics(non_control), [])
+        self.assertEqual(collector.render_google_monitoring_metrics(disabled), [])
+        self.assertEqual(collector.render_google_monitoring_metrics(non_control), [])
         self.assertEqual(
             collector.render_expected_restic_repositories(
                 {"host": host(control_node=False)}
@@ -596,6 +763,7 @@ class RenderingTests(unittest.TestCase):
                     {"Class A": 10, "Class B": 20, "Free": 30, "Unknown": 0},
                     1000,
                     True,
+                    "2026-07",
                 ),
             ),
             mock.patch.object(
@@ -606,7 +774,7 @@ class RenderingTests(unittest.TestCase):
             mock.patch.object(
                 collector,
                 "cached_google_monitoring_usage",
-                return_value=(1234, 1000, True),
+                return_value=(1234, 1000, True, "2026-07"),
             ),
             mock.patch.object(
                 collector,
@@ -626,12 +794,24 @@ class RenderingTests(unittest.TestCase):
         for metric in (
             "grayhaven_host_info",
             "grayhaven_restic_repository_expected",
-            "grayhaven_gcs_restic_monthly_operations_total",
-            "grayhaven_google_monitoring_monthly_billed_series_total",
+            "grayhaven_gcs_restic_billing_month_operations_total",
+            "grayhaven_google_monitoring_billing_month_series_total",
             "grayhaven_proton_service_status",
             "grayhaven_fail2ban_jail_banned_ip_info",
         ):
             self.assertIn(metric, rendered)
+        self.assertNotIn("grayhaven_gcs_restic_monthly_operations_total", rendered)
+        self.assertNotIn("grayhaven_google_monitoring_monthly_billed_series_total", rendered)
+        self.assertIn('month="2026-07"', rendered)
+        self.assertIn("current Google billing month", rendered)
+        self.assertIn(
+            'grayhaven_gcs_restic_billing_month_operations_total{client="grayhaven",environment="prod",location="US-EAST1",month="2026-07",operation_class="Class A",project_id="grayhaven"} 10',
+            rendered,
+        )
+        self.assertIn(
+            'grayhaven_google_monitoring_billing_month_series_total{client="grayhaven",environment="prod",location="US-EAST1",month="2026-07",project_id="grayhaven"} 1234',
+            rendered,
+        )
 
         with (
             mock.patch.object(collector, "gcs_status", return_value=("Unknown", 0, 0)),
