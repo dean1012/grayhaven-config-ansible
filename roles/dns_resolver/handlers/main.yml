@@ -1,5 +1,0 @@
----
-- name: Reapply active network device DNS settings
-  ansible.builtin.command:
-    cmd: "nmcli device reapply {{ ansible_facts.default_ipv4.interface }}"
-  changed_when: true

@@ -30,4 +30,4 @@ deploy_websites_packages:
   - python3-certbot-nginx
   - rsync
 
-deploy_websites_hosted_domains: []
+deploy_websites_hosted_domains: "{{ hosted_domains | default([]) }}"

@@ -54,23 +54,14 @@
     path: "{{ backupctl_checkout_dir }}/.git"
   register: backupctl_existing_checkout
 
-- name: Read existing grayhaven-backupctl origin URL
-  ansible.builtin.slurp:
-    src: "{{ backupctl_checkout_dir }}/.git/config"
+- name: Read existing grayhaven-backupctl origin URL  # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: git -C "{{ backupctl_checkout_dir }}" config --get remote.origin.url
   become: true
   become_user: ansible
   register: backupctl_existing_origin
+  changed_when: false
   failed_when: false
-  when: backupctl_existing_checkout.stat.exists
-
-- name: Derive existing grayhaven-backupctl origin URL
-  ansible.builtin.set_fact:
-    backupctl_existing_origin_url: >-
-      {{
-        backupctl_existing_origin.content | default('') | b64decode
-        | regex_findall('(?ms)^\\[remote "origin"\\].*?^[ \\t]*url[ \\t]*=[ \\t]*(\\S+)[ \\t]*$')
-        | first | default('')
-      }}
   when: backupctl_existing_checkout.stat.exists
 
 - name: Remove grayhaven-backupctl checkout when origin URL changes
@@ -79,7 +70,7 @@
     state: absent
   when:
     - backupctl_existing_checkout.stat.exists
-    - backupctl_existing_origin_url | default('') | trim != backupctl_repo_url
+    - backupctl_existing_origin.stdout | default('') | trim != backupctl_repo_url
 
 - name: Check out grayhaven-backupctl
   ansible.builtin.git:

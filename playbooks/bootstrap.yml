@@ -19,19 +19,19 @@
           - grayhaven_role is defined
           - grayhaven_role is string
           - grayhaven_role in ["bastion", "web"]
-          - baseline_validation_environment is defined
-          - baseline_validation_environment is string
-          - baseline_validation_environment in ["staging", "prod"]
+          - grayhaven_environment is defined
+          - grayhaven_environment is string
+          - grayhaven_environment in ["staging", "prod"]
           - grayhaven_config_repo_ref is defined
           - grayhaven_config_repo_ref is string
           - grayhaven_config_repo_ref | trim | length > 0
           - grayhaven_ansible_deploy_public_key is defined
           - grayhaven_ansible_deploy_public_key is string
           - grayhaven_ansible_deploy_public_key | trim | length > 0
-          - baseline_validation_certificate_environment is defined
-          - baseline_validation_certificate_environment in ["staging", "production"]
-          - baseline_validation_tls_mode is defined
-          - baseline_validation_tls_mode in ["host", "load_balancer"]
+          - grayhaven_certificate_environment is defined
+          - grayhaven_certificate_environment in ["staging", "production"]
+          - grayhaven_tls_mode is defined
+          - grayhaven_tls_mode in ["host", "load_balancer"]
         fail_msg: "Required common bootstrap variables were not provided correctly by the OpenTofu/cloud-init handoff."
         quiet: true
       no_log: true
@@ -190,8 +190,8 @@
         automation_runner_bootstrap_vault_checkout_dir: /home/ansible/grayhaven-vault
         automation_runner_bootstrap_hostname: "{{ grayhaven_hostname }}"
         automation_runner_bootstrap_is_control_node: "{{ grayhaven_is_control_node | bool }}"
-        automation_runner_bootstrap_certificate_environment: "{{ baseline_validation_certificate_environment }}"
-        automation_runner_bootstrap_tls_mode: "{{ baseline_validation_tls_mode }}"
+        automation_runner_bootstrap_certificate_environment: "{{ grayhaven_certificate_environment }}"
+        automation_runner_bootstrap_tls_mode: "{{ grayhaven_tls_mode }}"
       when: grayhaven_role == "bastion"
 
     - name: Install bootstrap runner files

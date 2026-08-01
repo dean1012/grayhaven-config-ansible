@@ -14,7 +14,7 @@
     - name: Gather facts after managed hosts are reachable
       ansible.builtin.setup:
 
-    - name: Build Discord notification target order
+    - name: Build Discord notification target order  # noqa: run-once[task]
       ansible.builtin.set_fact:
         automation_notifications_targets: >-
           {{
@@ -37,16 +37,16 @@
               | sort
             )
           }}
-      when: inventory_hostname == ansible_play_hosts_all[0]
+      run_once: true
 
-    - name: Notify Discord that configuration started
+    - name: Notify Discord that configuration started  # noqa: run-once[task]
       ansible.builtin.include_role:
         name: automation_notifications
       vars:
         automation_notifications_target: "{{ automation_notifications_targets | join('\n') }}"
         automation_notifications_title: Ansible Configuration Started
         automation_notifications_color: "{{ automation_notifications_colors.info }}"
-      when: inventory_hostname == ansible_play_hosts_all[0]
+      run_once: true
 
   roles:
     - baseline_validation
@@ -96,7 +96,7 @@
         remove: true
       when: grayhaven_almalinux_processes.rc != 0
 
-    - name: Build Discord successful host target order
+    - name: Build Discord successful host target order  # noqa: run-once[task]
       ansible.builtin.set_fact:
         automation_notifications_success_targets: >-
           {{
@@ -119,9 +119,9 @@
               | sort
             )
           }}
-      when: inventory_hostname == ansible_play_hosts_all[0]
+      run_once: true
 
-    - name: Notify Discord that configuration completed
+    - name: Notify Discord that configuration completed  # noqa: run-once[task]
       ansible.builtin.include_role:
         name: automation_notifications
       vars:
@@ -147,4 +147,4 @@
             if automation_notifications_reboot_required
             else automation_notifications_colors.success
           }}
-      when: inventory_hostname == ansible_play_hosts_all[0]
+      run_once: true
