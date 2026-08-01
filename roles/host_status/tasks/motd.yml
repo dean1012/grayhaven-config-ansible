@@ -1,7 +1,7 @@
 ---
 - name: Install MOTD refresh command
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/grayhaven-refresh-motd"
+    src: "{{ playbook_dir | dirname }}/files/grayhaven-refresh-motd"
     dest: /usr/local/sbin/grayhaven-refresh-motd
     owner: root
     group: root
@@ -9,7 +9,7 @@
 
 - name: Install MOTD refresh service
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/systemd/grayhaven-refresh-motd.service"
+    src: "{{ playbook_dir | dirname }}/files/systemd/grayhaven-refresh-motd.service"
     dest: /etc/systemd/system/grayhaven-refresh-motd.service
     owner: root
     group: root

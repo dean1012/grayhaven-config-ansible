@@ -37,7 +37,7 @@
               | sort
             )
           }}
-      run_once: true
+      when: inventory_hostname == ansible_play_hosts_all[0]
 
     - name: Notify Discord that configuration started
       ansible.builtin.include_role:
@@ -46,7 +46,7 @@
         automation_notifications_target: "{{ automation_notifications_targets | join('\n') }}"
         automation_notifications_title: Ansible Configuration Started
         automation_notifications_color: "{{ automation_notifications_colors.info }}"
-      run_once: true
+      when: inventory_hostname == ansible_play_hosts_all[0]
 
   roles:
     - baseline_validation
@@ -119,7 +119,7 @@
               | sort
             )
           }}
-      run_once: true
+      when: inventory_hostname == ansible_play_hosts_all[0]
 
     - name: Notify Discord that configuration completed
       ansible.builtin.include_role:
@@ -147,4 +147,4 @@
             if automation_notifications_reboot_required
             else automation_notifications_colors.success
           }}
-      run_once: true
+      when: inventory_hostname == ansible_play_hosts_all[0]

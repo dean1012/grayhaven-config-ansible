@@ -434,7 +434,7 @@ class ValidatorTests(unittest.TestCase):
         self.assertEqual(alloy.regex_replace("abc", "b", "x"), "axc")
         environment = alloy.build_environment()
         self.assertIn("regex_replace", environment.filters)
-        self.assertEqual(alloy.fixture_context()["grayhaven_environment"], "prod")
+        self.assertEqual(alloy.fixture_context()["baseline_validation_environment"], "prod")
         with tempfile.TemporaryDirectory() as temp_dir:
             rendered = pathlib.Path(temp_dir) / "config.alloy"
             alloy.render_config(rendered)

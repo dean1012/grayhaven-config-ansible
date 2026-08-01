@@ -7,29 +7,31 @@
 
 - name: Create managed swapfile
   ansible.builtin.command:
-    cmd: "fallocate -l {{ swapfile_size }} {{ swapfile_path }}"
-    creates: "{{ swapfile_path }}"
+    cmd: "fallocate -l {{ swap_swapfile_size }} {{ swap_swapfile_path }}"
+    creates: "{{ swap_swapfile_path }}"
 
 - name: Secure managed swapfile permissions
   ansible.builtin.file:
-    path: "{{ swapfile_path }}"
+    path: "{{ swap_swapfile_path }}"
     owner: root
     group: root
     mode: "0600"
 
 - name: Format managed swapfile
   ansible.builtin.command:
-    cmd: "mkswap {{ swapfile_path }}"
-  when: swapfile_path not in swap_active_devices.stdout_lines
+    cmd: "mkswap {{ swap_swapfile_path }}"
+  when: swap_swapfile_path not in swap_active_devices.stdout_lines
+  changed_when: true
 
 - name: Enable managed swapfile
   ansible.builtin.command:
-    cmd: "swapon {{ swapfile_path }}"
-  when: swapfile_path not in swap_active_devices.stdout_lines
+    cmd: "swapon {{ swap_swapfile_path }}"
+  when: swap_swapfile_path not in swap_active_devices.stdout_lines
+  changed_when: true
 
 - name: Persist managed swapfile
   ansible.builtin.lineinfile:
     path: /etc/fstab
-    regexp: "^{{ swapfile_path | regex_escape }}\\s+"
-    line: "{{ swapfile_path }} none swap sw 0 0"
+    regexp: "^{{ swap_swapfile_path | regex_escape }}\\s+"
+    line: "{{ swap_swapfile_path }} none swap sw 0 0"
     state: present

@@ -128,19 +128,17 @@
     label: "{{ item.username }}"
 
 - name: Archive absent user home directories before deletion
-  ansible.builtin.command:
-    cmd: >-
-      tar -C /home
-      -czf
-      {{ admin_access_homedir_archive_path }}/{{ admin_access_archive_filename }}
-      {{ item.item.username }}
+  community.general.archive:
+    path: "/home/{{ item.item.username }}"
+    dest: "{{ admin_access_homedir_archive_path }}/{{ admin_access_archive_filename }}"
+    format: gz
+    force_archive: true
   when:
     - item.stat.exists
     - item.item.home_mode | default('archive') == 'archive'
   loop: "{{ admin_access_absent_homes.results }}"
   loop_control:
     label: "{{ item.item.username }}"
-  changed_when: true
   vars:
     admin_access_archive_filename: >-
       {{ item.item.username }}-{{ inventory_hostname }}-{{ ansible_date_time.iso8601_basic_short }}.tar.gz

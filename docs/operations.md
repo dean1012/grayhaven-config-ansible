@@ -323,7 +323,7 @@ health endpoint after convergence or maintenance.
 
 ## Changing the Managed Timezone
 
-The `grayhaven_timezone` Ansible variable controls both the operating-system
+The `baseline_validation_timezone` Ansible variable controls both the operating-system
 timezone and the Time Tracker container's `TZ` setting. Do not change the
 timezone directly on a managed host or inside the container.
 
@@ -334,10 +334,10 @@ timezone directly on a managed host or inside the container.
    "${EDITOR:-vi}" roles/baseline_validation/defaults/main.yml
    ```
 
-2. Set `grayhaven_timezone` to the required IANA timezone name.
+2. Set `baseline_validation_timezone` to the required IANA timezone name.
 
    ```yaml
-   grayhaven_timezone: <Area/Location>
+   baseline_validation_timezone: <Area/Location>
    ```
 
 3. Confirm that the selected timezone exists in the workstation's timezone

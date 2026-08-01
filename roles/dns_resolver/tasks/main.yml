@@ -38,9 +38,4 @@
     dns4_ignore_auto: true
     state: present
   register: dns_resolver_nmcli_dns
-
-- name: Reapply active network device DNS settings
-  ansible.builtin.command:
-    cmd: "nmcli device reapply {{ ansible_facts.default_ipv4.interface }}"
-  changed_when: true
-  when: dns_resolver_nmcli_dns.changed
+  notify: Reapply active network device DNS settings

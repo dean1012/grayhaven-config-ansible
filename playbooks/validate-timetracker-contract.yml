@@ -48,7 +48,7 @@
   gather_facts: false
 
   vars:
-    grayhaven_environment: staging
+    baseline_validation_environment: staging
 
   roles:
     - observability

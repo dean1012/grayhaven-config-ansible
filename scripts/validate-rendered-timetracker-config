@@ -22,7 +22,7 @@ TEMPLATES = {
 
 def fixture_context() -> dict[str, object]:
     return {
-        "grayhaven_timezone": "America/Chicago",
+        "baseline_validation_timezone": "America/Chicago",
         "timetracker": {
             "backup_dir": "/var/lib/grayhaven/timetracker/backups",
             "branding_dir": "/var/lib/grayhaven/timetracker/branding",

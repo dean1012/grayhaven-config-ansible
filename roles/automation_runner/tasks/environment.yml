@@ -39,28 +39,28 @@
     automation_runner_effective_vault_repo_ref: >-
       {{
         automation_runner_bootstrap_vault_repo_ref
-        | default('main' if grayhaven_environment == 'prod' else 'staging')
+        | default('main' if baseline_validation_environment == 'prod' else 'staging')
       }}
     automation_runner_effective_vault_checkout_dir: >-
       {{
         automation_runner_bootstrap_vault_checkout_dir
-        | default(grayhaven_vault_checkout_dir | default('/home/ansible/grayhaven-vault'))
+        | default(baseline_validation_vault_checkout_dir | default('/home/ansible/grayhaven-vault'))
       }}
-    automation_runner_effective_environment: "{{ grayhaven_environment }}"
+    automation_runner_effective_environment: "{{ baseline_validation_environment }}"
     automation_runner_effective_hostname: >-
       {{ automation_runner_bootstrap_hostname | default(inventory_hostname) }}
     automation_runner_effective_is_control_node: >-
       {{
         automation_runner_bootstrap_is_control_node
-        | default('control-node' in (do_tags | default([])))
-        | bool
+        if automation_runner_bootstrap_is_control_node is defined
+        else 'control-node' in (do_tags | default([]))
       }}
     automation_runner_effective_control_node_string: >-
-      {{ (automation_runner_effective_is_control_node | bool) | ternary('true', 'false') }}
+      {{ 'true' if automation_runner_effective_is_control_node else 'false' }}
     automation_runner_effective_certificate_environment: >-
       {{
         automation_runner_bootstrap_certificate_environment
-        | default(grayhaven_certificate_environment | default('staging'))
+        | default(baseline_validation_certificate_environment | default('staging'))
       }}
     automation_runner_effective_tls_mode: >-
-      {{ automation_runner_bootstrap_tls_mode | default(grayhaven_tls_mode | default('host')) }}
+      {{ automation_runner_bootstrap_tls_mode | default(baseline_validation_tls_mode | default('host')) }}

@@ -1,7 +1,7 @@
 ---
 - name: Install bastion runner executable
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/grayhaven-ansible-runner"
+    src: "{{ playbook_dir | dirname }}/files/grayhaven-ansible-runner"
     dest: /usr/local/sbin/grayhaven-ansible-runner
     owner: root
     group: root
@@ -10,7 +10,7 @@
 
 - name: Install bastion runner service unit
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.service"
+    src: "{{ playbook_dir | dirname }}/files/systemd/grayhaven-ansible-runner.service"
     dest: /etc/systemd/system/grayhaven-ansible-runner.service
     owner: root
     group: root
@@ -19,7 +19,7 @@
 
 - name: Install bastion runner timer unit
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-runner.timer"
+    src: "{{ playbook_dir | dirname }}/files/systemd/grayhaven-ansible-runner.timer"
     dest: /etc/systemd/system/grayhaven-ansible-runner.timer
     owner: root
     group: root
@@ -28,7 +28,7 @@
 
 - name: Install bastion poller executable
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/grayhaven-ansible-poller"
+    src: "{{ playbook_dir | dirname }}/files/grayhaven-ansible-poller"
     dest: /usr/local/sbin/grayhaven-ansible-poller
     owner: root
     group: root
@@ -37,7 +37,7 @@
 
 - name: Install bastion poller service unit
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.service"
+    src: "{{ playbook_dir | dirname }}/files/systemd/grayhaven-ansible-poller.service"
     dest: /etc/systemd/system/grayhaven-ansible-poller.service
     owner: root
     group: root
@@ -46,7 +46,7 @@
 
 - name: Install bastion poller timer unit
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/systemd/grayhaven-ansible-poller.timer"
+    src: "{{ playbook_dir | dirname }}/files/systemd/grayhaven-ansible-poller.timer"
     dest: /etc/systemd/system/grayhaven-ansible-poller.timer
     owner: root
     group: root

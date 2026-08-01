@@ -1,6 +1,6 @@
 ---
-grayhaven_environment: prod
-grayhaven_timezone: America/Chicago
-grayhaven_certificate_environment: staging
-grayhaven_tls_mode: host
-grayhaven_vault_checkout_dir: /home/ansible/grayhaven-vault
+baseline_validation_environment: prod
+baseline_validation_timezone: America/Chicago
+baseline_validation_certificate_environment: staging
+baseline_validation_tls_mode: host
+baseline_validation_vault_checkout_dir: /home/ansible/grayhaven-vault

@@ -58,7 +58,7 @@
         prometheus_datasource_name: "{{ observability_grafana_credentials.prometheus.datasource_name }}"
       labels:
         client: "{{ observability_client }}"
-        environment: "{{ grayhaven_environment }}"
+        environment: "{{ baseline_validation_environment }}"
       thresholds:
         cpu_percent: "{{ observability_cpu_warning_percent }}"
         memory_percent: "{{ observability_memory_warning_percent }}"
@@ -75,7 +75,7 @@
           {{ observability_google_monitoring_monthly_warning_series }}
         gcs_class_a_monthly_warning_operations: "{{ observability_gcs_class_a_monthly_warning_operations }}"
         gcs_class_b_monthly_warning_operations: "{{ observability_gcs_class_b_monthly_warning_operations }}"
-      tls_mode: "{{ grayhaven_tls_mode }}"
+      tls_mode: "{{ baseline_validation_tls_mode }}"
       hosts: "{{ observability_hosts }}"
       sites: "{{ observability_web_sites }}"
       service_units:

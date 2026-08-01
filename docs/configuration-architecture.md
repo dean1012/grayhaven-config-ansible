@@ -279,7 +279,7 @@ New hosted domains require both
 [environment DNS policy](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/policy.md#environment-dns-policy)
 in
 [grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
-and matching `hosted_domains` data in `grayhaven-vault`. See the
+and matching `deploy_websites_hosted_domains` data in `grayhaven-vault`. See the
 [DNS architecture documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/dns-architecture.md)
 in the `grayhaven-infra-opentofu` repository and the
 [hosted domain DNS coordination documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#hosted-domain-dns-coordination)

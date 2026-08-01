@@ -14,7 +14,7 @@
       ansible.builtin.slurp:
         src: "{{ staged_deploy_public_key_path }}"
       register: rotate_deploy_public_key_slurp
-      run_once: true
+      when: inventory_hostname == ansible_play_hosts_all[0]
       delegate_to: "{{ groups.get('tag_role_bastion', [inventory_hostname])[0] }}"
       no_log: true
 

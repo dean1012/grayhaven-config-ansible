@@ -10,7 +10,7 @@
 - name: Derive vault firewalld policy path
   ansible.builtin.set_fact:
     firewalld_policy_vault_path: >-
-      {{ grayhaven_vault_checkout_dir | default('/home/ansible/grayhaven-vault') }}/firewall.yml
+      {{ baseline_validation_vault_checkout_dir | default('/home/ansible/grayhaven-vault') }}/firewall.yml
 
 - name: Check vault firewalld policy on the control node
   ansible.builtin.stat:
@@ -42,7 +42,7 @@
     automation_notifications_target: >-
       {{ inventory_hostname }}
 
-      Environment: {{ grayhaven_environment }}
+      Environment: {{ baseline_validation_environment }}
   when:
     - not firewalld_policy_vault_stat.stat.exists
     - firewalld_policy_cache_stat.stat.exists
@@ -56,7 +56,7 @@
     automation_notifications_target: >-
       {{ inventory_hostname }}
 
-      Environment: {{ grayhaven_environment }}
+      Environment: {{ baseline_validation_environment }}
   when:
     - not firewalld_policy_vault_stat.stat.exists
     - not firewalld_policy_cache_stat.stat.exists
@@ -83,7 +83,7 @@
   when:
     - firewalld_policy_cache_stat.stat.exists
     - grayhaven_role == "web"
-    - grayhaven_tls_mode == "load_balancer"
+    - baseline_validation_tls_mode == "load_balancer"
 
 - name: Keep only web origin ports needed for load-balancer TLS
   ansible.builtin.set_fact:
@@ -93,7 +93,7 @@
   when:
     - firewalld_policy_cache_stat.stat.exists
     - grayhaven_role == "web"
-    - grayhaven_tls_mode == "load_balancer"
+    - baseline_validation_tls_mode == "load_balancer"
     - not (item.protocol == "tcp" and item.port_range == "443")
 
 - name: Allow private web deploy fanout between load-balanced web hosts
@@ -111,7 +111,7 @@
   when:
     - firewalld_policy_cache_stat.stat.exists
     - grayhaven_role == "web"
-    - grayhaven_tls_mode == "load_balancer"
+    - baseline_validation_tls_mode == "load_balancer"
     - managed_inventory_web_private_sources | default([]) | length > 1
 
 - name: Apply load-balancer TLS firewalld policy
@@ -124,7 +124,7 @@
   when:
     - firewalld_policy_cache_stat.stat.exists
     - grayhaven_role == "web"
-    - grayhaven_tls_mode == "load_balancer"
+    - baseline_validation_tls_mode == "load_balancer"
 
 - name: Install grayhaven firewalld zone from policy
   ansible.builtin.template:
@@ -153,24 +153,22 @@
     ansible_ssh_args: "{{ firewalld_policy_ssh_args }}"
   block:
     - name: Check whether firewalld is enabled
-      ansible.builtin.command:
-        cmd: systemctl is-enabled --quiet firewalld
+      ansible.builtin.service_facts:
       register: firewalld_policy_enabled
-      changed_when: false
       failed_when: false
 
     - name: Check whether firewalld is active
-      ansible.builtin.command:
-        cmd: systemctl is-active --quiet firewalld
+      ansible.builtin.service_facts:
       register: firewalld_policy_running
-      changed_when: false
       failed_when: false
 
     - name: Enable firewalld
       ansible.builtin.systemd_service:
         name: firewalld
         enabled: true
-      when: firewalld_policy_enabled.rc != 0
+      when: >-
+        ((firewalld_policy_enabled.ansible_facts | default({})).services | default({})).get('firewalld.service', {}).status | default('')
+        != 'enabled'
 
     - name: Start firewalld outside the active SSH session
       ansible.builtin.raw: |
@@ -178,7 +176,9 @@
         echo starting
       changed_when: "'starting' in firewalld_policy_start.stdout_lines"
       register: firewalld_policy_start
-      when: firewalld_policy_running.rc != 0
+      when: >-
+        ((firewalld_policy_running.ansible_facts | default({})).services | default({})).get('firewalld.service', {}).state | default('')
+        != 'running'
 
     - name: Wait for SSH after firewalld starts
       ansible.builtin.wait_for_connection:
@@ -187,13 +187,13 @@
         timeout: 60
 
     - name: Wait for firewalld to become active
-      ansible.builtin.command:
-        cmd: systemctl is-active firewalld
+      ansible.builtin.service_facts:
       register: firewalld_policy_active
-      changed_when: false
       retries: 10
       delay: 3
-      until: firewalld_policy_active.stdout == "active"
+      until: >-
+        firewalld_policy_active.ansible_facts.services.get('firewalld.service', {}).state | default('')
+        == 'running'
 
     - name: Reload firewalld after zone changes
       ansible.builtin.meta: flush_handlers

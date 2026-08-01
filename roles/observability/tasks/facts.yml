@@ -59,7 +59,7 @@
       role: "{{ observability_loop_role }}"
       project: "{{ observability_loop_project_tag | regex_replace('^project-', '') }}"
       client: "{{ observability_loop_client_tag | regex_replace('^client-', '') }}"
-      environment: "{{ grayhaven_environment }}"
+      environment: "{{ baseline_validation_environment }}"
       control_node: "{{ 'control-node' in observability_loop_tags }}"
   when: observability_loop_role != "unknown"
 
@@ -70,7 +70,7 @@
 - name: Build observability site metadata
   ansible.builtin.set_fact:
     observability_web_sites: "{{ observability_web_sites + [observability_site_entry] }}"
-  loop: "{{ hosted_domains | default([]) }}"
+  loop: "{{ deploy_websites_hosted_domains | default([]) }}"
   loop_control:
     label: "{{ item.domain | default('undefined-domain') }}"
   vars:
@@ -78,19 +78,19 @@
     observability_site_domain: >-
       {{
         observability_root_domain
-        if grayhaven_environment == 'prod'
+        if baseline_validation_environment == 'prod'
         else 'staging.' ~ observability_root_domain
       }}
     observability_site_www_domain: >-
       {{
         'www.' ~ observability_root_domain
-        if grayhaven_environment == 'prod'
+        if baseline_validation_environment == 'prod'
         else 'www.staging.' ~ observability_root_domain
       }}
     observability_site_dev_domain: >-
       {{
         'dev.' ~ observability_root_domain
-        if grayhaven_environment == 'prod'
+        if baseline_validation_environment == 'prod'
         else 'dev.staging.' ~ observability_root_domain
       }}
     observability_site_entry:
@@ -103,7 +103,7 @@
       cert_name: >-
         {{
           observability_root_domain
-          if grayhaven_environment == 'prod'
+          if baseline_validation_environment == 'prod'
           else 'staging.' ~ observability_root_domain
         }}
       nginx_log_names:
