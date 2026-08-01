@@ -21,7 +21,8 @@ Install Ansible runtime and validation dependencies:
 ```bash
 sudo dnf install ShellCheck
 python3 -m pip install --require-hashes --requirement pip3_requirements.txt
-python3 -m pip install ansible-lint==26.4.0 yamllint
+python3 -m pip install --user --requirement requirements-dev.txt
+python3 -m pip install ansible-lint==26.6.0 yamllint
 npm install --global markdownlint-cli2
 scripts/install-galaxy-collections
 ```
