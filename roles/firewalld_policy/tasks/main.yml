@@ -167,8 +167,10 @@
         name: firewalld
         enabled: true
       when: >-
-        ((firewalld_policy_enabled.ansible_facts | default({})).services | default({})).get('firewalld.service', {}).status | default('')
-        != 'enabled'
+        (
+          (firewalld_policy_enabled.ansible_facts | default({})).services
+          | default({})
+        ).get('firewalld.service', {}).status | default('') != 'enabled'
 
     - name: Start firewalld outside the active SSH session
       ansible.builtin.raw: |
@@ -177,8 +179,10 @@
       changed_when: "'starting' in firewalld_policy_start.stdout_lines"
       register: firewalld_policy_start
       when: >-
-        ((firewalld_policy_running.ansible_facts | default({})).services | default({})).get('firewalld.service', {}).state | default('')
-        != 'running'
+        (
+          (firewalld_policy_running.ansible_facts | default({})).services
+          | default({})
+        ).get('firewalld.service', {}).state | default('') != 'running'
 
     - name: Wait for SSH after firewalld starts
       ansible.builtin.wait_for_connection:

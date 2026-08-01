@@ -133,6 +133,9 @@
     dest: "{{ admin_access_homedir_archive_path }}/{{ admin_access_archive_filename }}"
     format: gz
     force_archive: true
+    owner: root
+    group: root
+    mode: "0600"
   when:
     - item.stat.exists
     - item.item.home_mode | default('archive') == 'archive'
