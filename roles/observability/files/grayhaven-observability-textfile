@@ -356,8 +356,6 @@ def cached_gcs_operation_counts(
                 mode=0o600,
             )
 
-    if cache is None:
-        raise RuntimeError("GCS operation telemetry cache is unavailable")
     refreshed_at = int(cache["refreshed_at"])
     counts = {
         operation_class: float(cache["counts"][operation_class])
@@ -456,8 +454,6 @@ def cached_google_monitoring_usage(
                 mode=0o600,
             )
 
-    if cache is None:
-        raise RuntimeError("Cloud Monitoring usage telemetry cache is unavailable")
     refreshed_at = int(cache["refreshed_at"])
     return (
         float(cache["billed_series"]),
