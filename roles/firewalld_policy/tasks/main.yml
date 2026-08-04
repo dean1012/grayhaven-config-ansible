@@ -152,25 +152,15 @@
   vars:
     ansible_ssh_args: "{{ firewalld_policy_ssh_args }}"
   block:
-    - name: Check whether firewalld is enabled
-      ansible.builtin.service_facts:
-      register: firewalld_policy_enabled
-      failed_when: false
+    - name: Enable firewalld
+      ansible.builtin.systemd_service:
+        name: firewalld
+        enabled: true
 
     - name: Check whether firewalld is active
       ansible.builtin.service_facts:
       register: firewalld_policy_running
       failed_when: false
-
-    - name: Enable firewalld
-      ansible.builtin.systemd_service:
-        name: firewalld
-        enabled: true
-      when: >-
-        (
-          (firewalld_policy_enabled.ansible_facts | default({})).services
-          | default({})
-        ).get('firewalld.service', {}).status | default('') != 'enabled'
 
     - name: Start firewalld outside the active SSH session
       ansible.builtin.raw: |

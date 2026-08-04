@@ -91,7 +91,9 @@ jobs:
           | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
 
       - name: Run Time Tracker contract check
-        run: ansible-playbook --check playbooks/validate-timetracker-contract.yml
+        run: >-
+          ansible-playbook --check -i localhost, --connection=local
+          playbooks/validate-timetracker-contract.yml
 
       - name: Run ansible-lint
         run: ansible-lint .
