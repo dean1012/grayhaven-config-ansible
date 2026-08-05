@@ -19,6 +19,7 @@ shell-coverage.xml
 .ruff_cache/
 
 # Ansible runtime artifacts
+/.ansible/
 *.retry
 ansible.log
 

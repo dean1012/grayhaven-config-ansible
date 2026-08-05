@@ -1,0 +1,5 @@
+all:
+  children:
+    tag_role_bastion:
+      hosts:
+        localhost:
