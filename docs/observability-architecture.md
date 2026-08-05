@@ -104,7 +104,10 @@ starts at 00:00:00 Pacific on the first day of the current billing month and
 ends at collection time. The collector converts both endpoints to UTC for the
 Google APIs and labels the result with the Pacific month in `YYYY-MM` form.
 This contract also handles Pacific daylight-saving transitions without changing
-the month identity.
+the month identity. Because aligned Google responses can include a point whose
+interval begins before the requested boundary, the collector includes only
+points with valid intervals that begin at or after the boundary. Malformed or
+otherwise unusable intervals are ignored.
 
 The two canonical textfile gauge metrics are:
 
@@ -116,7 +119,9 @@ The two canonical textfile gauge metrics are:
 
 Each cache records a schema version, project, billing month, refresh timestamp,
 and typed usage values. The GCS cache also records the sorted expected bucket
-set. A cache is accepted only when all of those identity and schema checks
+set. GCS operation values are accumulated, cached, and rendered only for Class
+A and Class B; Free and unrecognized methods are ignored. A cache is accepted
+only when all of those identity and schema checks
 match the current collection. At a billing boundary, the month mismatch
 rejects the prior month's cache and forces a query for the new window. A
 malformed, incompatible, wrong-project, wrong-month, or wrong-bucket cache is

@@ -28,8 +28,10 @@ TEXTFILE_DIR = pathlib.Path("/var/lib/grayhaven/observability/textfile")
 OUTPUT_PATH = TEXTFILE_DIR / "grayhaven.prom"
 GCS_MONITORING_SCOPE = "https://www.googleapis.com/auth/monitoring.read"
 GOOGLE_BILLING_TIMEZONE = ZoneInfo("America/Los_Angeles")
-GCS_OPERATION_CACHE_VERSION = 3
-GOOGLE_MONITORING_USAGE_CACHE_VERSION = 2
+# These legacy telemetry labels map to the current Cloud Storage operation
+# table's Class A and Class B categories.
+GCS_OPERATION_CACHE_VERSION = 4
+GOOGLE_MONITORING_USAGE_CACHE_VERSION = 3
 GCS_OPERATION_CLASSES = {
     "CloneObject.From": "Class A",
     "ComposeObject": "Class A",
@@ -67,12 +69,8 @@ GCS_OPERATION_CLASSES = {
     "storage.buckets.getIamPolicy": "Class B",
     "storage.objects.get": "Class B",
     "storage.objects.getIamPolicy": "Class B",
-    "DeleteBucket": "Free",
-    "DeleteObject": "Free",
-    "storage.buckets.delete": "Free",
-    "storage.objects.delete": "Free",
 }
-GCS_OPERATION_CLASSES_REPORTED = ("Class A", "Class B", "Free", "Unknown")
+GCS_OPERATION_CLASSES_REPORTED = ("Class A", "Class B")
 GOOGLE_CLOUD_PRODUCTS_URL = "https://status.cloud.google.com/products.json"
 GOOGLE_CLOUD_INCIDENTS_URL = "https://status.cloud.google.com/incidents.json"
 GOOGLE_CLOUD_STORAGE_PRODUCT_TITLE = "Google Cloud Storage"
@@ -210,8 +208,41 @@ def point_value(point: dict[str, Any]) -> float:
     return 0.0
 
 
-def gcs_operation_class(method: str) -> str:
-    return GCS_OPERATION_CLASSES.get(method, "Unknown")
+def point_interval(point: object) -> tuple[datetime, datetime] | None:
+    if not isinstance(point, dict):
+        return None
+    interval = point.get("interval")
+    if not isinstance(interval, dict):
+        return None
+    start_value = interval.get("startTime")
+    end_value = interval.get("endTime")
+    if not isinstance(start_value, str) or not isinstance(end_value, str):
+        return None
+    try:
+        start_time = datetime.fromisoformat(start_value.replace("Z", "+00:00"))
+        end_time = datetime.fromisoformat(end_value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if (
+        start_time.tzinfo is None
+        or start_time.utcoffset() is None
+        or end_time.tzinfo is None
+        or end_time.utcoffset() is None
+        or end_time <= start_time
+    ):
+        return None
+    return start_time.astimezone(timezone.utc), end_time.astimezone(timezone.utc)
+
+
+def point_starts_at_or_after(point: object, boundary: datetime) -> bool:
+    interval = point_interval(point)
+    if interval is None:
+        return False
+    return interval[0] >= boundary
+
+
+def gcs_operation_class(method: str) -> str | None:
+    return GCS_OPERATION_CLASSES.get(method)
 
 
 def google_billing_window(now: datetime | None = None) -> tuple[datetime, datetime, str]:
@@ -276,7 +307,13 @@ def gcs_operation_counts(
 
             method = str(series.get("metric", {}).get("labels", {}).get("method", ""))
             operation_class = gcs_operation_class(method)
-            counts[operation_class] += sum(point_value(point) for point in series.get("points", []))
+            if operation_class is None:
+                continue
+            counts[operation_class] += sum(
+                point_value(point)
+                for point in series.get("points", [])
+                if point_starts_at_or_after(point, start_time)
+            )
 
         next_page = response.get("nextPageToken")
         if not next_page:
@@ -306,6 +343,8 @@ def load_gcs_operation_cache(
     counts = cache.get("counts")
     refreshed_at = cache.get("refreshed_at")
     if not isinstance(counts, dict) or not isinstance(refreshed_at, int) or isinstance(refreshed_at, bool):
+        return None
+    if set(counts) != set(GCS_OPERATION_CLASSES_REPORTED):
         return None
     if not all(
         isinstance(counts.get(operation_class), (int, float))
@@ -387,7 +426,12 @@ def monitoring_billed_series_total(
     series = response.get("timeSeries", [])
     if len(series) > 1 or response.get("nextPageToken"):
         raise RuntimeError("Cloud Monitoring billing query returned unexpected cardinality")
-    return sum(point_value(point) for item in series for point in item.get("points", []))
+    return sum(
+        point_value(point)
+        for item in series
+        for point in item.get("points", [])
+        if point_starts_at_or_after(point, start_time)
+    )
 
 
 def load_google_monitoring_usage_cache(

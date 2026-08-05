@@ -37,6 +37,20 @@ BILLING_END = utc("2026-07-27T12:00:00Z")
 BILLING_WINDOW = (BILLING_START, BILLING_END, "2026-07")
 
 
+def metric_point(
+    value: int | float,
+    *,
+    start: str = "2026-07-01T07:00:00Z",
+    end: str = "2026-07-27T12:00:00Z",
+) -> dict[str, object]:
+    value_key = "int64Value" if isinstance(value, int) else "doubleValue"
+    value_body: object = str(value) if value_key == "int64Value" else value
+    return {
+        "interval": {"startTime": start, "endTime": end},
+        "value": {value_key: value_body},
+    }
+
+
 class Response:
     def __init__(self, body: object) -> None:
         self.body = json.dumps(body).encode()
@@ -150,7 +164,9 @@ class HttpAndGoogleTests(unittest.TestCase):
         )
         for end_value, start_value, month in cases:
             start, end, actual_month = collector.google_billing_window(utc(end_value))
-            self.assertEqual((start, end, actual_month), (utc(start_value), utc(end_value), month))
+            self.assertEqual(
+                (start, end, actual_month), (utc(start_value), utc(end_value), month)
+            )
 
         self.assertEqual(collector.GOOGLE_BILLING_TIMEZONE.key, "America/Los_Angeles")
         with mock.patch.object(collector, "datetime") as clock:
@@ -195,6 +211,37 @@ class HttpAndGoogleTests(unittest.TestCase):
         self.assertEqual(collector.point_value({"value": {"int64Value": "2"}}), 2.0)
         self.assertEqual(collector.point_value({"value": {"doubleValue": 2.5}}), 2.5)
         self.assertEqual(collector.point_value({}), 0.0)
+        self.assertTrue(
+            collector.point_starts_at_or_after(metric_point(1), BILLING_START)
+        )
+        self.assertTrue(
+            collector.point_starts_at_or_after(
+                metric_point(1, start="2026-07-27T11:00:00Z"), BILLING_START
+            )
+        )
+        for invalid_point in (
+            [],
+            metric_point(1, start="2026-06-30T07:00:00Z"),
+            {"interval": {"startTime": "2026-07-01T07:00:00Z"}},
+            {"interval": {"startTime": 1, "endTime": "2026-07-27T12:00:00Z"}},
+            {
+                "interval": {
+                    "startTime": "not-a-time",
+                    "endTime": "2026-07-27T12:00:00Z",
+                }
+            },
+            {
+                "interval": {
+                    "startTime": "2026-07-27T12:00:00Z",
+                    "endTime": "2026-07-01T07:00:00Z",
+                }
+            },
+            {"interval": []},
+            {},
+        ):
+            self.assertFalse(
+                collector.point_starts_at_or_after(invalid_point, BILLING_START)
+            )
 
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         pem = key.private_bytes(
@@ -250,6 +297,9 @@ class HttpAndGoogleTests(unittest.TestCase):
                 {"ok": True},
             )
         self.assertIn("projects/project%2Fname/timeSeries", request.call_args.args[0])
+        for method, expected_class in collector.GCS_OPERATION_CLASSES.items():
+            self.assertIn(expected_class, ("Class A", "Class B"))
+            self.assertEqual(collector.gcs_operation_class(method), expected_class)
         self.assertEqual(
             collector.gcs_operation_class("storage.objects.insert"), "Class A"
         )
@@ -264,19 +314,15 @@ class HttpAndGoogleTests(unittest.TestCase):
         self.assertEqual(collector.gcs_operation_class("ReadObject"), "Class B")
         self.assertEqual(collector.gcs_operation_class("GetObjectMetadata"), "Class B")
         self.assertEqual(collector.gcs_operation_class("GetBucketMetadata"), "Class B")
-        self.assertEqual(collector.gcs_operation_class("DeleteObject"), "Free")
-        self.assertEqual(
-            collector.gcs_operation_class("storage.buckets.delete"), "Free"
-        )
-        self.assertEqual(collector.gcs_operation_class("unknown"), "Unknown")
-        self.assertEqual(
-            collector.gcs_operation_class("storage.objects.getter"), "Unknown"
-        )
+        self.assertIsNone(collector.gcs_operation_class("DeleteObject"))
+        self.assertIsNone(collector.gcs_operation_class("storage.buckets.delete"))
+        self.assertIsNone(collector.gcs_operation_class("unknown"))
+        self.assertIsNone(collector.gcs_operation_class("storage.objects.getter"))
         self.assertEqual(
             collector.gcs_operation_counts(
                 "project", "token", set(), BILLING_START, BILLING_END
             ),
-            {"Class A": 0.0, "Class B": 0.0, "Free": 0.0, "Unknown": 0.0},
+            {"Class A": 0.0, "Class B": 0.0},
         )
 
         pages = [
@@ -285,12 +331,19 @@ class HttpAndGoogleTests(unittest.TestCase):
                     {
                         "resource": {"labels": {"bucket_name": "bucket"}},
                         "metric": {"labels": {"method": "storage.objects.insert"}},
-                        "points": [{"value": {"int64Value": "2"}}],
+                        "points": [
+                            metric_point(
+                                100,
+                                start="2026-06-30T07:00:00Z",
+                                end="2026-07-01T07:00:00Z",
+                            ),
+                            metric_point(2),
+                        ],
                     },
                     {
                         "resource": {"labels": {"bucket_name": "other"}},
                         "metric": {"labels": {"method": "storage.objects.get"}},
-                        "points": [{"value": {"int64Value": "99"}}],
+                        "points": [metric_point(99)],
                     },
                 ],
                 "nextPageToken": "next",
@@ -300,17 +353,22 @@ class HttpAndGoogleTests(unittest.TestCase):
                     {
                         "resource": {"labels": {"bucket_name": "bucket"}},
                         "metric": {"labels": {"method": "storage.objects.get"}},
-                        "points": [{"value": {"doubleValue": 3.5}}],
+                        "points": [metric_point(3.5)],
                     },
                     {
                         "resource": {"labels": {"bucket_name": "bucket"}},
                         "metric": {"labels": {"method": "DeleteObject"}},
-                        "points": [{"value": {"int64Value": "4"}}],
+                        "points": [metric_point(4)],
                     },
                     {
                         "resource": {"labels": {"bucket_name": "bucket"}},
                         "metric": {"labels": {"method": "future.method"}},
-                        "points": [{"value": {"int64Value": "5"}}],
+                        "points": [metric_point(5)],
+                    },
+                    {
+                        "resource": {"labels": {"bucket_name": "bucket"}},
+                        "metric": {"labels": {"method": "storage.objects.insert"}},
+                        "points": [{"value": {"int64Value": "7"}}],
                     },
                 ]
             },
@@ -322,19 +380,47 @@ class HttpAndGoogleTests(unittest.TestCase):
                 collector.gcs_operation_counts(
                     "project", "token", {"bucket"}, BILLING_START, BILLING_END
                 ),
-                {"Class A": 2.0, "Class B": 3.5, "Free": 4.0, "Unknown": 5.0},
+                {"Class A": 2.0, "Class B": 3.5},
             )
         self.assertEqual(request.call_count, 2)
         query = request.call_args_list[0].args[2]
         self.assertEqual(query["interval.startTime"], "2026-07-01T07:00:00Z")
         self.assertEqual(query["interval.endTime"], "2026-07-27T12:00:00Z")
         self.assertEqual(query["aggregation.alignmentPeriod"], "2264400s")
+        with mock.patch.object(
+            collector, "monitoring_request", return_value={"timeSeries": []}
+        ):
+            self.assertEqual(
+                collector.gcs_operation_counts(
+                    "project", "token", {"bucket"}, BILLING_START, BILLING_END
+                ),
+                {"Class A": 0.0, "Class B": 0.0},
+            )
 
         with mock.patch.object(
             collector,
             "monitoring_request",
             return_value={
-                "timeSeries": [{"points": [{"value": {"int64Value": "12"}}]}]
+                "timeSeries": [
+                    {
+                        "points": [
+                            metric_point(
+                                100,
+                                start="2026-06-30T07:00:00Z",
+                                end="2026-07-01T07:00:00Z",
+                            ),
+                            metric_point(12),
+                            {"value": {"int64Value": "9"}},
+                            {
+                                "interval": {
+                                    "startTime": 1,
+                                    "endTime": "2026-07-27T12:00:00Z",
+                                },
+                                "value": {"int64Value": "8"},
+                            },
+                        ]
+                    }
+                ]
             },
         ) as request:
             self.assertEqual(
@@ -346,6 +432,15 @@ class HttpAndGoogleTests(unittest.TestCase):
         query = request.call_args.args[2]
         self.assertEqual(query["interval.startTime"], "2026-07-01T07:00:00Z")
         self.assertEqual(query["interval.endTime"], "2026-07-27T12:00:00Z")
+        with mock.patch.object(
+            collector, "monitoring_request", return_value={"timeSeries": []}
+        ):
+            self.assertEqual(
+                collector.monitoring_billed_series_total(
+                    "project", "token", BILLING_START, BILLING_END
+                ),
+                0,
+            )
         with (
             mock.patch.object(
                 collector,
@@ -373,7 +468,7 @@ class CacheTests(unittest.TestCase):
                 "project_id": "project",
                 "month": "2026-07",
                 "bucket_names": ["bucket"],
-                "counts": {"Class A": 1, "Class B": 2, "Free": 3, "Unknown": 4},
+                "counts": {"Class A": 1, "Class B": 2},
                 "refreshed_at": 100,
             }
             path.write_text(json.dumps(valid), encoding="utf-8")
@@ -411,9 +506,15 @@ class CacheTests(unittest.TestCase):
             invalid["counts"] = {
                 "Class A": True,
                 "Class B": 2,
-                "Free": 3,
-                "Unknown": 4,
             }
+            path.write_text(json.dumps(invalid), encoding="utf-8")
+            self.assertIsNone(
+                collector.load_gcs_operation_cache(
+                    path, "project", {"bucket"}, "2026-07"
+                )
+            )
+            invalid = dict(valid)
+            invalid["counts"] = {"Class A": 1, "Class B": 2, "Free": 3}
             path.write_text(json.dumps(invalid), encoding="utf-8")
             self.assertIsNone(
                 collector.load_gcs_operation_cache(
@@ -486,18 +587,20 @@ class CacheTests(unittest.TestCase):
                 "project_id": "project",
             }
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(1000)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(1000)
+                ),
                 mock.patch.object(collector, "monitoring_token", return_value="token"),
                 mock.patch.object(
                     collector,
                     "gcs_operation_counts",
-                    return_value={"Class A": 1, "Class B": 2, "Free": 3, "Unknown": 4},
+                    return_value={"Class A": 1, "Class B": 2},
                 ),
             ):
                 self.assertEqual(
                     collector.cached_gcs_operation_counts(config, {"bucket"}),
                     (
-                        {"Class A": 1.0, "Class B": 2.0, "Free": 3.0, "Unknown": 4.0},
+                        {"Class A": 1.0, "Class B": 2.0},
                         1000,
                         True,
                         "2026-07",
@@ -505,25 +608,33 @@ class CacheTests(unittest.TestCase):
                 )
             self.assertEqual(gcs_path.stat().st_mode & 0o777, 0o600)
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(1100)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(1100)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=OSError("expected")
                 ),
             ):
                 self.assertEqual(
                     collector.cached_gcs_operation_counts(config, {"bucket"})[0],
-                    {"Class A": 1.0, "Class B": 2.0, "Free": 3.0, "Unknown": 4.0},
+                    {"Class A": 1.0, "Class B": 2.0},
                 )
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(1201)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(1201)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=OSError("expected")
                 ),
             ):
-                self.assertFalse(collector.cached_gcs_operation_counts(config, {"bucket"})[2])
+                self.assertFalse(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[2]
+                )
             gcs_path.unlink()
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(1200)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(1200)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=OSError("expected")
                 ),
@@ -532,7 +643,9 @@ class CacheTests(unittest.TestCase):
                 collector.cached_gcs_operation_counts(config, {"bucket"})
 
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2000)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2000)
+                ),
                 mock.patch.object(collector, "monitoring_token", return_value="token"),
                 mock.patch.object(
                     collector, "monitoring_billed_series_total", return_value=123
@@ -544,7 +657,9 @@ class CacheTests(unittest.TestCase):
                 )
             self.assertEqual(usage_path.stat().st_mode & 0o777, 0o600)
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2050)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2050)
+                ),
                 mock.patch.object(collector, "monitoring_token") as token,
                 mock.patch.object(collector, "monitoring_billed_series_total") as query,
             ):
@@ -555,7 +670,9 @@ class CacheTests(unittest.TestCase):
             token.assert_not_called()
             query.assert_not_called()
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2100)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2100)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=RuntimeError("expected")
                 ),
@@ -566,7 +683,9 @@ class CacheTests(unittest.TestCase):
                 )
 
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2201)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2201)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=RuntimeError("expected")
                 ),
@@ -577,7 +696,9 @@ class CacheTests(unittest.TestCase):
                 )
             usage_path.unlink()
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2200)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2200)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=RuntimeError("expected")
                 ),
@@ -597,9 +718,9 @@ class CacheTests(unittest.TestCase):
             }
             query = mock.Mock(
                 side_effect=[
-                    {"Class A": 1, "Class B": 0, "Free": 0, "Unknown": 0},
-                    {"Class A": 2, "Class B": 0, "Free": 0, "Unknown": 0},
-                    {"Class A": 3, "Class B": 0, "Free": 0, "Unknown": 0},
+                    {"Class A": 1, "Class B": 0},
+                    {"Class A": 2, "Class B": 0},
+                    {"Class A": 3, "Class B": 0},
                 ]
             )
             windows = [
@@ -609,14 +730,34 @@ class CacheTests(unittest.TestCase):
                 window_at(1061, "2026-08"),
             ]
             with (
-                mock.patch.object(collector, "google_billing_window", side_effect=windows),
+                mock.patch.object(
+                    collector, "google_billing_window", side_effect=windows
+                ),
                 mock.patch.object(collector, "monitoring_token", return_value="token"),
                 mock.patch.object(collector, "gcs_operation_counts", query),
             ):
-                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[0]["Class A"], 1.0)
-                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[0]["Class A"], 1.0)
-                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[0]["Class A"], 2.0)
-                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[3], "2026-08")
+                self.assertEqual(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[0][
+                        "Class A"
+                    ],
+                    1.0,
+                )
+                self.assertEqual(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[0][
+                        "Class A"
+                    ],
+                    1.0,
+                )
+                self.assertEqual(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[0][
+                        "Class A"
+                    ],
+                    2.0,
+                )
+                self.assertEqual(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[3],
+                    "2026-08",
+                )
             self.assertEqual(query.call_count, 3)
 
 
@@ -826,7 +967,9 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
             ),
             stderr="",
         )
-        with mock.patch.object(collector.subprocess, "run", return_value=malformed_counts):
+        with mock.patch.object(
+            collector.subprocess, "run", return_value=malformed_counts
+        ):
             self.assertEqual(
                 collector.fail2ban_status("sshd"), (1, 0, 0, ["192.0.2.3"])
             )
@@ -857,7 +1000,7 @@ class RenderingTests(unittest.TestCase):
                 collector,
                 "cached_gcs_operation_counts",
                 return_value=(
-                    {"Class A": 10, "Class B": 20, "Free": 30, "Unknown": 0},
+                    {"Class A": 10, "Class B": 20},
                     1000,
                     True,
                     "2026-07",
@@ -898,7 +1041,11 @@ class RenderingTests(unittest.TestCase):
         ):
             self.assertIn(metric, rendered)
         self.assertNotIn("grayhaven_gcs_restic_monthly_operations_total", rendered)
-        self.assertNotIn("grayhaven_google_monitoring_monthly_billed_series_total", rendered)
+        self.assertNotIn(
+            "grayhaven_google_monitoring_monthly_billed_series_total", rendered
+        )
+        self.assertNotIn('operation_class="Free"', rendered)
+        self.assertNotIn('operation_class="Unknown"', rendered)
         self.assertIn('month="2026-07"', rendered)
         self.assertIn("current Google billing month", rendered)
         self.assertIn(

@@ -34,8 +34,6 @@ def validate_initial_refresh(
     if counts != {
         "Class A": 11.0,
         "Class B": 21.0,
-        "Free": 31.0,
-        "Unknown": 0.0,
     } or refreshed_at != 1_000 or not fresh or month != "2026-07":
         raise RuntimeError("Initial GCS operation telemetry refresh failed")
     if cache_mode != 0o600:
@@ -60,8 +58,6 @@ def validate_expired_refresh(
     if counts != {
         "Class A": 12.0,
         "Class B": 22.0,
-        "Free": 32.0,
-        "Unknown": 0.0,
     } or refreshed_at != 4_601 or not fresh:
         raise RuntimeError("Expired GCS operation telemetry cache was not refreshed")
 
@@ -116,7 +112,7 @@ def validate_canonical_metrics(namespace: dict[str, object], module_globals: dic
     }
     module_globals["gcs_status"] = lambda location: ("Operational", 1, 1)
     module_globals["cached_gcs_operation_counts"] = lambda gcs_config, bucket_names: (
-        {"Class A": 1.0, "Class B": 2.0, "Free": 3.0, "Unknown": 4.0},
+        {"Class A": 1.0, "Class B": 2.0},
         1_000,
         True,
         "2026-07",
@@ -142,7 +138,7 @@ def validate_canonical_metrics(namespace: dict[str, object], module_globals: dic
     )
     if any(name not in rendered for name in canonical) or any(name in rendered for name in old):
         raise RuntimeError("Canonical Google billing metric names are incorrect")
-    if rendered.count('month="2026-07"') != 5:
+    if rendered.count('month="2026-07"') != 3:
         raise RuntimeError("Canonical Google billing metric labels are incorrect")
 
 
@@ -174,8 +170,6 @@ def main() -> int:
         return {
             "Class A": 10.0 + query_count[0],
             "Class B": 20.0 + query_count[0],
-            "Free": 30.0 + query_count[0],
-            "Unknown": 0.0,
         }
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -239,7 +233,7 @@ def main() -> int:
         )
         valid_cache = json.loads(cache_path.read_text(encoding="utf-8"))
         for key, value in (
-            ("version", 2),
+            ("version", module_globals["GCS_OPERATION_CACHE_VERSION"] - 1),
             ("project_id", "other"),
             ("month", "2026-06"),
             ("bucket_names", "not-a-list"),
@@ -272,7 +266,7 @@ def main() -> int:
         ) != valid_usage:
             raise RuntimeError("Valid Cloud Monitoring usage cache was rejected")
         for key, value in (
-            ("version", 1),
+            ("version", module_globals["GOOGLE_MONITORING_USAGE_CACHE_VERSION"] - 1),
             ("project_id", "other"),
             ("month", "2026-06"),
             ("billed_series", True),
@@ -295,14 +289,79 @@ def main() -> int:
         del project_id, path, token
         requested_filters.append(query["filter"])
         requested_queries.append(query)
-        return {"timeSeries": []}
+        bucket = sorted(buckets)[0]
+        return {
+            "timeSeries": [
+                {
+                    "resource": {"labels": {"bucket_name": bucket}},
+                    "metric": {"labels": {"method": "storage.objects.insert"}},
+                    "points": [
+                        {
+                            "interval": {
+                                "startTime": "2026-06-30T07:00:00Z",
+                                "endTime": "2026-07-01T07:00:00Z",
+                            },
+                            "value": {"int64Value": "50"},
+                        },
+                        {
+                            "interval": {
+                                "startTime": "2026-07-01T07:00:00Z",
+                                "endTime": "2026-07-27T12:00:00Z",
+                            },
+                            "value": {"int64Value": "1"},
+                        },
+                    ],
+                },
+                {
+                    "resource": {"labels": {"bucket_name": bucket}},
+                    "metric": {"labels": {"method": "storage.objects.get"}},
+                    "points": [
+                        {
+                            "interval": {
+                                "startTime": "2026-07-01T07:00:00Z",
+                                "endTime": "2026-07-27T12:00:00Z",
+                            },
+                            "value": {"int64Value": "2"},
+                        }
+                    ],
+                },
+                {
+                    "resource": {"labels": {"bucket_name": bucket}},
+                    "metric": {"labels": {"method": "DeleteObject"}},
+                    "points": [
+                        {
+                            "interval": {
+                                "startTime": "2026-07-01T07:00:00Z",
+                                "endTime": "2026-07-27T12:00:00Z",
+                            },
+                            "value": {"int64Value": "3"},
+                        }
+                    ],
+                },
+                {
+                    "resource": {"labels": {"bucket_name": bucket}},
+                    "metric": {"labels": {"method": "future.method"}},
+                    "points": [
+                        {
+                            "interval": {
+                                "startTime": "2026-07-01T07:00:00Z",
+                                "endTime": "2026-07-27T12:00:00Z",
+                            },
+                            "value": {"int64Value": "4"},
+                        }
+                    ],
+                },
+            ]
+        }
 
     module_globals["monitoring_request"] = monitoring_request
     module_globals["gcs_operation_counts"] = real_gcs_operation_counts
     start_time, end_time, _ = billing_window(1_000)
-    real_gcs_operation_counts(
+    counts = real_gcs_operation_counts(
         "grayhaven", "test-token", buckets, start_time, end_time
     )
+    if counts != {"Class A": 1.0, "Class B": 2.0}:
+        raise RuntimeError("GCS operation interval or class filtering failed")
     validate_query_scope(requested_filters, buckets)
     validate_billing_query(requested_queries, start_time, end_time)
     validate_canonical_metrics(namespace, module_globals)
