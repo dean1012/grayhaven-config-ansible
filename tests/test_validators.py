@@ -428,11 +428,11 @@ class ValidatorTests(unittest.TestCase):
                     alerts.main([])
 
     def test_cache_validator_accepts_good_and_rejects_bad_values(self) -> None:
-        counts = {"Class A": 11.0, "Class B": 21.0, "Free": 31.0, "Unknown": 0.0}
+        counts = {"Class A": 11.0, "Class B": 21.0}
         cache.validate_initial_refresh(counts, 1_000, True, 0o600, "2026-07")
         for values in (
             (
-                {"Class A": 0.0, "Class B": 0.0, "Free": 0.0, "Unknown": 0.0},
+                {"Class A": 0.0, "Class B": 0.0},
                 1_000,
                 True,
                 0o600,
@@ -454,7 +454,7 @@ class ValidatorTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "not reused"):
                 cache.validate_fresh_reuse(cached, counts, 1_000, query_count)
 
-        refreshed = {"Class A": 12.0, "Class B": 22.0, "Free": 32.0, "Unknown": 0.0}
+        refreshed = {"Class A": 12.0, "Class B": 22.0}
         cache.validate_expired_refresh(refreshed, 4_601, True)
         for values in (
             (counts, 4_601, True),
@@ -592,7 +592,7 @@ class ValidatorTests(unittest.TestCase):
                 result = original(path, project_id, buckets, month)
                 if path.exists() and result is None:
                     try:
-                        if json.loads(path.read_text(encoding="utf-8")).get("version") == 2:
+                        if json.loads(path.read_text(encoding="utf-8")).get("version") == 3:
                             return {}
                     except json.JSONDecodeError:
                         pass
@@ -613,7 +613,7 @@ class ValidatorTests(unittest.TestCase):
             def wrapped(path: pathlib.Path, project_id: str, month: str) -> object:
                 result = original(path, project_id, month)
                 if result == {
-                    "version": 2,
+                    "version": 3,
                     "project_id": "grayhaven",
                     "month": "2026-07",
                     "billed_series": 10,
@@ -629,7 +629,7 @@ class ValidatorTests(unittest.TestCase):
                 result = original(path, project_id, month)
                 if path.exists() and result is None:
                     try:
-                        if json.loads(path.read_text(encoding="utf-8")).get("version") == 1:
+                        if json.loads(path.read_text(encoding="utf-8")).get("version") == 2:
                             return {}
                     except json.JSONDecodeError:
                         pass
