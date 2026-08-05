@@ -83,7 +83,7 @@ Validate formatting and syntax from the repository root:
 git ls-files '*.yml' '*.yaml' | xargs -r yamllint
 ansible-lint .
 find playbooks -type f \( -name "*.yml" -o -name "*.yaml" \) -print0 \
-  | xargs -0 -n1 ansible-playbook -i localhost, --connection=local --syntax-check
+  | xargs -0 -n1 ansible-playbook -i tests/fixtures/syntax-inventory.yml --connection=local --syntax-check
 shellcheck files/grayhaven-ansible-runner files/grayhaven-ansible-poller roles/admin_access/files/gtmux
 python3 -m ruff check files roles scripts tests
 python3 -m py_compile \
