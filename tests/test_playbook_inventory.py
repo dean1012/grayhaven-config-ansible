@@ -74,7 +74,12 @@ def _host_expression_kind(hosts: object) -> tuple[str, str]:
 class PlaybookInventoryTests(unittest.TestCase):
     def test_literal_playbook_groups_exist_in_syntax_inventory(self) -> None:
         group_names = _fixture_group_names()
-        playbooks = sorted(PLAYBOOK_DIR.glob("*.yml"))
+        playbooks = sorted(
+            path
+            for pattern in ("*.yml", "*.yaml")
+            for path in PLAYBOOK_DIR.rglob(pattern)
+            if path.is_file()
+        )
         self.assertTrue(playbooks, "expected at least one playbook")
 
         for path in playbooks:
