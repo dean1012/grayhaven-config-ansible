@@ -230,9 +230,7 @@ class ValidatorTests(unittest.TestCase):
         cases = (
             (
                 "external_service_rules",
-                lambda rule: (
-                    rule["labels"]["check"] == "gcs_stale_bucket_count"
-                ),
+                lambda rule: rule["labels"]["check"] == "gcs_stale_bucket_count",
                 lambda rule: rule["annotations"].update(check_value="bad"),
                 "comma-grouped integer",
             ),
@@ -279,11 +277,15 @@ class ValidatorTests(unittest.TestCase):
         ):
             alerts.main([])
 
-    def test_generated_usage_contract_rejects_metric_threshold_and_metadata_drift(self) -> None:
+    def test_generated_usage_contract_rejects_metric_threshold_and_metadata_drift(
+        self,
+    ) -> None:
         namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
         original_external = namespace["external_service_rules"]
 
-        def missing_usage_rule(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        def missing_usage_rule(
+            *args: object, **kwargs: object
+        ) -> list[dict[str, object]]:
             return [
                 rule
                 for rule in original_external(*args, **kwargs)
@@ -293,28 +295,38 @@ class ValidatorTests(unittest.TestCase):
         namespace["external_service_rules"] = missing_usage_rule
         with (
             mock.patch.object(alerts.runpy, "run_path", return_value=namespace),
-            self.assertRaisesRegex(RuntimeError, "missing: gcs_class_a_monthly_operations"),
+            self.assertRaisesRegex(
+                RuntimeError, "missing: gcs_class_a_monthly_operations"
+            ),
         ):
             alerts.main([])
 
         cases = (
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule.update(_identity="service:changed:check"),
                 "Generated identity changed",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule.update(uid="changed"),
                 "Generated UID changed",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule.update(title="changed"),
                 "Generated title changed",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule["data"][0]["model"].update(
                     expr=rule["data"][0]["model"]["expr"].replace(
                         "grayhaven_gcs_restic_billing_month_operations_total",
@@ -324,58 +336,78 @@ class ValidatorTests(unittest.TestCase):
                 "raw usage query",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule["data"][0]["model"].update(
                     expr=rule["data"][0]["model"]["expr"].replace("max by", "sum by", 1)
                 ),
                 "raw usage query",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_b_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_b_monthly_operations"
+                ),
                 lambda rule: rule["data"][0]["model"].update(
                     expr=rule["data"][0]["model"]["expr"] + " >= 40000"
                 ),
                 "embeds a threshold",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "google_monitoring_monthly_billed_series",
-                lambda rule: rule["data"][1]["model"]["conditions"][0]["evaluator"].update(
-                    params=[0]
+                lambda rule: (
+                    rule["labels"]["check"] == "google_monitoring_monthly_billed_series"
                 ),
+                lambda rule: rule["data"][1]["model"]["conditions"][0][
+                    "evaluator"
+                ].update(params=[0]),
                 "evaluator threshold",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule["data"][1]["model"].update(expression="B"),
                 "does not evaluate query A",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule.update(noDataState="Alerting"),
                 "NoData policy",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule["labels"].update(service="changed"),
                 "labels changed",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule["annotations"].update(summary="changed"),
                 "annotations changed",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule.update(folderUID="changed"),
                 "folder changed",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule.update(ruleGroup="changed"),
                 "rule group changed",
             ),
             (
-                lambda rule: rule["labels"]["check"] == "gcs_class_a_monthly_operations",
+                lambda rule: (
+                    rule["labels"]["check"] == "gcs_class_a_monthly_operations"
+                ),
                 lambda rule: rule["notification_settings"].update(receiver="changed"),
                 "contact point changed",
             ),
@@ -394,17 +426,27 @@ class ValidatorTests(unittest.TestCase):
         contract_namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
         contract_config = alerts.fixture_config()
         contract_rules = [
-            *contract_namespace["service_rules"](contract_config, "folder", "prometheus"),
-            *contract_namespace["host_metric_rules"](contract_config, "folder", "prometheus"),
+            *contract_namespace["service_rules"](
+                contract_config, "folder", "prometheus"
+            ),
+            *contract_namespace["host_metric_rules"](
+                contract_config, "folder", "prometheus"
+            ),
             *contract_namespace["site_rules"](contract_config, "folder", "prometheus"),
-            *contract_namespace["external_service_rules"](contract_config, "folder", "prometheus"),
+            *contract_namespace["external_service_rules"](
+                contract_config, "folder", "prometheus"
+            ),
         ]
         for invalid_threshold in (True, 1.5, -1):
             invalid_config = alerts.fixture_config()
             invalid_config["thresholds"] = dict(invalid_config["thresholds"])
-            invalid_config["thresholds"]["gcs_class_a_monthly_warning_operations"] = invalid_threshold
+            invalid_config["thresholds"]["gcs_class_a_monthly_warning_operations"] = (
+                invalid_threshold
+            )
             with self.subTest(invalid_threshold=invalid_threshold):
-                with self.assertRaisesRegex(RuntimeError, "Configured usage threshold is invalid"):
+                with self.assertRaisesRegex(
+                    RuntimeError, "Configured usage threshold is invalid"
+                ):
                     alerts.usage_rule_contracts(
                         contract_namespace, invalid_config, contract_rules
                     )
@@ -529,7 +571,9 @@ class ValidatorTests(unittest.TestCase):
             "grayhaven_gcs_restic_billing_month_operations_total"
         ]
         missing_metrics["render_google_monitoring_metrics"] = lambda config: []
-        with self.assertRaisesRegex(RuntimeError, "Canonical Google billing metric names"):
+        with self.assertRaisesRegex(
+            RuntimeError, "Canonical Google billing metric names"
+        ):
             cache.validate_canonical_metrics(missing_metrics, module_globals)
 
         wrong_labels = dict(namespace)
@@ -539,7 +583,9 @@ class ValidatorTests(unittest.TestCase):
         wrong_labels["render_google_monitoring_metrics"] = lambda config: [
             "grayhaven_google_monitoring_billing_month_series_total"
         ]
-        with self.assertRaisesRegex(RuntimeError, "Canonical Google billing metric labels"):
+        with self.assertRaisesRegex(
+            RuntimeError, "Canonical Google billing metric labels"
+        ):
             cache.validate_canonical_metrics(wrong_labels, module_globals)
 
     def test_cache_validator_rejects_unexpected_collection_inputs(self) -> None:
@@ -576,6 +622,20 @@ class ValidatorTests(unittest.TestCase):
         ):
             cache.main()
 
+    def test_cache_validator_rejects_wrong_gcs_aggregation(self) -> None:
+        namespace = cache.runpy.run_path(str(cache.COLLECTOR))
+
+        def wrong_operation_counts(*args: object, **kwargs: object) -> dict[str, float]:
+            del args, kwargs
+            return {"Class A": 1.0, "Class B": 3.0}
+
+        namespace["gcs_operation_counts"] = wrong_operation_counts
+        with (
+            mock.patch.object(cache.runpy, "run_path", return_value=namespace),
+            self.assertRaisesRegex(RuntimeError, "interval or class filtering failed"),
+        ):
+            cache.main()
+
     def test_cache_validator_rejects_invalid_cache_contracts_in_main(self) -> None:
         def run_case(loader_name: str, replacement: object, message: str) -> None:
             namespace = cache.runpy.run_path(str(cache.COLLECTOR))
@@ -588,11 +648,16 @@ class ValidatorTests(unittest.TestCase):
                 cache.main()
 
         def invalid_gcs_version(original: object) -> object:
-            def wrapped(path: pathlib.Path, project_id: str, buckets: set[str], month: str) -> object:
+            def wrapped(
+                path: pathlib.Path, project_id: str, buckets: set[str], month: str
+            ) -> object:
                 result = original(path, project_id, buckets, month)
                 if path.exists() and result is None:
                     try:
-                        if json.loads(path.read_text(encoding="utf-8")).get("version") == 3:
+                        if (
+                            json.loads(path.read_text(encoding="utf-8")).get("version")
+                            == 3
+                        ):
                             return {}
                     except json.JSONDecodeError:
                         pass
@@ -601,9 +666,15 @@ class ValidatorTests(unittest.TestCase):
             return wrapped
 
         def malformed_gcs(original: object) -> object:
-            def wrapped(path: pathlib.Path, project_id: str, buckets: set[str], month: str) -> object:
+            def wrapped(
+                path: pathlib.Path, project_id: str, buckets: set[str], month: str
+            ) -> object:
                 result = original(path, project_id, buckets, month)
-                if path.exists() and result is None and path.read_text(encoding="utf-8") == "malformed":
+                if (
+                    path.exists()
+                    and result is None
+                    and path.read_text(encoding="utf-8") == "malformed"
+                ):
                     return {}
                 return result
 
@@ -629,7 +700,10 @@ class ValidatorTests(unittest.TestCase):
                 result = original(path, project_id, month)
                 if path.exists() and result is None:
                     try:
-                        if json.loads(path.read_text(encoding="utf-8")).get("version") == 2:
+                        if (
+                            json.loads(path.read_text(encoding="utf-8")).get("version")
+                            == 2
+                        ):
                             return {}
                     except json.JSONDecodeError:
                         pass
@@ -637,8 +711,16 @@ class ValidatorTests(unittest.TestCase):
 
             return wrapped
 
-        run_case("load_gcs_operation_cache", invalid_gcs_version, "GCS cache accepted invalid version")
-        run_case("load_gcs_operation_cache", malformed_gcs, "GCS cache accepted malformed JSON")
+        run_case(
+            "load_gcs_operation_cache",
+            invalid_gcs_version,
+            "GCS cache accepted invalid version",
+        )
+        run_case(
+            "load_gcs_operation_cache",
+            malformed_gcs,
+            "GCS cache accepted malformed JSON",
+        )
         run_case(
             "load_google_monitoring_usage_cache",
             valid_monitoring,
@@ -654,7 +736,9 @@ class ValidatorTests(unittest.TestCase):
         self.assertEqual(alloy.regex_replace("abc", "b", "x"), "axc")
         environment = alloy.build_environment()
         self.assertIn("regex_replace", environment.filters)
-        self.assertEqual(alloy.fixture_context()["baseline_validation_environment"], "prod")
+        self.assertEqual(
+            alloy.fixture_context()["baseline_validation_environment"], "prod"
+        )
         with tempfile.TemporaryDirectory() as temp_dir:
             rendered = pathlib.Path(temp_dir) / "config.alloy"
             alloy.render_config(rendered)

@@ -164,7 +164,9 @@ class HttpAndGoogleTests(unittest.TestCase):
         )
         for end_value, start_value, month in cases:
             start, end, actual_month = collector.google_billing_window(utc(end_value))
-            self.assertEqual((start, end, actual_month), (utc(start_value), utc(end_value), month))
+            self.assertEqual(
+                (start, end, actual_month), (utc(start_value), utc(end_value), month)
+            )
 
         self.assertEqual(collector.GOOGLE_BILLING_TIMEZONE.key, "America/Los_Angeles")
         with mock.patch.object(collector, "datetime") as clock:
@@ -210,9 +212,7 @@ class HttpAndGoogleTests(unittest.TestCase):
         self.assertEqual(collector.point_value({"value": {"doubleValue": 2.5}}), 2.5)
         self.assertEqual(collector.point_value({}), 0.0)
         self.assertTrue(
-            collector.point_starts_at_or_after(
-                metric_point(1), BILLING_START
-            )
+            collector.point_starts_at_or_after(metric_point(1), BILLING_START)
         )
         self.assertTrue(
             collector.point_starts_at_or_after(
@@ -220,15 +220,28 @@ class HttpAndGoogleTests(unittest.TestCase):
             )
         )
         for invalid_point in (
+            [],
             metric_point(1, start="2026-06-30T07:00:00Z"),
             {"interval": {"startTime": "2026-07-01T07:00:00Z"}},
             {"interval": {"startTime": 1, "endTime": "2026-07-27T12:00:00Z"}},
-            {"interval": {"startTime": "not-a-time", "endTime": "2026-07-27T12:00:00Z"}},
-            {"interval": {"startTime": "2026-07-27T12:00:00Z", "endTime": "2026-07-01T07:00:00Z"}},
+            {
+                "interval": {
+                    "startTime": "not-a-time",
+                    "endTime": "2026-07-27T12:00:00Z",
+                }
+            },
+            {
+                "interval": {
+                    "startTime": "2026-07-27T12:00:00Z",
+                    "endTime": "2026-07-01T07:00:00Z",
+                }
+            },
             {"interval": []},
             {},
         ):
-            self.assertFalse(collector.point_starts_at_or_after(invalid_point, BILLING_START))
+            self.assertFalse(
+                collector.point_starts_at_or_after(invalid_point, BILLING_START)
+            )
 
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         pem = key.private_bytes(
@@ -574,7 +587,9 @@ class CacheTests(unittest.TestCase):
                 "project_id": "project",
             }
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(1000)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(1000)
+                ),
                 mock.patch.object(collector, "monitoring_token", return_value="token"),
                 mock.patch.object(
                     collector,
@@ -593,7 +608,9 @@ class CacheTests(unittest.TestCase):
                 )
             self.assertEqual(gcs_path.stat().st_mode & 0o777, 0o600)
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(1100)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(1100)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=OSError("expected")
                 ),
@@ -603,15 +620,21 @@ class CacheTests(unittest.TestCase):
                     {"Class A": 1.0, "Class B": 2.0},
                 )
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(1201)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(1201)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=OSError("expected")
                 ),
             ):
-                self.assertFalse(collector.cached_gcs_operation_counts(config, {"bucket"})[2])
+                self.assertFalse(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[2]
+                )
             gcs_path.unlink()
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(1200)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(1200)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=OSError("expected")
                 ),
@@ -620,7 +643,9 @@ class CacheTests(unittest.TestCase):
                 collector.cached_gcs_operation_counts(config, {"bucket"})
 
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2000)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2000)
+                ),
                 mock.patch.object(collector, "monitoring_token", return_value="token"),
                 mock.patch.object(
                     collector, "monitoring_billed_series_total", return_value=123
@@ -632,7 +657,9 @@ class CacheTests(unittest.TestCase):
                 )
             self.assertEqual(usage_path.stat().st_mode & 0o777, 0o600)
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2050)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2050)
+                ),
                 mock.patch.object(collector, "monitoring_token") as token,
                 mock.patch.object(collector, "monitoring_billed_series_total") as query,
             ):
@@ -643,7 +670,9 @@ class CacheTests(unittest.TestCase):
             token.assert_not_called()
             query.assert_not_called()
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2100)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2100)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=RuntimeError("expected")
                 ),
@@ -654,7 +683,9 @@ class CacheTests(unittest.TestCase):
                 )
 
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2201)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2201)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=RuntimeError("expected")
                 ),
@@ -665,7 +696,9 @@ class CacheTests(unittest.TestCase):
                 )
             usage_path.unlink()
             with (
-                mock.patch.object(collector, "google_billing_window", return_value=window_at(2200)),
+                mock.patch.object(
+                    collector, "google_billing_window", return_value=window_at(2200)
+                ),
                 mock.patch.object(
                     collector, "monitoring_token", side_effect=RuntimeError("expected")
                 ),
@@ -697,14 +730,34 @@ class CacheTests(unittest.TestCase):
                 window_at(1061, "2026-08"),
             ]
             with (
-                mock.patch.object(collector, "google_billing_window", side_effect=windows),
+                mock.patch.object(
+                    collector, "google_billing_window", side_effect=windows
+                ),
                 mock.patch.object(collector, "monitoring_token", return_value="token"),
                 mock.patch.object(collector, "gcs_operation_counts", query),
             ):
-                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[0]["Class A"], 1.0)
-                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[0]["Class A"], 1.0)
-                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[0]["Class A"], 2.0)
-                self.assertEqual(collector.cached_gcs_operation_counts(config, {"bucket"})[3], "2026-08")
+                self.assertEqual(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[0][
+                        "Class A"
+                    ],
+                    1.0,
+                )
+                self.assertEqual(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[0][
+                        "Class A"
+                    ],
+                    1.0,
+                )
+                self.assertEqual(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[0][
+                        "Class A"
+                    ],
+                    2.0,
+                )
+                self.assertEqual(
+                    collector.cached_gcs_operation_counts(config, {"bucket"})[3],
+                    "2026-08",
+                )
             self.assertEqual(query.call_count, 3)
 
 
@@ -914,7 +967,9 @@ class PublicStatusAndFail2banTests(unittest.TestCase):
             ),
             stderr="",
         )
-        with mock.patch.object(collector.subprocess, "run", return_value=malformed_counts):
+        with mock.patch.object(
+            collector.subprocess, "run", return_value=malformed_counts
+        ):
             self.assertEqual(
                 collector.fail2ban_status("sshd"), (1, 0, 0, ["192.0.2.3"])
             )
@@ -986,7 +1041,9 @@ class RenderingTests(unittest.TestCase):
         ):
             self.assertIn(metric, rendered)
         self.assertNotIn("grayhaven_gcs_restic_monthly_operations_total", rendered)
-        self.assertNotIn("grayhaven_google_monitoring_monthly_billed_series_total", rendered)
+        self.assertNotIn(
+            "grayhaven_google_monitoring_monthly_billed_series_total", rendered
+        )
         self.assertNotIn('operation_class="Free"', rendered)
         self.assertNotIn('operation_class="Unknown"', rendered)
         self.assertIn('month="2026-07"', rendered)
