@@ -10,7 +10,7 @@
     vault_deploy_public_key_path: /home/ansible/.ssh/grayhaven_vault_deploy_key.pub
 
   tasks:
-    - name: Read staged deploy public key from a bastion
+    - name: Read staged deploy public key from a bastion  # noqa: run-once[task]
       ansible.builtin.slurp:
         src: "{{ staged_deploy_public_key_path }}"
       register: rotate_deploy_public_key_slurp

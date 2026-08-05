@@ -14,7 +14,7 @@
     - name: Gather facts after managed hosts are reachable
       ansible.builtin.setup:
 
-    - name: Build Discord notification target order
+    - name: Build Discord notification target order  # noqa: run-once[task]
       ansible.builtin.set_fact:
         automation_notifications_targets: >-
           {{
@@ -39,7 +39,7 @@
           }}
       run_once: true
 
-    - name: Notify Discord that configuration started
+    - name: Notify Discord that configuration started  # noqa: run-once[task]
       ansible.builtin.include_role:
         name: automation_notifications
       vars:
@@ -96,7 +96,7 @@
         remove: true
       when: grayhaven_almalinux_processes.rc != 0
 
-    - name: Build Discord successful host target order
+    - name: Build Discord successful host target order  # noqa: run-once[task]
       ansible.builtin.set_fact:
         automation_notifications_success_targets: >-
           {{
@@ -121,7 +121,7 @@
           }}
       run_once: true
 
-    - name: Notify Discord that configuration completed
+    - name: Notify Discord that configuration completed  # noqa: run-once[task]
       ansible.builtin.include_role:
         name: automation_notifications
       vars:

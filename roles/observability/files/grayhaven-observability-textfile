@@ -14,6 +14,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,8 +27,9 @@ CONFIG_PATH = pathlib.Path("/etc/grayhaven/observability/textfile-metrics.json")
 TEXTFILE_DIR = pathlib.Path("/var/lib/grayhaven/observability/textfile")
 OUTPUT_PATH = TEXTFILE_DIR / "grayhaven.prom"
 GCS_MONITORING_SCOPE = "https://www.googleapis.com/auth/monitoring.read"
-GCS_OPERATION_CACHE_VERSION = 2
-GOOGLE_MONITORING_USAGE_CACHE_VERSION = 1
+GOOGLE_BILLING_TIMEZONE = ZoneInfo("America/Los_Angeles")
+GCS_OPERATION_CACHE_VERSION = 3
+GOOGLE_MONITORING_USAGE_CACHE_VERSION = 2
 GCS_OPERATION_CLASSES = {
     "CloneObject.From": "Class A",
     "ComposeObject": "Class A",
@@ -212,16 +214,40 @@ def gcs_operation_class(method: str) -> str:
     return GCS_OPERATION_CLASSES.get(method, "Unknown")
 
 
+def google_billing_window(now: datetime | None = None) -> tuple[datetime, datetime, str]:
+    """Return the current Google billing window as UTC start/end plus YYYY-MM."""
+
+    if now is None:
+        end_time = datetime.now(timezone.utc)
+    elif now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("Google billing window clock must be timezone-aware")
+    else:
+        end_time = now.astimezone(timezone.utc)
+    billing_now = end_time.astimezone(GOOGLE_BILLING_TIMEZONE)
+    billing_start = billing_now.replace(
+        day=1,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    return (
+        billing_start.astimezone(timezone.utc),
+        end_time,
+        billing_now.strftime("%Y-%m"),
+    )
+
+
 def gcs_operation_counts(
     project_id: str,
     token: str,
     bucket_names: set[str],
+    start_time: datetime,
+    end_time: datetime,
 ) -> dict[str, float]:
     if not bucket_names:
         return {operation_class: 0.0 for operation_class in GCS_OPERATION_CLASSES_REPORTED}
 
-    end_time = datetime.now(timezone.utc)
-    start_time = end_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     alignment_seconds = max(60, int((end_time - start_time).total_seconds()))
     bucket_filter = " OR ".join(
         f'resource.labels.bucket_name = "{bucket_name}"'
@@ -279,10 +305,11 @@ def load_gcs_operation_cache(
         return None
     counts = cache.get("counts")
     refreshed_at = cache.get("refreshed_at")
-    if not isinstance(counts, dict) or not isinstance(refreshed_at, int):
+    if not isinstance(counts, dict) or not isinstance(refreshed_at, int) or isinstance(refreshed_at, bool):
         return None
     if not all(
         isinstance(counts.get(operation_class), (int, float))
+        and not isinstance(counts.get(operation_class), bool)
         for operation_class in GCS_OPERATION_CLASSES_REPORTED
     ):
         return None
@@ -292,19 +319,25 @@ def load_gcs_operation_cache(
 def cached_gcs_operation_counts(
     gcs_config: dict[str, Any],
     bucket_names: set[str],
-) -> tuple[dict[str, float], int, bool]:
+) -> tuple[dict[str, float], int, bool, str]:
     project_id = str(gcs_config["project_id"])
     cache_path = pathlib.Path(str(gcs_config["operation_cache_file"]))
     refresh_seconds = max(60, int(gcs_config["operation_refresh_seconds"]))
     stale_seconds = max(refresh_seconds, int(gcs_config["operation_stale_seconds"]))
-    now = int(time.time())
-    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    start_time, end_time, month = google_billing_window()
+    now = int(end_time.timestamp())
     cache = load_gcs_operation_cache(cache_path, project_id, bucket_names, month)
 
     if cache is None or now - int(cache["refreshed_at"]) >= refresh_seconds:
         try:
             monitor_token = monitoring_token(str(gcs_config["credentials_file"]))
-            counts = gcs_operation_counts(project_id, monitor_token, bucket_names)
+            counts = gcs_operation_counts(
+                project_id,
+                monitor_token,
+                bucket_names,
+                start_time,
+                end_time,
+            )
         except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError):
             if cache is None:
                 raise
@@ -323,19 +356,20 @@ def cached_gcs_operation_counts(
                 mode=0o600,
             )
 
-    if cache is None:
-        raise RuntimeError("GCS operation telemetry cache is unavailable")
     refreshed_at = int(cache["refreshed_at"])
     counts = {
         operation_class: float(cache["counts"][operation_class])
         for operation_class in GCS_OPERATION_CLASSES_REPORTED
     }
-    return counts, refreshed_at, now - refreshed_at <= stale_seconds
+    return counts, refreshed_at, now - refreshed_at <= stale_seconds, month
 
 
-def monitoring_billed_series_total(project_id: str, token: str) -> float:
-    end_time = datetime.now(timezone.utc)
-    start_time = end_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+def monitoring_billed_series_total(
+    project_id: str,
+    token: str,
+    start_time: datetime,
+    end_time: datetime,
+) -> float:
     alignment_seconds = max(60, int((end_time - start_time).total_seconds()))
     query = {
         "filter": (
@@ -372,26 +406,37 @@ def load_google_monitoring_usage_cache(
         return None
     if cache.get("project_id") != project_id or cache.get("month") != month:
         return None
-    if not isinstance(cache.get("billed_series"), (int, float)):
+    if not isinstance(cache.get("billed_series"), (int, float)) or isinstance(
+        cache.get("billed_series"), bool
+    ):
         return None
-    if not isinstance(cache.get("refreshed_at"), int):
+    if not isinstance(cache.get("refreshed_at"), int) or isinstance(
+        cache.get("refreshed_at"), bool
+    ):
         return None
     return cache
 
 
-def cached_google_monitoring_usage(gcs_config: dict[str, Any]) -> tuple[float, int, bool]:
+def cached_google_monitoring_usage(
+    gcs_config: dict[str, Any],
+) -> tuple[float, int, bool, str]:
     project_id = str(gcs_config["project_id"])
     cache_path = pathlib.Path(str(gcs_config["monitoring_usage_cache_file"]))
     refresh_seconds = max(60, int(gcs_config["monitoring_usage_refresh_seconds"]))
     stale_seconds = max(refresh_seconds, int(gcs_config["monitoring_usage_stale_seconds"]))
-    now = int(time.time())
-    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    start_time, end_time, month = google_billing_window()
+    now = int(end_time.timestamp())
     cache = load_google_monitoring_usage_cache(cache_path, project_id, month)
 
     if cache is None or now - int(cache["refreshed_at"]) >= refresh_seconds:
         try:
             token = monitoring_token(str(gcs_config["credentials_file"]))
-            billed_series = monitoring_billed_series_total(project_id, token)
+            billed_series = monitoring_billed_series_total(
+                project_id,
+                token,
+                start_time,
+                end_time,
+            )
         except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError):
             if cache is None:
                 raise
@@ -409,13 +454,12 @@ def cached_google_monitoring_usage(gcs_config: dict[str, Any]) -> tuple[float, i
                 mode=0o600,
             )
 
-    if cache is None:
-        raise RuntimeError("Cloud Monitoring usage telemetry cache is unavailable")
     refreshed_at = int(cache["refreshed_at"])
     return (
         float(cache["billed_series"]),
         refreshed_at,
         now - refreshed_at <= stale_seconds,
+        month,
     )
 
 
@@ -675,7 +719,7 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
     telemetry_labels["scope"] = "restic"
 
     try:
-        operation_counts, refreshed_at, telemetry_fresh = cached_gcs_operation_counts(
+        operation_counts, refreshed_at, telemetry_fresh, billing_month = cached_gcs_operation_counts(
             gcs_config,
             expected_bucket_names(config.get("hosts", [])),
         )
@@ -696,18 +740,18 @@ def render_gcs_metrics(config: dict[str, Any]) -> list[str]:
     output.extend(
         [
             (
-                "# HELP grayhaven_gcs_restic_monthly_operations_total "
-                "GCS restic bucket API operations in the current calendar month."
+                "# HELP grayhaven_gcs_restic_billing_month_operations_total "
+                "GCS restic bucket API operations in the current Google billing month."
             ),
-            "# TYPE grayhaven_gcs_restic_monthly_operations_total gauge",
+            "# TYPE grayhaven_gcs_restic_billing_month_operations_total gauge",
         ]
     )
 
     for operation_class, count in sorted(operation_counts.items()):
         operation_labels = dict(metric_base)
-        operation_labels["month"] = datetime.now(timezone.utc).strftime("%Y-%m")
+        operation_labels["month"] = billing_month
         operation_labels["operation_class"] = operation_class
-        output.append(line("grayhaven_gcs_restic_monthly_operations_total", operation_labels, int(count)))
+        output.append(line("grayhaven_gcs_restic_billing_month_operations_total", operation_labels, int(count)))
 
     return output
 
@@ -761,7 +805,7 @@ def render_google_monitoring_metrics(config: dict[str, Any]) -> list[str]:
         output.append(line("grayhaven_google_monitoring_service_status", status_labels, status_value))
 
     try:
-        billed_series, refreshed_at, telemetry_fresh = cached_google_monitoring_usage(gcs_config)
+        billed_series, refreshed_at, telemetry_fresh, billing_month = cached_google_monitoring_usage(gcs_config)
     except (KeyError, OSError, RuntimeError, ValueError, urllib.error.URLError, json.JSONDecodeError):
         output.append(line("grayhaven_google_monitoring_telemetry_success", metric_base, 0))
         return output
@@ -779,17 +823,17 @@ def render_google_monitoring_metrics(config: dict[str, Any]) -> list[str]:
                 refreshed_at,
             ),
             (
-                "# HELP grayhaven_google_monitoring_monthly_billed_series_total "
-                "Cloud Monitoring billed query series in the current calendar month."
+                "# HELP grayhaven_google_monitoring_billing_month_series_total "
+                "Cloud Monitoring billed query series in the current Google billing month."
             ),
-            "# TYPE grayhaven_google_monitoring_monthly_billed_series_total gauge",
+            "# TYPE grayhaven_google_monitoring_billing_month_series_total gauge",
         ]
     )
     usage_labels = dict(metric_base)
-    usage_labels["month"] = datetime.now(timezone.utc).strftime("%Y-%m")
+    usage_labels["month"] = billing_month
     output.append(
         line(
-            "grayhaven_google_monitoring_monthly_billed_series_total",
+            "grayhaven_google_monitoring_billing_month_series_total",
             usage_labels,
             int(billed_series),
         )

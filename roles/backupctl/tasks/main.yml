@@ -54,7 +54,7 @@
     path: "{{ backupctl_checkout_dir }}/.git"
   register: backupctl_existing_checkout
 
-- name: Read existing grayhaven-backupctl origin URL
+- name: Read existing grayhaven-backupctl origin URL  # noqa: command-instead-of-module
   ansible.builtin.command:
     cmd: git -C "{{ backupctl_checkout_dir }}" config --get remote.origin.url
   become: true

@@ -146,12 +146,30 @@ class ShellProgramTests(unittest.TestCase):
             env = {
                 "HOME": str(home),
                 "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                "SSH_AUTH_SOCK": str(root / "agent.sock"),
                 "TMUX_LOG": str(root / "tmux.log"),
                 "TMUX_STATE": str(root / "state"),
             }
-            self.assertEqual(self.run_bash(f"bash {script}", env=env).returncode, 0)
-            self.assertEqual(self.run_bash(f"bash {script}", env=env).returncode, 0)
+            result = self.run_bash(f"env -u TMUX bash {script}", env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            stable_sock = home / ".ssh" / "ssh_auth_sock"
+            self.assertTrue(stable_sock.is_symlink())
+            self.assertEqual(os.readlink(stable_sock), str(root / "agent.sock"))
+
+            result = self.run_bash(f"env -u TMUX bash {script}", env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("new-session", (root / "tmux.log").read_text(encoding="utf-8"))
+
+            (root / "state").touch()
+            log_start = (root / "tmux.log").read_text(encoding="utf-8").splitlines()
+            result = self.run_bash(f"env -u TMUX bash {script} --reset", env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            log_end = (root / "tmux.log").read_text(encoding="utf-8").splitlines()
+            reset_log = log_end[len(log_start) :]
+            self.assertEqual(reset_log[0], "has-session -t Grayhaven Systems LLC")
+            self.assertEqual(reset_log[1], "kill-session -t Grayhaven Systems LLC")
+            self.assertTrue(any(entry.startswith("new-session ") for entry in reset_log))
+            self.assertTrue((root / "state").exists())
 
     def test_galaxy_installer_success_and_count_failure(self) -> None:
         script = REPO_ROOT / "scripts/install-galaxy-collections"

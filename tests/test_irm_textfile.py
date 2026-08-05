@@ -42,6 +42,18 @@ class IrmClientTests(unittest.TestCase):
             irm.urllib.request, "urlopen", return_value=Response('{"ok":true}')
         ):
             self.assertEqual(client._request("https://example.invalid"), {"ok": True})
+        with mock.patch.object(
+            irm.urllib.request, "urlopen", return_value=Response("{}")
+        ) as urlopen:
+            self.assertEqual(
+                client._request(
+                    "https://example.invalid", headers={"X-Test": "merged"}
+                ),
+                {},
+            )
+        request_headers = dict(urlopen.call_args.args[0].header_items())
+        self.assertEqual(request_headers["X-test"], "merged")
+        self.assertEqual(request_headers["Authorization"], "Bearer token")
         with mock.patch.object(irm.urllib.request, "urlopen", return_value=Response("", 204)):
             self.assertIsNone(client._request("https://example.invalid", expected=(204,)))
         error = urllib.error.HTTPError("url", 403, "bad", {}, io.BytesIO(b"denied"))
@@ -121,6 +133,9 @@ class IrmClientTests(unittest.TestCase):
         with mock.patch.object(client, "_request", return_value={"results": "bad"}):
             with self.assertRaises(irm.GrafanaIrmError):
                 client._paged_irm_results("url", "items")
+        with mock.patch.object(client, "_request", return_value=[]):
+            with self.assertRaisesRegex(irm.GrafanaIrmError, "not an object"):
+                client._paged_irm_results("url", "items")
 
 
 class IrmRenderingTests(unittest.TestCase):
@@ -184,6 +199,35 @@ class IrmRenderingTests(unittest.TestCase):
         self.assertIn("grayhaven_irm_alert_groups_active", rendered)
         self.assertIn('user_display="Example Operator"', rendered)
         self.assertNotIn("Missing ID", rendered)
+
+    def test_collects_details_only_for_groups_with_ids(self) -> None:
+        groups = {
+            state: (
+                [{"id": "with-detail"}, {"title": "without-id"}]
+                if state == "new"
+                else []
+            )
+            for state in irm.DEFAULT_STATES
+        }
+        client = mock.Mock()
+        client.alert_groups.side_effect = [groups[state] for state in irm.DEFAULT_STATES]
+        client.users.return_value = []
+        client.org_users.return_value = []
+        client.alert_group_detail.return_value = {"id": "with-detail"}
+        with mock.patch.object(irm, "GrafanaIrmClient", return_value=client):
+            collected, identities, details = irm.collect(
+                {
+                    "grafana": {
+                        "stack_url": "https://grafana.example.invalid",
+                        "api_token": "token",
+                    }
+                }
+            )
+
+        self.assertEqual(collected, groups)
+        self.assertIsInstance(identities, irm.IdentityResolver)
+        self.assertEqual(details, {"with-detail": {"id": "with-detail"}})
+        client.alert_group_detail.assert_called_once_with("with-detail")
 
     def test_atomic_collect_and_main(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

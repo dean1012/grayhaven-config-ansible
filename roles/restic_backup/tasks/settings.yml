@@ -98,7 +98,7 @@
     restic_backup_remote_gcs_labels:
       managed_by: ansible
       client: "{{ restic_backup_label_client }}"
-      env: "{{ grayhaven_environment }}"
+      env: "{{ baseline_validation_environment }}"
       project: "{{ restic_backup_label_project }}"
       role: "{{ grayhaven_role }}"
       purpose: restic

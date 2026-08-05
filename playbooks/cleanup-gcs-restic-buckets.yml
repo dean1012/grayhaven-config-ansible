@@ -51,7 +51,7 @@
       block:
         - name: Install GCS restic bucket cleanup helper
           ansible.builtin.copy:
-            src: "{{ playbook_dir }}/../files/grayhaven-gcs-restic-bucket-cleanup"
+            src: "{{ playbook_dir | dirname }}/files/grayhaven-gcs-restic-bucket-cleanup"
             dest: "{{ gcs_cleanup_tempdir.path }}/grayhaven-gcs-restic-bucket-cleanup"
             mode: "0700"
 

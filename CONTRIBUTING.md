@@ -21,7 +21,8 @@ Install Ansible runtime and validation dependencies:
 ```bash
 sudo dnf install ShellCheck
 python3 -m pip install --require-hashes --requirement pip3_requirements.txt
-python3 -m pip install ansible-lint==26.4.0 yamllint
+python3 -m pip install --user --requirement requirements-dev.txt
+python3 -m pip install ansible-lint==26.6.0 yamllint
 npm install --global markdownlint-cli2
 scripts/install-galaxy-collections
 ```
@@ -105,7 +106,7 @@ python3 -m coverage run -m unittest discover -s tests -v
 python3 -m coverage report
 python3 -m coverage xml
 test -s shell-coverage.xml
-ansible-playbook --check playbooks/validate-timetracker-contract.yml
+ansible-playbook --check -i localhost, --connection=local playbooks/validate-timetracker-contract.yml
 git ls-files '*.md' | xargs -r markdownlint-cli2
 ```
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import runpy
 
 
@@ -24,6 +25,136 @@ COMMA_CHECKS = {
     "gcs_class_b_monthly_operations",
     "google_monitoring_monthly_billed_series",
 }
+USAGE_RULES = {
+    "gcs_class_a_monthly_operations": {
+        "identity": "service:Google Cloud Storage:gcs_class_a_monthly_operations",
+        "metric": "grayhaven_gcs_restic_billing_month_operations_total",
+        "legacy_metric": "grayhaven_gcs_restic_monthly_operations_total",
+        "threshold": "gcs_class_a_monthly_warning_operations",
+        "title": "GCS Class A operations >= 80% usage",
+        "uid": "gh-ebe005a9676dd3b8bc285f57",
+        "operation_class": "Class A",
+    },
+    "gcs_class_b_monthly_operations": {
+        "identity": "service:Google Cloud Storage:gcs_class_b_monthly_operations",
+        "metric": "grayhaven_gcs_restic_billing_month_operations_total",
+        "legacy_metric": "grayhaven_gcs_restic_monthly_operations_total",
+        "threshold": "gcs_class_b_monthly_warning_operations",
+        "title": "GCS Class B operations >= 80% usage",
+        "uid": "gh-1b623645313da0fc789b1e43",
+        "operation_class": "Class B",
+    },
+    "google_monitoring_monthly_billed_series": {
+        "identity": "service:Google Cloud Monitoring:google_monitoring_monthly_billed_series",
+        "metric": "grayhaven_google_monitoring_billing_month_series_total",
+        "legacy_metric": "grayhaven_google_monitoring_monthly_billed_series_total",
+        "threshold": "google_monitoring_monthly_warning_series",
+        "title": "Google Monitoring series >= 80% usage",
+        "uid": "gh-4114f9f64c8c20c1465e15c1",
+    },
+}
+ALERTING_CHECKS = {
+    "gcs_service_telemetry_success",
+    "gcs_operation_telemetry_stale",
+    "google_monitoring_service_telemetry_success",
+    "google_monitoring_telemetry_stale",
+}
+
+
+def usage_rule_contracts(
+    namespace: dict[str, object], config: dict[str, object], rules: list[dict[str, object]]
+) -> None:
+    by_check = {rule["labels"]["check"]: rule for rule in rules}
+    labels = config["labels"]
+    selector = f'client="{labels["client"]}",environment="{labels["environment"]}"'
+    for check, contract in USAGE_RULES.items():
+        rule = by_check.get(check)
+        if rule is None:
+            raise RuntimeError(f"Generated usage rule is missing: {check}")
+        if rule.get("_identity") != contract["identity"]:
+            raise RuntimeError(f"Generated identity changed for {check}")
+        if rule.get("uid") != contract["uid"]:
+            raise RuntimeError(f"Generated UID changed for {check}")
+        if rule.get("title") != contract["title"]:
+            raise RuntimeError(f"Generated title changed for {check}")
+
+        expected_labels = {
+            "client": labels["client"],
+            "environment": labels["environment"],
+            "check": check,
+            "service": (
+                "Google Cloud Storage"
+                if check.startswith("gcs_")
+                else "Google Cloud Monitoring"
+            ),
+            "configured_by": "ansible",
+        }
+        if rule.get("labels") != expected_labels:
+            raise RuntimeError(f"Generated labels changed for {check}")
+        expected_annotations = {
+            "summary": (
+                "GCS Class A operations are approaching monthly usage limit"
+                if check == "gcs_class_a_monthly_operations"
+                else "GCS Class B operations are approaching monthly usage limit"
+                if check == "gcs_class_b_monthly_operations"
+                else "Google Monitoring series reached the monthly warning threshold"
+            ),
+            "description": (
+                "GCS Class A operations are at or above the configured warning threshold."
+                if check == "gcs_class_a_monthly_operations"
+                else "GCS Class B operations are at or above the configured warning threshold."
+                if check == "gcs_class_b_monthly_operations"
+                else "Cloud Monitoring billed query series are at or above the configured warning threshold."
+            ),
+            "check_value": namespace["COMMA_INTEGER_TEMPLATE"],
+            "month": "{{ $labels.month }}",
+        }
+        if rule.get("annotations") != expected_annotations:
+            raise RuntimeError(f"Generated annotations changed for {check}")
+        if rule.get("folderUID") != "folder":
+            raise RuntimeError(f"Generated folder changed for {check}")
+        if rule.get("ruleGroup") != config["grafana"]["evaluation_group"]:
+            raise RuntimeError(f"Generated rule group changed for {check}")
+        if rule.get("notification_settings") != {
+            "receiver": config["grafana"]["contact_point"]
+        }:
+            raise RuntimeError(f"Generated contact point changed for {check}")
+
+        if check.startswith("gcs_"):
+            expression = (
+                "max by (client, environment, location, month, operation_class, project_id) "
+                f'({contract["metric"]}{{{selector},operation_class="{contract["operation_class"]}"}})'
+            )
+        else:
+            expression = (
+                "max by (client, environment, location, month, project_id) "
+                f'({contract["metric"]}{{{selector}}})'
+            )
+        query = rule["data"][0]["model"]["expr"]
+        if contract["legacy_metric"] in query:
+            raise RuntimeError(f"Generated raw usage query changed for {check}")
+        if re.search(r"(?:>=|>|<=|<|==|!=)\s*-?\d", query):
+            raise RuntimeError(f"Generated usage query embeds a threshold for {check}")
+        if query != expression:
+            raise RuntimeError(f"Generated raw usage query changed for {check}")
+
+        evaluator = rule["data"][1]["model"]["conditions"][0]["evaluator"]
+        minimum = config["thresholds"][contract["threshold"]]
+        if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 0:
+            raise RuntimeError(f"Configured usage threshold is invalid for {check}")
+        if evaluator != {"params": [minimum - 1], "type": "gt"}:
+            raise RuntimeError(f"Generated evaluator threshold is incorrect for {check}")
+        if rule["data"][1]["model"].get("expression") != "A":
+            raise RuntimeError(f"Generated usage threshold does not evaluate query A for {check}")
+        if rule.get("noDataState") != "OK":
+            raise RuntimeError(f"Usage NoData policy changed for {check}")
+
+
+def telemetry_no_data_contract(rules: list[dict[str, object]]) -> None:
+    by_check = {rule["labels"]["check"]: rule for rule in rules}
+    for check in ALERTING_CHECKS:
+        if by_check[check].get("noDataState") != "Alerting":
+            raise RuntimeError(f"Telemetry NoData policy changed for {check}")
 
 
 def fixture_config() -> dict[str, object]:
@@ -98,7 +229,10 @@ def imported_identity(rule: dict[str, object]) -> str:
 
 
 def validate_live_registry(
-    namespace: dict[str, object], registry: dict[str, str], live_rules: list[dict[str, object]]
+    namespace: dict[str, object],
+    registry: dict[str, str],
+    live_rules: list[dict[str, object]],
+    desired_rules: list[dict[str, object]] | None = None,
 ) -> None:
     managed = [
         rule
@@ -127,6 +261,25 @@ def validate_live_registry(
         raise RuntimeError(
             f"Expected exactly eight alert updates, found {len(expected_updates)}"
         )
+    if desired_rules is not None:
+        desired_by_uid = {rule["uid"]: rule for rule in desired_rules}
+        live_by_uid = {rule["uid"]: rule for rule in managed}
+        comparable_uids = set(desired_by_uid) & set(live_by_uid)
+        if comparable_uids and all(
+            "data" in live_by_uid[uid] for uid in comparable_uids
+        ):
+            actual_updates = {
+                uid
+                for uid in comparable_uids
+                if namespace["comparable"](live_by_uid[uid])
+                != namespace["comparable"](desired_by_uid[uid])
+            }
+            expected_updates &= comparable_uids
+            if actual_updates != expected_updates:
+                raise RuntimeError(
+                    "Live reconciliation has unexpected rule updates: "
+                    f"expected={sorted(expected_updates)!r}, actual={sorted(actual_updates)!r}"
+                )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -145,6 +298,8 @@ def main(argv: list[str] | None = None) -> int:
         *namespace["site_rules"](config, "folder", "prometheus"),
         *namespace["external_service_rules"](config, "folder", "prometheus"),
     ]
+    usage_rule_contracts(namespace, config, rules)
+    telemetry_no_data_contract(rules)
     expected = {
         "grayhaven-core-prod-web-01 Time Tracker service": "0s",
         "grayhaven-core-prod-web-01 Time Tracker health check": "5m",
@@ -196,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError(f"Expected 76 permanent rule identities, found {len(registry)}")
     if args.live_export:
         live_rules = json.loads(args.live_export.read_text(encoding="utf-8"))
-        validate_live_registry(namespace, registry, live_rules)
+        validate_live_registry(namespace, registry, live_rules, rules)
         print("identity_created=0 identity_updated=0 identity_deleted=0 expected_rule_updates=8")
     return 0
 

@@ -230,7 +230,7 @@
         role: "{{ observability_role }}"
         project: "{{ observability_project }}"
         client: "{{ observability_client }}"
-        environment: "{{ grayhaven_environment }}"
+        environment: "{{ baseline_validation_environment }}"
         control_node: "{{ observability_host_is_control_node }}"
       hosts: "{{ observability_hosts }}"
       restic:
@@ -304,7 +304,7 @@
         api_token: "{{ observability_grafana_credentials.irm_alert_groups.api_token }}"
       labels:
         client: "{{ observability_client }}"
-        environment: "{{ grayhaven_environment }}"
+        environment: "{{ baseline_validation_environment }}"
       output_path: "{{ observability_textfile_dir }}/irm-alert-groups.prom"
   when:
     - observability_metrics_enabled

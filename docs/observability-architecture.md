@@ -8,6 +8,7 @@ managed alert rules to Grafana Cloud.
 - [Design](#design)
 - [Enablement](#enablement)
 - [Metrics](#metrics)
+- [Pacific Billing-Month Usage Contract](#pacific-billing-month-usage-contract)
 - [Logs](#logs)
 - [Managed Alerts](#managed-alerts)
 - [Operational Boundaries](#operational-boundaries)
@@ -60,10 +61,10 @@ Metrics include:
 - fail2ban jail status and ban counts;
 - Time Tracker service state and authentication-ban status;
 - restic backup, integrity-check, retention, and restore-size status;
-- Google Cloud Storage public service-health status, calendar-month API
+- Google Cloud Storage public service-health status, Pacific billing-month API
   operation totals, and daily stale restic bucket state;
-- Cloud Monitoring public service-health status and calendar-month billed query
-  series;
+- Cloud Monitoring public service-health status and Pacific billing-month billed
+  query series;
 - Proton public service-health status for Grayhaven Systems LLC-used services;
 - sanitized active Grafana IRM alert-group state;
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
@@ -77,21 +78,66 @@ unavailable while still surfacing explicit untrusted-certificate alerts.
 
 The active control node publishes the full known-host inventory as textfile
 metrics so dashboards and alert rules can reason about all expected hosts.
-Calendar-month Google Cloud Storage operation totals are queried only for the
-expected restic buckets and cached for one hour. The collector republishes the
-cached totals during its normal one-minute cycle so Grafana retains fresh local
-telemetry without repeatedly querying Cloud Monitoring. A managed alert reports
-when the cached operation totals have not refreshed for three hours.
-Calendar-month Cloud Monitoring billed query series are independently queried
-and cached for one hour. The query uses server-side reduction to return a single
-series, and a managed alert reports when usage reaches the configured monthly
-warning threshold. Separate managed alerts report stale usage telemetry,
-public service-health collection failure, and degraded Cloud Monitoring status.
+Google usage follows the Pacific billing-month contract below. The collector
+queries Google Cloud Storage operation totals only for the expected restic
+buckets and caches them for one hour. It republishes the cached totals during
+its normal one-minute cycle so Grafana retains fresh local telemetry without
+repeatedly querying Cloud Monitoring. Cloud Monitoring billed query series are
+independently cached for one hour; that query uses server-side reduction to
+return a single series. Managed alerts report stale usage telemetry and usage
+that reaches the configured monthly warning threshold. Separate managed alerts
+report public service-health collection failure and degraded Cloud Monitoring
+status.
 When Grafana Cloud is enabled, the active control node also publishes sanitized
 Grafana IRM alert-group state as textfile metrics for operational reporting.
 The collector reads only current alert-group metadata and read-only user
 metadata needed to display acknowledgement ownership. It does not expose the
 API token or raw IRM payloads in generated metrics.
+
+[Back to top](#observability-architecture)
+
+## Pacific Billing-Month Usage Contract
+
+Google usage windows use Pacific Time (`America/Los_Angeles`), independent of
+the host timezone and UTC calendar dates. For each collection, the window
+starts at 00:00:00 Pacific on the first day of the current billing month and
+ends at collection time. The collector converts both endpoints to UTC for the
+Google APIs and labels the result with the Pacific month in `YYYY-MM` form.
+This contract also handles Pacific daylight-saving transitions without changing
+the month identity.
+
+The two canonical textfile gauge metrics are:
+
+- `grayhaven_gcs_restic_billing_month_operations_total`, with the Pacific
+  billing month and GCS operation class labels for expected restic buckets;
+- `grayhaven_google_monitoring_billing_month_series_total`, with the Pacific
+  billing month label for the reduced Cloud Monitoring billed-query-series
+  total.
+
+Each cache records a schema version, project, billing month, refresh timestamp,
+and typed usage values. The GCS cache also records the sorted expected bucket
+set. A cache is accepted only when all of those identity and schema checks
+match the current collection. At a billing boundary, the month mismatch
+rejects the prior month's cache and forces a query for the new window. A
+malformed, incompatible, wrong-project, wrong-month, or wrong-bucket cache is
+therefore ignored rather than reused. If a same-month refresh fails, a valid
+cache may be retained temporarily, but its freshness signal becomes stale
+after the configured three-hour window. If no valid same-month cache exists,
+collection fails closed and the corresponding usage metric is not emitted.
+
+Managed Grafana usage rules query the raw canonical values with PromQL label
+selection and aggregation; numeric thresholds are not embedded in PromQL.
+Grafana evaluates each configured non-negative integer threshold on the query
+result, using strict `greater than threshold minus one` semantics to represent
+the exact inclusive boundary. Usage-threshold alerts own the usage value only.
+Their NoData state is `OK`; collection-success and telemetry-staleness alerts
+own missing or stale telemetry and use `Alerting` for NoData. This keeps a
+telemetry gap from being mistaken for a usage-limit breach.
+
+For durable verification, confirm that collected usage has the canonical metric
+name and current Pacific `month` label, that the managed rule retains a raw
+PromQL expression and exact integer Grafana-side threshold, and that usage and
+telemetry-health NoData ownership remain separate.
 
 [Back to top](#observability-architecture)
 

@@ -31,7 +31,7 @@
         {
           'webhook_id': automation_notifications_discord_webhook_id,
           'webhook_token': automation_notifications_discord_webhook_token,
-          'timezone': grayhaven_timezone,
+          'timezone': baseline_validation_timezone,
         }
         | to_nice_json
       }}
@@ -39,7 +39,7 @@
 
 - name: Install reboot notification command
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/grayhaven-reboot-notify"
+    src: "{{ playbook_dir | dirname }}/files/grayhaven-reboot-notify"
     dest: /usr/local/sbin/grayhaven-reboot-notify
     owner: root
     group: root
@@ -47,7 +47,7 @@
 
 - name: Install reboot notification service
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../files/systemd/grayhaven-reboot-notify.service"
+    src: "{{ playbook_dir | dirname }}/files/systemd/grayhaven-reboot-notify.service"
     dest: /etc/systemd/system/grayhaven-reboot-notify.service
     owner: root
     group: root
