@@ -43,6 +43,8 @@ on repository-change poller events, or by manual invocation.
   to Grafana Cloud.
 - Deploy repository-backed static websites for hosted domains, or render the
   generic fallback site when no repository is configured.
+- Manage the Time Tracker WebAuthn relying-party ID and exact HTTPS origin from
+  the configured Time Tracker hostname.
 - Manage Nginx, host TLS certificates, load-balancer backend behavior, dev
   basic authentication, per-domain htpasswd files, and certificate renewal on
   web hosts.

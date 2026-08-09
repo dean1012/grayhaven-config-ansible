@@ -11,6 +11,8 @@ timetracker_database_filename: timetracker.sqlite3
 timetracker_quadlet_dir: /etc/containers/systemd
 timetracker_quadlet_path: "{{ timetracker_quadlet_dir }}/grayhaven-timetracker.container"
 timetracker_service_name: grayhaven-timetracker.service
+timetracker_webauthn_rp_id: "{{ timetracker.hostname }}"
+timetracker_webauthn_origin: "https://{{ timetracker.hostname }}"
 timetracker_backup_retention_days: "{{ timetracker.backup_retention_days | default(14) }}"
 timetracker_branding_source_root: "{{ branding_checkout_dir }}"
 timetracker_tls_mode: "{{ baseline_validation_tls_mode | default('host') }}"

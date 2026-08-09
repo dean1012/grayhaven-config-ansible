@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import tempfile
 
 import jinja2
@@ -18,16 +19,29 @@ TEMPLATES = {
     "grayhaven-timetracker.container.j2": "grayhaven-timetracker.container",
     "grayhaven-timetracker.conf.j2": "grayhaven-timetracker.conf",
 }
+HOSTNAME_PATTERN = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
+)
 
 
-def fixture_context() -> dict[str, object]:
+def managed_webauthn_values(hostname: str) -> dict[str, str]:
+    if not isinstance(hostname, str) or HOSTNAME_PATTERN.fullmatch(hostname) is None:
+        raise ValueError("WebAuthn RP ID must be a hostname without scheme, port, or path")
+    return {
+        "rp_id": hostname,
+        "origin": f"https://{hostname}",
+    }
+
+
+def fixture_context(hostname: str = "timetracker.example.invalid") -> dict[str, object]:
+    webauthn = managed_webauthn_values(hostname)
     return {
         "baseline_validation_timezone": "America/Chicago",
         "timetracker": {
             "backup_dir": "/var/lib/grayhaven/timetracker/backups",
             "branding_dir": "/var/lib/grayhaven/timetracker/branding",
             "data_dir": "/var/lib/grayhaven/timetracker/data",
-            "hostname": "timetracker.example.invalid",
+            "hostname": hostname,
             "image_digest": "sha256:" + ("a" * 64),
             "secrets_dir": "/var/lib/grayhaven/timetracker/secrets",
         },
@@ -39,10 +53,15 @@ def fixture_context() -> dict[str, object]:
         "timetracker_image_repository": "ghcr.io/example/grayhaven-timetracker",
         "timetracker_tls_mode": "host",
         "timetracker_uid": 777,
+        "timetracker_webauthn_origin": webauthn["origin"],
+        "timetracker_webauthn_rp_id": webauthn["rp_id"],
     }
 
 
-def render_templates(output_dir: pathlib.Path) -> dict[str, str]:
+def render_templates(
+    output_dir: pathlib.Path,
+    hostname: str = "timetracker.example.invalid",
+) -> dict[str, str]:
     environment = jinja2.Environment(
         loader=jinja2.FileSystemLoader(TEMPLATE_DIR),
         autoescape=False,
@@ -51,7 +70,7 @@ def render_templates(output_dir: pathlib.Path) -> dict[str, str]:
     rendered: dict[str, str] = {}
     output_dir.mkdir(parents=True, exist_ok=True)
     for template_name, output_name in TEMPLATES.items():
-        content = environment.get_template(template_name).render(fixture_context())
+        content = environment.get_template(template_name).render(fixture_context(hostname))
         (output_dir / output_name).write_text(content, encoding="utf-8")
         rendered[output_name] = content
     return rendered
@@ -62,18 +81,29 @@ def validate(rendered: dict[str, str]) -> None:
     nginx = rendered["grayhaven-timetracker.conf"]
     service_tasks = SERVICE_TASKS.read_text(encoding="utf-8")
     nginx_tasks = NGINX_TASKS.read_text(encoding="utf-8")
+    rp_id_match = re.search(r"^Environment=WEBAUTHN_RP_ID=(.*)$", quadlet, re.MULTILINE)
+    origin_match = re.search(r"^Environment=WEBAUTHN_ORIGIN=(.*)$", quadlet, re.MULTILINE)
+    if not rp_id_match or not origin_match:
+        raise RuntimeError("Rendered WebAuthn configuration is missing")
+    rp_id = rp_id_match.group(1)
+    try:
+        expected_webauthn = managed_webauthn_values(rp_id)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    if origin_match.group(1) != expected_webauthn["origin"]:
+        raise RuntimeError("WebAuthn origin must be exactly https:// followed by the RP ID")
     required_quadlet = (
         "Image=ghcr.io/example/grayhaven-timetracker@sha256:",
         "PublishPort=127.0.0.1:8000:8000",
         "Environment=GUNICORN_CMD_ARGS=--no-control-socket",
-        "headers={'Host': 'timetracker.example.invalid'}",
+        f"headers={{'Host': '{rp_id}'}}",
         "NoNewPrivileges=true",
         "PidsLimit=128",
         "ReadOnly=true",
         "Notify=healthy",
     )
     required_nginx = (
-        "server_name timetracker.example.invalid;",
+        f"server_name {rp_id};",
         'add_header X-Robots-Tag "noindex, nofollow, noarchive" always;',
         "proxy_pass http://127.0.0.1:8000;",
         "proxy_set_header X-Forwarded-Proto https;",
