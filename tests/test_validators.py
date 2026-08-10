@@ -777,6 +777,20 @@ class ValidatorTests(unittest.TestCase):
             rendered = timetracker.render_templates(pathlib.Path(temp_dir))
             timetracker.validate(rendered)
 
+            for missing_environment in (
+                "Environment=WEBAUTHN_RP_ID=timetracker.example.invalid",
+                "Environment=WEBAUTHN_ORIGIN=https://timetracker.example.invalid",
+            ):
+                broken = dict(rendered)
+                broken["grayhaven-timetracker.container"] = broken[
+                    "grayhaven-timetracker.container"
+                ].replace(missing_environment, "")
+                with self.subTest(missing_environment=missing_environment):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "configuration is missing"
+                    ):
+                        timetracker.validate(broken)
+
             for malformed_rp_id in (
                 "https://timetracker.example.invalid",
                 "timetracker.example.invalid:443",
