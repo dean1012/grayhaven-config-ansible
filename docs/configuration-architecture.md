@@ -325,6 +325,15 @@ Bootstrap users are reconciled only when the database has no users. Initial
 passwords must be changed at first sign-in. Once users exist, account management
 belongs to the application rather than repeated Ansible convergence.
 
+The role derives the non-secret `WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGIN` container
+environment values from the validated public `timetracker.hostname` mapping.
+The RP ID is the hostname only, without a scheme, port, or path; the origin is
+exactly `https://` followed by that hostname. Hostname validation rejects
+malformed values before the template is rendered. These values are managed
+configuration, not entries in `timetracker_secrets` or files under the secret
+directory. The application's exact-origin, fail-closed behavior remains in
+force, and the values are never derived from request headers.
+
 [Back to top](#configuration-architecture)
 
 ## Firewalld Policy
