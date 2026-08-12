@@ -20,6 +20,8 @@ Environment=BOOTSTRAP_USERS_FILE=/run/secrets/bootstrap_users
 Environment=DATABASE_PATH=/app/data/{{ timetracker_database_filename }}
 Environment=GUNICORN_CMD_ARGS=--no-control-socket
 Environment=PUBLIC_BASE_URL=https://{{ timetracker.hostname }}
+Environment=WEBAUTHN_RP_ID={{ timetracker_webauthn_rp_id }}
+Environment=WEBAUTHN_ORIGIN={{ timetracker_webauthn_origin }}
 Environment=SECRET_KEY_FILE=/run/secrets/flask_secret_key
 Environment=SESSION_COOKIE_SECURE=true
 Environment=SQLCIPHER_PASSPHRASE_FILE=/run/secrets/sqlcipher_passphrase

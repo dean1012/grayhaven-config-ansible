@@ -38,6 +38,24 @@
     quiet: true
   no_log: true
 
+- name: Derive managed WebAuthn configuration from the canonical hostname
+  ansible.builtin.set_fact:
+    # Security values must come from managed configuration, never request headers.
+    timetracker_webauthn_rp_id: "{{ timetracker.hostname }}"
+    timetracker_webauthn_origin: "https://{{ timetracker.hostname }}"
+
+- name: Validate managed WebAuthn configuration
+  ansible.builtin.assert:
+    that:
+      - timetracker_webauthn_rp_id is string
+      - timetracker_webauthn_rp_id == timetracker.hostname
+      - timetracker_webauthn_rp_id is match('^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$')
+      - timetracker_webauthn_origin is string
+      - timetracker_webauthn_origin == 'https://' ~ timetracker.hostname
+    fail_msg: "Managed WebAuthn configuration must use the exact HTTPS origin and hostname-only RP ID."
+    quiet: true
+  no_log: true
+
 - name: Validate Time Tracker bootstrap users
   ansible.builtin.assert:
     that:

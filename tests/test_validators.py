@@ -766,9 +766,56 @@ class ValidatorTests(unittest.TestCase):
     def test_timetracker_render_validation_and_main(self) -> None:
         context = timetracker.fixture_context()
         self.assertEqual(context["timetracker_tls_mode"], "host")
+        self.assertEqual(
+            context["timetracker_webauthn_rp_id"], "timetracker.example.invalid"
+        )
+        self.assertEqual(
+            context["timetracker_webauthn_origin"],
+            "https://timetracker.example.invalid",
+        )
         with tempfile.TemporaryDirectory() as temp_dir:
             rendered = timetracker.render_templates(pathlib.Path(temp_dir))
             timetracker.validate(rendered)
+
+            for missing_environment in (
+                "Environment=WEBAUTHN_RP_ID=timetracker.example.invalid",
+                "Environment=WEBAUTHN_ORIGIN=https://timetracker.example.invalid",
+            ):
+                broken = dict(rendered)
+                broken["grayhaven-timetracker.container"] = broken[
+                    "grayhaven-timetracker.container"
+                ].replace(missing_environment, "")
+                with self.subTest(missing_environment=missing_environment):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "configuration is missing"
+                    ):
+                        timetracker.validate(broken)
+
+            for malformed_rp_id in (
+                "https://timetracker.example.invalid",
+                "timetracker.example.invalid:443",
+                "timetracker.example.invalid/path",
+            ):
+                malformed = dict(rendered)
+                malformed["grayhaven-timetracker.container"] = malformed[
+                    "grayhaven-timetracker.container"
+                ].replace(
+                    "Environment=WEBAUTHN_RP_ID=timetracker.example.invalid",
+                    f"Environment=WEBAUTHN_RP_ID={malformed_rp_id}",
+                )
+                with self.subTest(malformed_rp_id=malformed_rp_id):
+                    with self.assertRaisesRegex(RuntimeError, "RP ID"):
+                        timetracker.validate(malformed)
+
+            malformed_origin = dict(rendered)
+            malformed_origin["grayhaven-timetracker.container"] = malformed_origin[
+                "grayhaven-timetracker.container"
+            ].replace(
+                "Environment=WEBAUTHN_ORIGIN=https://timetracker.example.invalid",
+                "Environment=WEBAUTHN_ORIGIN=http://timetracker.example.invalid",
+            )
+            with self.assertRaisesRegex(RuntimeError, "origin"):
+                timetracker.validate(malformed_origin)
 
             broken = dict(rendered)
             broken["grayhaven-timetracker.conf"] = broken[
@@ -824,3 +871,24 @@ class ValidatorTests(unittest.TestCase):
                 self.assertEqual(timetracker.main(), 0)
         with mock.patch("sys.argv", ["validate-rendered-timetracker-config"]):
             self.assertEqual(timetracker.main(), 0)
+
+        for hostname, expected_origin in (
+            (
+                "timetracker.staging.grayhavensystems.com",
+                "https://timetracker.staging.grayhavensystems.com",
+            ),
+            (
+                "timetracker.grayhavensystems.com",
+                "https://timetracker.grayhavensystems.com",
+            ),
+        ):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                rendered = timetracker.render_templates(
+                    pathlib.Path(temp_dir), hostname=hostname
+                )
+                timetracker.validate(rendered)
+                quadlet = rendered["grayhaven-timetracker.container"]
+                self.assertIn(f"Environment=WEBAUTHN_RP_ID={hostname}", quadlet)
+                self.assertIn(
+                    f"Environment=WEBAUTHN_ORIGIN={expected_origin}", quadlet
+                )
