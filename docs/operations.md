@@ -412,6 +412,10 @@ endpoint. The local deployment service accepts only configured repository URLs,
 the `main` or `dev` branch, and a valid HMAC signature made with the domain's
 configured webhook secret.
 
+The GitHub source-range refresh is best-effort. A temporary GitHub metadata
+failure preserves the currently installed allowlist and does not fail the
+configuration convergence.
+
 In load-balancer TLS environments with two or more web hosts, whichever web host
 receives the public webhook deploys the exact Git commit locally and then fans
 the same deployment out to peer web hosts over private short hostnames. Peer

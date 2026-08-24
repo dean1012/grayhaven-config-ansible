@@ -237,6 +237,11 @@ Actions deployment requests, verifies the repository webhook secret from
 source ranges. Deployments are locked per domain and branch so independent sites
 or branches can deploy without blocking each other.
 
+Convergence refreshes the GitHub source ranges only from a successful, nonempty
+metadata response. If GitHub's metadata endpoint is temporarily unavailable,
+the existing known-good Nginx allowlist remains installed and convergence
+continues.
+
 When load-balancer TLS is active with two or more web hosts, the web host that
 receives the public webhook coordinates private web-to-web fanout over short
 hostnames that resolve to private addresses. Peer fanout requests are signed with
