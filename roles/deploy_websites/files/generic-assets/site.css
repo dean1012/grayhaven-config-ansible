@@ -168,15 +168,19 @@ p {
   flex: 0 0 auto;
 }
 
-.dev-footer {
+grayhaven-dev-status {
   position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  z-index: 2;
-  color: var(--color-cool-grey);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  top: max(10px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  z-index: 2147483647;
+  display: block;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+  contain: strict;
+  background: #6fb7b7;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #1c1f24;
 }
 
 @media (max-width: 40rem) {
@@ -199,12 +203,5 @@ p {
 
   .link-button {
     justify-content: center;
-  }
-
-  .dev-footer {
-    right: 0;
-    bottom: 0.7rem;
-    left: 0;
-    text-align: center;
   }
 }

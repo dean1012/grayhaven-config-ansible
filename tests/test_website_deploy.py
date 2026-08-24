@@ -105,10 +105,24 @@ class ConfigurationAndHtmlTests(unittest.TestCase):
         html = "<html><head><title>Example</title></head><body>Body</body></html>"
         updated = deploy.add_dev_cues(html)
         self.assertIn("Example [Dev]", updated)
-        self.assertIn("grayhaven-dev-footer-style", updated)
-        self.assertIn("Development Environment", updated)
+        self.assertEqual(updated.count("<grayhaven-dev-status"), 1)
+        self.assertIn('role="img" aria-label="Development Site"', updated)
+        self.assertIn('shadowrootmode="open"', updated)
+        self.assertIn("top: max(10px, env(safe-area-inset-top))", updated)
+        self.assertIn("left: max(8px, env(safe-area-inset-left))", updated)
+        self.assertIn("width: 8px", updated)
+        self.assertIn("height: 8px", updated)
+        self.assertIn("background: #6fb7b7", updated)
+        self.assertIn("box-shadow: 0 0 0 2px #1c1f24", updated)
+        self.assertIn("pointer-events: none", updated)
+        self.assertIn("contain: strict", updated)
+        self.assertNotIn("dev-footer", updated)
+        self.assertNotIn("Development Environment", updated)
         self.assertEqual(deploy.add_dev_cues(updated), updated)
-        self.assertIn("Development Environment", deploy.add_dev_cues("<p>No body</p>"))
+        no_body = deploy.add_dev_cues("<p>No body</p>")
+        self.assertEqual(no_body.count("<grayhaven-dev-status"), 1)
+        self.assertIn('aria-label="Development Site"', no_body)
+        self.assertEqual(deploy.add_dev_cues(no_body), no_body)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)
@@ -136,6 +150,35 @@ class ConfigurationAndHtmlTests(unittest.TestCase):
             self.assertTrue(deploy.inject_dev_cues(raw_root))
             with self.assertRaises(deploy.DeployError):
                 deploy.render_dev_source(root / "missing", target)
+
+    def test_generic_fallback_indicator_is_development_only(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        dev_template = (
+            root / "roles/deploy_websites/templates/generic-static-site-dev.html.j2"
+        ).read_text(encoding="utf-8")
+        prod_template = (
+            root / "roles/deploy_websites/templates/generic-static-site-prod.html.j2"
+        ).read_text(encoding="utf-8")
+        stylesheet = (
+            root / "roles/deploy_websites/files/generic-assets/site.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(dev_template.count("<grayhaven-dev-status"), 1)
+        self.assertIn('role="img" aria-label="Development Site"', dev_template)
+        self.assertNotIn("grayhaven-dev-status", prod_template)
+        self.assertNotIn("Development Site", prod_template)
+        self.assertNotIn("[Dev]", prod_template)
+        self.assertNotIn("dev-footer", dev_template)
+        self.assertNotIn("dev-footer", stylesheet)
+        self.assertIn("grayhaven-dev-status {", stylesheet)
+        self.assertIn("top: max(10px, env(safe-area-inset-top));", stylesheet)
+        self.assertIn("left: max(8px, env(safe-area-inset-left));", stylesheet)
+        self.assertIn("width: 8px;", stylesheet)
+        self.assertIn("height: 8px;", stylesheet)
+        self.assertIn("background: #6fb7b7;", stylesheet)
+        self.assertIn("box-shadow: 0 0 0 2px #1c1f24;", stylesheet)
+        self.assertIn("pointer-events: none;", stylesheet)
+        self.assertIn("contain: strict;", stylesheet)
 
 
 class DeploymentHelperTests(unittest.TestCase):
