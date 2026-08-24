@@ -113,9 +113,72 @@
   ansible.builtin.uri:
     url: "{{ deploy_websites_github_meta_url }}"
     return_content: true
-  register: deploy_websites_github_meta
+  register: deploy_websites_github_meta_initial
   changed_when: false
+  failed_when: false
   when: deploy_websites_repository_deployments | default([]) | length > 0
+
+- name: Retry GitHub network metadata for deployment source allowlist
+  ansible.builtin.uri:
+    url: "{{ deploy_websites_github_meta_url }}"
+    return_content: true
+  register: deploy_websites_github_meta_retry
+  changed_when: false
+  failed_when: false
+  when:
+    - deploy_websites_repository_deployments | default([]) | length > 0
+    - deploy_websites_github_meta_initial.status | default(0) != 200
+
+- name: Retry GitHub network metadata for deployment source allowlist once more
+  ansible.builtin.uri:
+    url: "{{ deploy_websites_github_meta_url }}"
+    return_content: true
+  register: deploy_websites_github_meta_final
+  changed_when: false
+  failed_when: false
+  when:
+    - deploy_websites_repository_deployments | default([]) | length > 0
+    - deploy_websites_github_meta_initial.status | default(0) != 200
+    - deploy_websites_github_meta_retry.status | default(0) != 200
+
+- name: Select latest GitHub network metadata response
+  ansible.builtin.set_fact:
+    deploy_websites_github_meta: >-
+      {{
+        deploy_websites_github_meta_final
+        if deploy_websites_github_meta_final.status is defined
+        else deploy_websites_github_meta_retry
+        if deploy_websites_github_meta_retry.status is defined
+        else deploy_websites_github_meta_initial
+      }}
+  when: deploy_websites_repository_deployments | default([]) | length > 0
+
+- name: Derive GitHub deployment source ranges
+  ansible.builtin.set_fact:
+    deploy_websites_github_deployment_source_ranges: >-
+      {{
+        (
+          (deploy_websites_github_meta.json.actions | default([]))
+          + (deploy_websites_github_meta.json.hooks | default([]))
+        )
+        | unique
+        | sort
+      }}
+  when:
+    - deploy_websites_repository_deployments | default([]) | length > 0
+    - deploy_websites_github_meta.status | default(0) == 200
+    - deploy_websites_github_meta.json is mapping
+
+- name: Preserve existing GitHub deployment source allowlist when metadata is unavailable
+  ansible.builtin.debug:
+    msg: >-
+      GitHub network metadata is unavailable or unusable; preserving the
+      existing deployment source allowlist.
+  when:
+    - deploy_websites_repository_deployments | default([]) | length > 0
+    - >-
+      deploy_websites_github_meta.status | default(0) != 200 or
+      deploy_websites_github_deployment_source_ranges | default([]) | length == 0
 
 - name: Install GitHub deployment source allowlist for nginx
   ansible.builtin.copy:
@@ -127,17 +190,10 @@
       {% for cidr in deploy_websites_github_deployment_source_ranges %}
       allow {{ cidr }};
       {% endfor %}
-  vars:
-    deploy_websites_github_deployment_source_ranges: >-
-      {{
-        (
-          (deploy_websites_github_meta.json.actions | default([]))
-          + (deploy_websites_github_meta.json.hooks | default([]))
-        )
-        | unique
-        | sort
-      }}
-  when: deploy_websites_repository_deployments | default([]) | length > 0
+  when:
+    - deploy_websites_repository_deployments | default([]) | length > 0
+    - deploy_websites_github_meta.status | default(0) == 200
+    - deploy_websites_github_deployment_source_ranges | default([]) | length > 0
   notify: Reload nginx
 
 - name: Remove GitHub deployment source allowlist when unused
