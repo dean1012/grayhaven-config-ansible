@@ -382,6 +382,16 @@ The local repository path defaults to
 `/var/backups/restic`, and the homedir archive path defaults to
 `/var/backups/deleted-homedir-archives`.
 
+Ansible installs the Backupctl operator utility from the exact immutable commit
+in the three-field `grayhaven_backupctl` mapping: `repo_url`, `checkout_dir`,
+and `version`. The version must be a lowercase full commit SHA. Convergence
+checks out and verifies that commit, then compares the installed
+`grayhaven-backupctl --version` identity with the checkout's canonical
+`VERSION` plus the commit's seven-character abbreviation. Missing or different
+identities use the same installation path, supporting both upgrades and
+intentional downgrades; an unchanged identity skips runtime dependency and
+implementation installation.
+
 By default, backups include:
 
 - configured homedir archive path;

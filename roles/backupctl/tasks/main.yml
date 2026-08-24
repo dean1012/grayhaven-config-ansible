@@ -1,11 +1,33 @@
 ---
-- name: Validate grayhaven-backupctl checkout path
+- name: Reject obsolete grayhaven-backupctl selectors
   ansible.builtin.assert:
     that:
-      - backupctl_checkout_dir is string
-      - backupctl_checkout_dir is match('^/home/ansible/.+')
-      - backupctl_checkout_dir != '/home/ansible'
-    fail_msg: "grayhaven-backupctl checkout directory must be below /home/ansible."
+      - backupctl_repo_url is not defined
+      - backupctl_repo_ref is not defined
+      - backupctl_checkout_dir is not defined
+    fail_msg: >-
+      Use only the nested grayhaven_backupctl mapping; obsolete flat Backupctl
+      selectors are not supported.
+    quiet: true
+
+- name: Validate grayhaven-backupctl configuration
+  ansible.builtin.assert:
+    that:
+      - grayhaven_backupctl is mapping
+      - grayhaven_backupctl | length == 3
+      - >-
+        grayhaven_backupctl.keys() | list | sort ==
+        ['checkout_dir', 'repo_url', 'version']
+      - grayhaven_backupctl.repo_url is string
+      - grayhaven_backupctl.repo_url | length > 0
+      - grayhaven_backupctl.checkout_dir is string
+      - grayhaven_backupctl.checkout_dir is match('^/home/ansible/.+')
+      - grayhaven_backupctl.checkout_dir != '/home/ansible'
+      - grayhaven_backupctl.version is string
+      - grayhaven_backupctl.version is match('^[0-9a-f]{40}$')
+    fail_msg: >-
+      grayhaven_backupctl must contain exactly repo_url, checkout_dir, and a
+      lowercase full-commit version; checkout_dir must be below /home/ansible.
     quiet: true
 
 - name: Ensure grayhaven-backupctl state directory exists
@@ -45,18 +67,24 @@
     state: absent
   when:
     - backupctl_previous_checkout_dir | length > 0
-    - backupctl_previous_checkout_dir != backupctl_checkout_dir
+    - backupctl_previous_checkout_dir != grayhaven_backupctl.checkout_dir
     - backupctl_previous_checkout_dir is match('^/home/ansible/.+')
     - backupctl_previous_checkout_dir != '/home/ansible'
 
 - name: Check existing grayhaven-backupctl checkout
   ansible.builtin.stat:
-    path: "{{ backupctl_checkout_dir }}/.git"
+    path: "{{ grayhaven_backupctl.checkout_dir }}/.git"
   register: backupctl_existing_checkout
 
 - name: Read existing grayhaven-backupctl origin URL  # noqa: command-instead-of-module
   ansible.builtin.command:
-    cmd: git -C "{{ backupctl_checkout_dir }}" config --get remote.origin.url
+    argv:
+      - /usr/bin/git
+      - -C
+      - "{{ grayhaven_backupctl.checkout_dir }}"
+      - config
+      - --get
+      - remote.origin.url
   become: true
   become_user: ansible
   environment:
@@ -70,17 +98,19 @@
 
 - name: Remove grayhaven-backupctl checkout when origin URL changes
   ansible.builtin.file:
-    path: "{{ backupctl_checkout_dir }}"
+    path: "{{ grayhaven_backupctl.checkout_dir }}"
     state: absent
   when:
     - backupctl_existing_checkout.stat.exists
-    - backupctl_existing_origin.stdout | default('') | trim != backupctl_repo_url
+    - >-
+      backupctl_existing_origin.stdout | default('') | trim !=
+      grayhaven_backupctl.repo_url
 
-- name: Check out grayhaven-backupctl
+- name: Check out exact grayhaven-backupctl commit
   ansible.builtin.git:
-    repo: "{{ backupctl_repo_url }}"
-    dest: "{{ backupctl_checkout_dir }}"
-    version: "{{ backupctl_repo_ref }}"
+    repo: "{{ grayhaven_backupctl.repo_url }}"
+    dest: "{{ grayhaven_backupctl.checkout_dir }}"
+    version: "{{ grayhaven_backupctl.version }}"
     force: true
     update: true
   become: true
@@ -90,50 +120,73 @@
     USER: ansible
     LOGNAME: ansible
 
-- name: Create grayhaven-backupctl virtual environment
+- name: Read checked-out grayhaven-backupctl commit
   ansible.builtin.command:
-    cmd: >-
-      /usr/bin/python3 -m venv
-      --system-site-packages
-      {{ backupctl_venv_dir | quote }}
-    creates: "{{ backupctl_venv_dir }}/bin/python"
+    argv:
+      - /usr/bin/git
+      - -C
+      - "{{ grayhaven_backupctl.checkout_dir }}"
+      - rev-parse
+      - HEAD
+  become: true
+  become_user: ansible
+  environment:
+    HOME: /home/ansible
+    USER: ansible
+    LOGNAME: ansible
+  register: backupctl_checkout_head
+  changed_when: false
 
-- name: Check grayhaven-backupctl command in virtual environment
-  ansible.builtin.stat:
-    path: "{{ backupctl_venv_dir }}/bin/python"
-  register: backupctl_venv_python
+- name: Verify checked-out grayhaven-backupctl commit
+  ansible.builtin.assert:
+    that:
+      - backupctl_checkout_head.stdout | trim == grayhaven_backupctl.version
+    fail_msg: "grayhaven-backupctl checkout does not match the requested commit."
+    quiet: true
 
-- name: Check grayhaven-backupctl requirements checksum
-  ansible.builtin.stat:
-    path: "{{ backupctl_checkout_dir }}/requirements.txt"
-    checksum_algorithm: sha256
-  register: backupctl_requirements
+- name: Read checked-out grayhaven-backupctl version
+  ansible.builtin.slurp:
+    src: "{{ grayhaven_backupctl.checkout_dir }}/VERSION"
+  register: backupctl_checkout_version
 
-- name: Read grayhaven-backupctl requirements marker
+- name: Derive checked-out grayhaven-backupctl version
+  ansible.builtin.set_fact:
+    backupctl_checkout_version_raw: >-
+      {{ backupctl_checkout_version.content | b64decode }}
+
+- name: Validate checked-out grayhaven-backupctl version
+  ansible.builtin.assert:
+    that:
+      - >-
+        backupctl_checkout_version_raw is
+        match('^[0-9]+\.[0-9]+\.[0-9]+\n$')
+    fail_msg: "grayhaven-backupctl VERSION must contain MAJOR.MINOR.BUILD."
+    quiet: true
+
+- name: Derive requested grayhaven-backupctl identity
+  ansible.builtin.set_fact:
+    backupctl_expected_version_output: >-
+      grayhaven-backupctl {{ backupctl_checkout_version_raw | trim }}-{{
+      grayhaven_backupctl.version[:7] }}
+
+- name: Probe installed grayhaven-backupctl identity
   ansible.builtin.command:
-    cmd: cat "{{ backupctl_venv_dir }}/.grayhaven-requirements.sha256"
-  register: backupctl_requirements_marker
+    argv:
+      - "{{ backupctl_command_path }}"
+      - --version
+  register: backupctl_installed_version
   changed_when: false
   failed_when: false
 
-- name: Install grayhaven-backupctl Python requirements
-  ansible.builtin.pip:
-    virtualenv: "{{ backupctl_venv_dir }}"
-    requirements: "{{ backupctl_checkout_dir }}/requirements.txt"
-    extra_args: --require-hashes
-  when: >-
-    not backupctl_venv_python.stat.exists or
-    backupctl_requirements_marker.rc != 0 or
-    backupctl_requirements_marker.stdout | default("") !=
-    backupctl_requirements.stat.checksum
-
-- name: Store grayhaven-backupctl requirements marker
-  ansible.builtin.copy:
-    dest: "{{ backupctl_venv_dir }}/.grayhaven-requirements.sha256"
-    owner: root
-    group: root
-    mode: "0644"
-    content: "{{ backupctl_requirements.stat.checksum }}\n"
+- name: Decide whether grayhaven-backupctl installation is required
+  ansible.builtin.set_fact:
+    backupctl_install_required: >-
+      {{
+        backupctl_installed_version.rc != 0
+        or backupctl_installed_version.stdout_lines | default([])
+          != [backupctl_expected_version_output]
+        or backupctl_installed_version.stderr | default('') | length > 0
+      }}
 
 - name: Ensure grayhaven-backupctl libexec directory exists
   ansible.builtin.file:
@@ -143,14 +196,81 @@
     group: root
     mode: "0755"
 
-- name: Install grayhaven-backupctl implementation
-  ansible.builtin.copy:
-    src: "{{ backupctl_checkout_dir }}/grayhaven-backupctl"
-    dest: "{{ backupctl_libexec_dir }}/grayhaven-backupctl"
-    owner: root
-    group: root
-    mode: "0755"
-    remote_src: true
+- name: Install requested grayhaven-backupctl runtime
+  when: backupctl_install_required | bool
+  block:
+    - name: Create grayhaven-backupctl virtual environment
+      ansible.builtin.command:
+        cmd: >-
+          /usr/bin/python3 -m venv
+          --system-site-packages
+          {{ backupctl_venv_dir | quote }}
+        creates: "{{ backupctl_venv_dir }}/bin/python"
+
+    - name: Check grayhaven-backupctl command in virtual environment
+      ansible.builtin.stat:
+        path: "{{ backupctl_venv_dir }}/bin/python"
+      register: backupctl_venv_python
+
+    - name: Check grayhaven-backupctl requirements checksum
+      ansible.builtin.stat:
+        path: "{{ grayhaven_backupctl.checkout_dir }}/requirements.txt"
+        checksum_algorithm: sha256
+      register: backupctl_requirements
+
+    - name: Read grayhaven-backupctl requirements marker
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/cat
+          - "{{ backupctl_venv_dir }}/.grayhaven-requirements.sha256"
+      register: backupctl_requirements_marker
+      changed_when: false
+      failed_when: false
+
+    - name: Install grayhaven-backupctl Python requirements
+      ansible.builtin.pip:
+        virtualenv: "{{ backupctl_venv_dir }}"
+        requirements: "{{ grayhaven_backupctl.checkout_dir }}/requirements.txt"
+        extra_args: --require-hashes
+      when: >-
+        not backupctl_venv_python.stat.exists or
+        backupctl_requirements_marker.rc != 0 or
+        backupctl_requirements_marker.stdout | default('') !=
+        backupctl_requirements.stat.checksum
+
+    - name: Store grayhaven-backupctl requirements marker
+      ansible.builtin.copy:
+        dest: "{{ backupctl_venv_dir }}/.grayhaven-requirements.sha256"
+        owner: root
+        group: root
+        mode: "0644"
+        content: "{{ backupctl_requirements.stat.checksum }}\n"
+
+    - name: Install grayhaven-backupctl implementation
+      ansible.builtin.copy:
+        src: "{{ grayhaven_backupctl.checkout_dir }}/grayhaven-backupctl"
+        dest: "{{ backupctl_libexec_dir }}/grayhaven-backupctl"
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+
+    - name: Install grayhaven-backupctl version metadata
+      ansible.builtin.copy:
+        src: "{{ grayhaven_backupctl.checkout_dir }}/VERSION"
+        dest: "{{ backupctl_libexec_dir }}/VERSION"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+
+    - name: Install grayhaven-backupctl commit metadata
+      ansible.builtin.copy:
+        dest: "{{ backupctl_libexec_dir }}/COMMIT_SHA"
+        owner: root
+        group: root
+        mode: "0644"
+        content: "{{ grayhaven_backupctl.version }}\n"
 
 - name: Install grayhaven-backupctl command wrapper
   ansible.builtin.copy:
@@ -167,7 +287,10 @@
 
 - name: Generate grayhaven-backupctl bash completion
   ansible.builtin.command:
-    cmd: "{{ backupctl_command_path }} completion bash"
+    argv:
+      - "{{ backupctl_command_path }}"
+      - completion
+      - bash
   register: backupctl_completion
   changed_when: false
 
@@ -179,10 +302,26 @@
     mode: "0644"
     content: "{{ backupctl_completion.stdout }}\n"
 
+- name: Verify installed grayhaven-backupctl identity
+  ansible.builtin.command:
+    argv:
+      - "{{ backupctl_command_path }}"
+      - --version
+  register: backupctl_verified_version
+  changed_when: false
+
+- name: Require exact installed grayhaven-backupctl identity
+  ansible.builtin.assert:
+    that:
+      - backupctl_verified_version.stdout_lines == [backupctl_expected_version_output]
+      - backupctl_verified_version.stderr | length == 0
+    fail_msg: "Installed grayhaven-backupctl identity is not the requested release."
+    quiet: true
+
 - name: Store grayhaven-backupctl checkout marker
   ansible.builtin.copy:
     dest: "{{ backupctl_state_dir }}/checkout-dir"
     owner: ansible
     group: ansible
     mode: "0644"
-    content: "{{ backupctl_checkout_dir }}\n"
+    content: "{{ grayhaven_backupctl.checkout_dir }}\n"

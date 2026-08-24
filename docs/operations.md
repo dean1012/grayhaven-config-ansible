@@ -284,6 +284,16 @@ Restic installation and configuration, installation of the
 completion script, as well as remote bucket management, are managed through
 Ansible by this repository.
 
+The private environment configuration selects Backupctl with exactly
+`grayhaven_backupctl.repo_url`, `grayhaven_backupctl.checkout_dir`, and
+`grayhaven_backupctl.version`. The version is a lowercase full commit SHA, not a
+moving branch or tag. Convergence verifies the checkout at that exact commit
+and requires the installed command to report
+`grayhaven-backupctl MAJOR.MINOR.BUILD-SHORTSHA`. Runtime dependencies and the
+implementation are reinstalled only when the installed identity is missing or
+different; ordinary paths, wrapper, completion, permissions, and final identity
+remain declaratively verified on every run.
+
 [Back to top](#operations)
 
 ## Time Tracker Database Restore

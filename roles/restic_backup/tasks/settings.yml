@@ -17,7 +17,7 @@
     restic_backup_exclude_paths: >-
       {{
         [
-          (backupctl_checkout_dir | default('/home/ansible/grayhaven-backupctl')) ~ '/.git',
+          grayhaven_backupctl.checkout_dir ~ '/.git',
           '/home/ansible/grayhaven-config-ansible/.git',
           '/home/ansible/grayhaven-vault/.git',
           '/var/lib/grayhaven/observability',

@@ -1,7 +1,8 @@
 ---
-backupctl_checkout_dir: /home/ansible/grayhaven-backupctl
-backupctl_repo_url: https://github.com/dean1012/grayhaven-backupctl.git
-backupctl_repo_ref: main
+grayhaven_backupctl:  # noqa var-naming[no-role-prefix]
+  repo_url: https://github.com/dean1012/grayhaven-backupctl.git
+  checkout_dir: /home/ansible/grayhaven-backupctl
+  version: 207a02af4921080efbc46950a14961874952bf92
 backupctl_state_dir: /var/lib/grayhaven/backupctl
 backupctl_venv_dir: /opt/grayhaven/grayhaven-backupctl-venv
 backupctl_libexec_dir: /usr/local/libexec/grayhaven-backupctl
