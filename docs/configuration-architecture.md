@@ -229,6 +229,13 @@ apex and `www` document root, and `site/frontend/` from the `dev` branch to the
 development document root. Domains without repository configuration are rendered
 from the generic fallback templates in the website deployment role.
 
+Development output retains the `[Dev]` page-title cue and displays a small,
+fixed status dot with the accessible name `Development Site`. Repository-backed
+sites receive the indicator through isolated Shadow DOM, so neither the hosted
+site nor the indicator can restyle the other. The generic Development fallback
+uses the same visual contract from its managed stylesheet. Production output
+and the generic production fallback contain no Development indicator.
+
 Repository-backed domains also receive a small deployment webhook at
 `/.grayhaven/deploy` on the apex hostname. The endpoint accepts signed GitHub
 Actions deployment requests, verifies the repository webhook secret from

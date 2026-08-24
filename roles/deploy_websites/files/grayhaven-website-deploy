@@ -157,37 +157,40 @@ def find_deployment(
 # HTML Development Cues
 
 TITLE_RE = re.compile(r"(<title>)(.*?)(</title>)", re.IGNORECASE | re.DOTALL)
-HEAD_CLOSE_RE = re.compile(r"</head>", re.IGNORECASE)
 BODY_CLOSE_RE = re.compile(r"</body>", re.IGNORECASE)
 
-DEV_STYLE = """<style id="grayhaven-dev-footer-style">
-.dev-footer {
-  position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  z-index: 999;
-  color: #aab2bf;
-  font: 700 0.78rem/1.2 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: #1C1F24;
-}
+DEV_STATUS = """<grayhaven-dev-status role="img" aria-label="Development Site">
+  <template shadowrootmode="open">
+    <style>
+      :host {
+        all: initial !important;
+        position: fixed !important;
+        top: max(10px, env(safe-area-inset-top)) !important;
+        left: max(8px, env(safe-area-inset-left)) !important;
+        z-index: 2147483647 !important;
+        display: block !important;
+        width: 8px !important;
+        height: 8px !important;
+        pointer-events: none !important;
+        contain: strict !important;
+      }
 
-@media (max-width: 40rem) {
-  .dev-footer {
-    right: 0;
-    bottom: 0.7rem;
-    left: 0;
-    text-align: center;
-  }
-}
-</style>"""
-
-DEV_FOOTER = '<footer class="dev-footer">Development Environment</footer>'
+      .indicator {
+        display: block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #6fb7b7;
+        box-shadow: 0 0 0 2px #1c1f24;
+      }
+    </style>
+    <span class="indicator" aria-hidden="true"></span>
+  </template>
+</grayhaven-dev-status>"""
 
 
 def add_dev_cues(html: str) -> str:
-    """Append development title and footer cues to one HTML document."""
+    """Append development title and status cues to one HTML document."""
 
     def title_replacement(match: re.Match[str]) -> str:
         title_text = match.group(2)
@@ -197,14 +200,11 @@ def add_dev_cues(html: str) -> str:
 
     updated = TITLE_RE.sub(title_replacement, html, count=1)
 
-    if "grayhaven-dev-footer-style" not in updated:
-        updated = HEAD_CLOSE_RE.sub(f"{DEV_STYLE}\n  </head>", updated, count=1)
-
-    if 'class="dev-footer"' not in updated:
+    if "<grayhaven-dev-status" not in updated:
         if BODY_CLOSE_RE.search(updated):
-            updated = BODY_CLOSE_RE.sub(f"  {DEV_FOOTER}\n  </body>", updated, count=1)
+            updated = BODY_CLOSE_RE.sub(f"  {DEV_STATUS}\n  </body>", updated, count=1)
         else:
-            updated = f"{updated.rstrip()}\n{DEV_FOOTER}\n"
+            updated = f"{updated.rstrip()}\n{DEV_STATUS}\n"
 
     return updated
 
