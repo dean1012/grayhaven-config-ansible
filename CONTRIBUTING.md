@@ -68,10 +68,17 @@ scripts/install-galaxy-collections
 ## Workflow
 
 1. Create a GitHub issue.
-2. Create a focused feature branch for the issue.
+2. Create a focused feature branch from the updated `main` branch for the issue.
 3. Sign all commits and reference the issue number.
 4. Validate changes locally.
-5. Create a pull request to the `main` branch for code review.
+5. Open a ready-for-review (not draft) pull request targeting `main`. Direct
+   pushes to `main` are forbidden.
+6. Resolve every review conversation before merging.
+7. Merge only after the required checks `validate` and `Unit Tests` pass. Do
+   not bypass required checks or branch protections.
+8. Use squash merging only; merge commits and rebase merging are not allowed.
+9. After the pull request is merged, manually delete the feature branch because
+   automatic branch deletion is disabled.
 
 [Back to top](#contributing)
 
@@ -125,10 +132,16 @@ CI and local validation commands so the new files are checked.
 
 Pull requests must meet all of these requirements to be merged:
 
+- Target `main` with a ready-for-review (not draft) pull request; direct pushes
+  to `main` are forbidden.
 - Reference or close a GitHub issue as appropriate.
 - Contain signed commits.
 - Have no open review conversations.
-- Pass all required CI and unit-test checks.
+- Pass exactly the required checks `validate` and `Unit Tests`.
+- Use squash merging only; do not use merge commits or rebase merging, and do
+  not bypass required checks or branch protections.
+- Manually delete the feature branch after merging because automatic branch
+  deletion is disabled.
 - Document all changes appropriately.
 
 [Back to top](#contributing)
