@@ -70,11 +70,13 @@ Metrics include:
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
   domains and the Time Tracker application.
 
-HTTPS availability, development basic-auth, and certificate-expiry probes check
-site behavior while allowing untrusted certificate chains. Separate
-certificate-trust probes validate whether the presented certificate is trusted
-by the external probe. This keeps staging-certificate deployments from looking
-unavailable while still surfacing explicit untrusted-certificate alerts.
+HTTPS availability and certificate-expiry probes establish TLS while allowing
+untrusted certificate chains and accepting any HTTP response status. Separate
+certificate-trust probes validate the requested hostname and public trust while
+also accepting any HTTP response status. This keeps staging-certificate
+deployments from looking unavailable while still surfacing explicit
+untrusted-certificate alerts. The local Time Tracker health probe remains a
+separate HTTP 200 and JSON-health check.
 
 The active control node publishes the full known-host inventory as textfile
 metrics so dashboards and alert rules can reason about all expected hosts.
@@ -203,9 +205,11 @@ backup freshness, Ansible convergence, web and Time Tracker availability,
 development basic-auth behavior, certificate expiration,
 certificate-expiration warning, certificate trust, and external service-health
 state for Google Cloud Storage and Proton. Certificate-expiration warnings fire
-when a certificate is valid
-but expires within 14 days. CPU and external service-health alerts require five
-minutes above threshold before firing. Alert rules send to the configured
+when a certificate is valid but expires within 14 days; an expiry at or before
+the current time is handled by the separate expired-certificate alert. CPU,
+memory, filesystem, inode, and swap thresholds include the configured boundary
+exactly. CPU and external service-health alerts require five minutes at or above
+threshold before firing. Alert rules send to the configured
 Grafana IRM contact point.
 
 Normal threshold and probe alerts treat missing query data as OK so a telemetry

@@ -117,6 +117,60 @@ def validate_timetracker_contract(rendered_path: pathlib.Path) -> None:
         raise RuntimeError(f"Rendered Alloy Time Tracker contract is missing: {missing}")
 
 
+def validate_https_probe_contract(rendered_path: pathlib.Path) -> None:
+    """Ensure shared HTTPS probes complete TLS independently of HTTP status."""
+
+    rendered = rendered_path.read_text(encoding="utf-8")
+    for module in ("https_any_status_skip_tls_verify", "https_any_status_trusted"):
+        match = re.search(
+            rf"^  {re.escape(module)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_]+:\n|^`$)",
+            rendered,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        if match is None:
+            raise RuntimeError(f"Rendered Alloy HTTPS probe module is missing: {module}")
+        status_codes = {
+            int(value)
+            for value in re.findall(r"^        - (\d+)$", match.group("body"), re.MULTILINE)
+        }
+        if status_codes != set(range(100, 600)):
+            raise RuntimeError(
+                f"Rendered Alloy {module} module does not accept every HTTP status"
+            )
+
+    skip_verify_count = rendered.count('module  = "https_any_status_skip_tls_verify"')
+    trusted_count = rendered.count('module  = "https_any_status_trusted"')
+    if skip_verify_count == 0 or trusted_count == 0:
+        raise RuntimeError("Rendered Alloy HTTPS targets do not use shared TLS probes")
+    if "http_2xx_skip_tls_verify" in rendered or 'module  = "http_2xx"' in rendered:
+        raise RuntimeError("Rendered Alloy retained a status-limited HTTPS probe")
+
+    for target in re.findall(r"^  target \{\n(?P<body>.*?^  \})", rendered, re.MULTILINE | re.DOTALL):
+        check_match = re.search(r'^      check\s+=\s+"([^"]+)",?$', target, re.MULTILINE)
+        if check_match is None or check_match.group(1) not in {
+            "https_200",
+            "ssl_certificate",
+            "ssl_certificate_trusted",
+        }:
+            continue
+        module = re.search(r'^    module\s+=\s+"([^"]+)"$', target, re.MULTILINE)
+        address = re.search(r'^    address\s+=\s+"https://([^/]+)/"$', target, re.MULTILINE)
+        domain = re.search(r'^      domain\s+=\s+"([^"]+)",?$', target, re.MULTILINE)
+        if module is None or address is None or domain is None or address.group(1) != domain.group(1):
+            raise RuntimeError(
+                f"Rendered Alloy {check_match.group(1)} target does not preserve its requested hostname"
+            )
+        expected_module = (
+            "https_any_status_trusted"
+            if check_match.group(1) == "ssl_certificate_trusted"
+            else "https_any_status_skip_tls_verify"
+        )
+        if module.group(1) != expected_module:
+            raise RuntimeError(
+                f"Rendered Alloy {check_match.group(1)} target uses the wrong TLS probe module"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -131,6 +185,7 @@ def main() -> int:
         rendered_path.parent.mkdir(parents=True, exist_ok=True)
         render_config(rendered_path)
         validate_timetracker_contract(rendered_path)
+        validate_https_probe_contract(rendered_path)
         try:
             result = subprocess.run(["alloy", "validate", str(rendered_path)], check=False)
         except FileNotFoundError:

@@ -29,13 +29,6 @@ prometheus.scrape "node" {
 prometheus.exporter.blackbox "http" {
   config = `
 modules:
-  http_2xx:
-    prober: http
-    timeout: 5s
-    http:
-      preferred_ip_protocol: ip4
-      valid_status_codes:
-        - 200
   http_401:
     prober: http
     timeout: 5s
@@ -43,7 +36,7 @@ modules:
       preferred_ip_protocol: ip4
       valid_status_codes:
         - 401
-  http_2xx_skip_tls_verify:
+  https_any_status_skip_tls_verify:
     prober: http
     timeout: 5s
     http:
@@ -51,7 +44,9 @@ modules:
       tls_config:
         insecure_skip_verify: true
       valid_status_codes:
-        - 200
+{% for status_code in range(100, 600) %}
+        - {{ status_code }}
+{% endfor %}
   http_401_skip_tls_verify:
     prober: http
     timeout: 5s
@@ -61,6 +56,15 @@ modules:
         insecure_skip_verify: true
       valid_status_codes:
         - 401
+  https_any_status_trusted:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4
+      valid_status_codes:
+{% for status_code in range(100, 600) %}
+        - {{ status_code }}
+{% endfor %}
   http_redirect_https:
     prober: http
     timeout: 5s
@@ -111,7 +115,7 @@ modules:
   target {
     name    = {{ (site_id ~ "_apex_200") | to_json }}
     address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
-    module  = "http_2xx_skip_tls_verify"
+    module  = "https_any_status_skip_tls_verify"
     labels  = {
       check       = "https_200",
       client      = {{ observability_client | to_json }},
@@ -127,7 +131,7 @@ modules:
   target {
     name    = {{ (site_id ~ "_alias_" ~ loop.index ~ "_200") | to_json }}
     address = {{ ("https://" ~ alias ~ "/") | to_json }}
-    module  = "http_2xx_skip_tls_verify"
+    module  = "https_any_status_skip_tls_verify"
     labels  = {
       check       = "https_200",
       client      = {{ observability_client | to_json }},
@@ -160,7 +164,7 @@ modules:
   target {
     name    = {{ (site_id ~ "_cert") | to_json }}
     address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
-    module  = "http_2xx_skip_tls_verify"
+    module  = "https_any_status_skip_tls_verify"
     labels  = {
       check       = "ssl_certificate",
       client      = {{ observability_client | to_json }},
@@ -175,7 +179,7 @@ modules:
   target {
     name    = {{ (site_id ~ "_cert_trust") | to_json }}
     address = {{ ("https://" ~ site.domain ~ "/") | to_json }}
-    module  = "http_2xx"
+    module  = "https_any_status_trusted"
     labels  = {
       check       = "ssl_certificate_trusted",
       client      = {{ observability_client | to_json }},
