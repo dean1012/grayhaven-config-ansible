@@ -471,7 +471,7 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                     "100 * (1 - avg by (host, environment, role, project, client) "
                     f'(rate(node_cpu_seconds_total{{{host_selector(host["fqdn"])},mode="idle"}}[5m])))'
                 ),
-                evaluator_type="gt",
+                evaluator_type="gte",
                 threshold=float(thresholds["cpu_percent"]),
                 duration="5m",
                 labels=host_labels(config, host, "cpu_utilization"),
@@ -497,7 +497,7 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                     "/ max by (host, environment, role, project, client) "
                     f'(node_memory_MemTotal_bytes{{{host_selector(host["fqdn"])}}}))'
                 ),
-                evaluator_type="gt",
+                evaluator_type="gte",
                 threshold=float(thresholds["memory_percent"]),
                 duration="2m",
                 labels=host_labels(config, host, "memory_utilization"),
@@ -524,7 +524,7 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                     f'(node_filesystem_size_bytes{{{host_selector(host["fqdn"])},mountpoint="/",'
                     'fstype!~"tmpfs|overlay"}))'
                 ),
-                evaluator_type="gt",
+                evaluator_type="gte",
                 threshold=float(thresholds["filesystem_percent"]),
                 labels=host_labels(config, host, "filesystem_space"),
                 annotations={
@@ -551,7 +551,7 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                     f'(node_filesystem_files{{{host_selector(host["fqdn"])},mountpoint="/",'
                     'fstype!~"tmpfs|overlay"}))'
                 ),
-                evaluator_type="gt",
+                evaluator_type="gte",
                 threshold=float(thresholds["filesystem_inode_percent"]),
                 labels=host_labels(config, host, "filesystem_inode"),
                 annotations={
@@ -577,7 +577,7 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                     "/ max by (host, environment, role, project, client) "
                     f'(node_memory_SwapTotal_bytes{{{host_selector(host["fqdn"])}}}))'
                 ),
-                evaluator_type="gt",
+                evaluator_type="gte",
                 threshold=float(thresholds["swap_percent"]),
                 duration="2m",
                 labels=host_labels(config, host, "swap_utilization"),
@@ -675,8 +675,10 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                         },
                     ),
                     annotations={
-                        "summary": "HTTPS availability check failed",
-                        "description": f"{target_domain} HTTPS check did not return 200 OK.",
+                        "summary": "HTTPS/TLS availability check failed",
+                        "description": (
+                            f"{target_domain} could not establish an HTTPS/TLS connection."
+                        ),
                     },
                     **common,
                 )
@@ -760,7 +762,7 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                         f'(probe_ssl_earliest_cert_expiry{{domain="{promql_string(site["domain"])}",'
                         'check="ssl_certificate"} - time())'
                     ),
-                    evaluator_type="lt",
+                    evaluator_type="lte",
                     threshold=0,
                     labels=base_labels(
                         config,

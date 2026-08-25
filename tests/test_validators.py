@@ -77,6 +77,160 @@ class ValidatorTests(unittest.TestCase):
         ):
             alerts.main([])
 
+    def test_alert_threshold_boundaries_are_exact(self) -> None:
+        config = alerts.fixture_config()
+        namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        rules = [
+            *namespace["host_metric_rules"](config, "folder", "prometheus"),
+            *namespace["site_rules"](config, "folder", "prometheus"),
+        ]
+        by_check = {rule["labels"]["check"]: rule for rule in rules}
+        for check in (
+            "cpu_utilization",
+            "memory_utilization",
+            "filesystem_space",
+            "filesystem_inode",
+            "swap_utilization",
+        ):
+            with self.subTest(check=check):
+                self.assertEqual(
+                    by_check[check]["data"][1]["model"]["conditions"][0]["evaluator"][
+                        "type"
+                    ],
+                    "gte",
+                )
+        self.assertEqual(
+            by_check["ssl_certificate_expired"]["data"][1]["model"]["conditions"][0][
+                "evaluator"
+            ],
+            {"params": [0], "type": "lte"},
+        )
+        expiring = by_check["ssl_certificate_expiring"]["data"][0]["model"]["expr"]
+        self.assertIn("> 0)", expiring)
+        self.assertIn("< 1209600.0", expiring)
+
+    def test_https_availability_annotations_describe_tls_not_http_status(self) -> None:
+        config = alerts.fixture_config()
+        namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        rules = namespace["site_rules"](config, "folder", "prometheus")
+        availability = [
+            rule
+            for rule in rules
+            if rule["labels"]["check"] == "https_200"
+        ]
+        trust = next(
+            rule
+            for rule in rules
+            if rule["labels"]["check"] == "ssl_certificate_trusted"
+        )
+        self.assertTrue(availability)
+        for rule in availability:
+            description = rule["annotations"]["description"]
+            self.assertNotIn("200", description)
+            self.assertNotIn("status", description.lower())
+            self.assertIn("HTTPS/TLS", description)
+        self.assertNotEqual(availability[0]["annotations"], trust["annotations"])
+        self.assertIn("trust", trust["annotations"]["description"].lower())
+
+    def test_generated_alert_validator_rejects_boundary_and_probe_annotation_drift(
+        self,
+    ) -> None:
+        config = alerts.fixture_config()
+        namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        rules = [
+            *namespace["host_metric_rules"](config, "folder", "prometheus"),
+            *namespace["site_rules"](config, "folder", "prometheus"),
+        ]
+
+        cases = (
+            (
+                lambda rule: rule["labels"]["check"] == "cpu_utilization",
+                lambda rule: rule["data"][1]["model"]["conditions"][0][
+                    "evaluator"
+                ].update(type="gt"),
+                "inclusive threshold",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "ssl_certificate_expired",
+                lambda rule: rule["data"][1]["model"]["conditions"][0][
+                    "evaluator"
+                ].update(type="lt"),
+                "zero boundary",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "ssl_certificate_expiring",
+                lambda rule: rule["data"][0]["model"].update(expr="bad"),
+                "excludes expired",
+            ),
+        )
+        for predicate, mutation, message in cases:
+            changed = json.loads(json.dumps(rules))
+            for rule in changed:
+                if predicate(rule):
+                    mutation(rule)
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    alerts.threshold_boundary_contract(config, changed)
+
+        annotation_cases = (
+            ([], "availability rule is missing"),
+            (
+                lambda rule: rule["labels"]["check"] == "https_200",
+                lambda rule: rule["annotations"].update(
+                    description="HTTPS endpoint returned status 500"
+                ),
+                "HTTP status",
+            ),
+            (
+                lambda rule: rule["labels"]["check"] == "https_200",
+                lambda rule: rule["annotations"].update(
+                    description="HTTPS availability failed"
+                ),
+                "TLS reachability",
+            ),
+            (
+                lambda rule: rule["labels"]["check"]
+                == "ssl_certificate_trusted",
+                lambda rule: rule["labels"].update(check="other"),
+                "certificate-trust rule is missing",
+            ),
+        )
+        for case in annotation_cases:
+            with self.subTest(message=case[-1]):
+                if case[0] == []:
+                    with self.assertRaisesRegex(RuntimeError, case[1]):
+                        alerts.https_annotation_contract([])
+                    continue
+                changed = json.loads(json.dumps(rules))
+                for rule in changed:
+                    if case[0](rule):
+                        case[1](rule)
+                with self.assertRaisesRegex(RuntimeError, case[2]):
+                    alerts.https_annotation_contract(changed)
+
+        trust_overlap = json.loads(json.dumps(rules))
+        availability_annotations = next(
+            rule["annotations"]
+            for rule in trust_overlap
+            if rule["labels"]["check"] == "https_200"
+        )
+        next(
+            rule
+            for rule in trust_overlap
+            if rule["labels"]["check"] == "ssl_certificate_trusted"
+        )["annotations"] = availability_annotations
+        with self.assertRaisesRegex(RuntimeError, "annotations overlap"):
+            alerts.https_annotation_contract(trust_overlap)
+
+        trust_word_missing = json.loads(json.dumps(rules))
+        next(
+            rule
+            for rule in trust_word_missing
+            if rule["labels"]["check"] == "ssl_certificate_trusted"
+        )["annotations"]["description"] = "certificate validation failed"
+        with self.assertRaisesRegex(RuntimeError, "annotations overlap"):
+            alerts.https_annotation_contract(trust_word_missing)
+
     def test_live_uid_registry_validation(self) -> None:
         registry = json.loads(alerts.UID_REGISTRY.read_text(encoding="utf-8"))
         namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
@@ -743,12 +897,18 @@ class ValidatorTests(unittest.TestCase):
             rendered = pathlib.Path(temp_dir) / "config.alloy"
             alloy.render_config(rendered)
             alloy.validate_timetracker_contract(rendered)
+            alloy.validate_https_probe_contract(rendered)
             content = rendered.read_text(encoding="utf-8")
             rendered.write_text(
                 content.replace("timetracker_health:", "missing:"), encoding="utf-8"
             )
             with self.assertRaisesRegex(RuntimeError, "contract is missing"):
                 alloy.validate_timetracker_contract(rendered)
+
+            broken = content.replace("https_any_status_trusted:", "missing:", 1)
+            rendered.write_text(broken, encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "HTTPS probe module is missing"):
+                alloy.validate_https_probe_contract(rendered)
 
         with (
             mock.patch("sys.argv", ["validate-rendered-alloy-config"]),
@@ -762,6 +922,59 @@ class ValidatorTests(unittest.TestCase):
             mock.patch.object(alloy.subprocess, "run", side_effect=FileNotFoundError),
         ):
             self.assertEqual(alloy.main(), 127)
+
+    def test_alloy_probe_validator_rejects_probe_contract_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            rendered = pathlib.Path(temp_dir) / "config.alloy"
+            alloy.render_config(rendered)
+            content = rendered.read_text(encoding="utf-8")
+
+            cases = (
+                (
+                    content.replace("        - 100\n", "        - 99\n", 1),
+                    "does not accept every HTTP status",
+                ),
+                (
+                    content.replace(
+                        'module  = "https_any_status_skip_tls_verify"',
+                        'module  = "other"',
+                    ).replace(
+                        'module  = "https_any_status_trusted"',
+                        'module  = "other"',
+                    ),
+                    "do not use shared TLS probes",
+                ),
+                (content + '\nmodule  = "http_2xx"\n', "status-limited"),
+                (
+                    content.replace(
+                        '      domain      = "grayhavensystems.com"',
+                        '      domain      = "other.example.invalid"',
+                        1,
+                    ),
+                    "requested hostname",
+                ),
+                (
+                    content.replace(
+                        '    module  = "https_any_status_skip_tls_verify"',
+                        '    module_missing  = "https_any_status_skip_tls_verify"',
+                        1,
+                    ),
+                    "requested hostname",
+                ),
+                (
+                    content.replace(
+                        '    module  = "https_any_status_skip_tls_verify"',
+                        '    module  = "https_any_status_trusted"',
+                        1,
+                    ),
+                    "wrong TLS probe module",
+                ),
+            )
+            for broken, message in cases:
+                rendered.write_text(broken, encoding="utf-8")
+                with self.subTest(message=message):
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        alloy.validate_https_probe_contract(rendered)
 
     def test_timetracker_render_validation_and_main(self) -> None:
         context = timetracker.fixture_context()

@@ -157,6 +157,85 @@ def telemetry_no_data_contract(rules: list[dict[str, object]]) -> None:
             raise RuntimeError(f"Telemetry NoData policy changed for {check}")
 
 
+def threshold_boundary_contract(
+    config: dict[str, object], rules: list[dict[str, object]]
+) -> None:
+    """Require native inclusive evaluators for percentage and expiry bounds."""
+
+    by_check = {rule["labels"]["check"]: rule for rule in rules}
+    percentage_thresholds = {
+        "cpu_utilization": "cpu_percent",
+        "memory_utilization": "memory_percent",
+        "filesystem_space": "filesystem_percent",
+        "filesystem_inode": "filesystem_inode_percent",
+        "swap_utilization": "swap_percent",
+    }
+    thresholds = config["thresholds"]
+    for check, threshold_name in percentage_thresholds.items():
+        evaluator = by_check[check]["data"][1]["model"]["conditions"][0]["evaluator"]
+        expected = {"params": [float(thresholds[threshold_name])], "type": "gte"}
+        if evaluator != expected:
+            raise RuntimeError(
+                f"Generated {check} evaluator does not preserve the inclusive threshold"
+            )
+
+    expired_evaluator = by_check["ssl_certificate_expired"]["data"][1]["model"][
+        "conditions"
+    ][0]["evaluator"]
+    if expired_evaluator != {"params": [0], "type": "lte"}:
+        raise RuntimeError(
+            "Generated certificate-expired evaluator does not include the zero boundary"
+        )
+
+    expiring_expression = by_check["ssl_certificate_expiring"]["data"][0]["model"][
+        "expr"
+    ]
+    certificate_window = float(thresholds["certificate_expiring_seconds"])
+    if (
+        f"< {certificate_window}" not in expiring_expression
+        or "> 0)" not in expiring_expression
+    ):
+        raise RuntimeError(
+            "Generated certificate-expiring rule no longer excludes expired certificates"
+        )
+
+
+def https_annotation_contract(rules: list[dict[str, object]]) -> None:
+    """Keep HTTPS reachability wording separate from certificate trust."""
+
+    availability_rules = [
+        rule for rule in rules if rule["labels"].get("check") == "https_200"
+    ]
+    if not availability_rules:
+        raise RuntimeError("Generated HTTPS availability rule is missing")
+    for rule in availability_rules:
+        description = rule["annotations"].get("description", "")
+        if "200" in description or "status" in description.lower():
+            raise RuntimeError(
+                "Generated HTTPS availability annotation still describes an HTTP status"
+            )
+        if "HTTPS/TLS" not in description:
+            raise RuntimeError(
+                "Generated HTTPS availability annotation does not describe TLS reachability"
+            )
+
+    trust_rules = [
+        rule
+        for rule in rules
+        if rule["labels"].get("check") == "ssl_certificate_trusted"
+    ]
+    if not trust_rules:
+        raise RuntimeError("Generated certificate-trust rule is missing")
+    if any(
+        rule["annotations"] == availability_rules[0]["annotations"]
+        for rule in trust_rules
+    ) or not all(
+        "trust" in rule["annotations"].get("description", "").lower()
+        for rule in trust_rules
+    ):
+        raise RuntimeError("Generated HTTPS availability and certificate-trust annotations overlap")
+
+
 def fixture_config() -> dict[str, object]:
     return {
         "uid_registry": json.loads(UID_REGISTRY.read_text(encoding="utf-8")),
@@ -300,6 +379,8 @@ def main(argv: list[str] | None = None) -> int:
     ]
     usage_rule_contracts(namespace, config, rules)
     telemetry_no_data_contract(rules)
+    threshold_boundary_contract(config, rules)
+    https_annotation_contract(rules)
     expected = {
         "grayhaven-core-prod-web-01 Time Tracker service": "0s",
         "grayhaven-core-prod-web-01 Time Tracker health check": "5m",
