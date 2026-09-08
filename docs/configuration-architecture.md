@@ -81,10 +81,12 @@ droplet tags so OpenTofu policy changes can be applied without relying on stale
 first-boot bootstrap values.
 
 The poller checks the public configuration repository and `grayhaven-vault` for
-changes every five minutes. If either tracked ref changes, it starts the normal
-runner service and stores the observed refs under the ansible-owned
-`/var/lib/grayhaven/ansible-poller` state directory. The daily runner timer
-remains in place as a convergence safety net.
+changes every five minutes. It compares each configured remote ref with HEAD in
+the runner's corresponding local checkout (`CHECKOUT_DIR` and
+`VAULT_CHECKOUT_DIR`). If either differs or a checkout is missing, it starts the
+normal runner service. Manual convergences therefore update the comparison
+without a separate poller cache. Existing `config.ref` and `vault.ref` files are
+unused. The daily runner timer remains a convergence safety net.
 
 The poller retries transient GitHub metadata lookup failures before failing the
 poller service. Persistent lookup failures remain visible in systemd and the

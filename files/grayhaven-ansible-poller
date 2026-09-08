@@ -2,8 +2,9 @@
 set -Eeuo pipefail
 
 RUNNER_ENV="/etc/grayhaven/ansible/runner.env"
-STATE_DIR="/var/lib/grayhaven/ansible-poller"
 ANSIBLE_HOME="/home/ansible"
+DEFAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-config-ansible"
+DEFAULT_VAULT_CHECKOUT_DIR="${ANSIBLE_HOME}/grayhaven-vault"
 ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_HOME}/.ansible/collections"
 ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
@@ -97,14 +98,16 @@ remote_ref() {
     git ls-remote "$repo_url" "refs/heads/${repo_ref}" "refs/tags/${repo_ref}" | awk 'NR == 1 { print $1 }'
 }
 
-persist_ref() {
-  local path="$1"
-  local value="$2"
-  local temp_path
+checkout_head() {
+  local checkout_dir="$1"
 
-  temp_path="$(mktemp "${STATE_DIR}/.ref.XXXXXX")"
-  printf '%s\n' "$value" > "$temp_path"
-  mv "$temp_path" "$path"
+  # An absent checkout needs the runner to perform its initial clone. Restrict
+  # discovery to this checkout so Git cannot inherit a parent repository.
+  if [[ ! -e "${checkout_dir}/.git" ]]; then
+    return 0
+  fi
+
+  git -C "$checkout_dir" rev-parse --verify HEAD
 }
 
 format_ref_for_log() {
@@ -130,10 +133,10 @@ main() {
 
   REPO_URL="${REPO_URL:-$DEFAULT_REPO_URL}"
   REPO_REF="${REPO_REF:-$DEFAULT_REPO_REF}"
+  CHECKOUT_DIR="${CHECKOUT_DIR:-$DEFAULT_CHECKOUT_DIR}"
+  VAULT_CHECKOUT_DIR="${VAULT_CHECKOUT_DIR:-$DEFAULT_VAULT_CHECKOUT_DIR}"
 
   prepare_github_known_hosts
-
-  install -d -m 0755 "$STATE_DIR"
 
   local config_ref
   local vault_ref
@@ -147,8 +150,8 @@ main() {
     exit 1
   fi
 
-  previous_config_ref="$(cat "${STATE_DIR}/config.ref" 2>/dev/null || true)"
-  previous_vault_ref="$(cat "${STATE_DIR}/vault.ref" 2>/dev/null || true)"
+  previous_config_ref="$(checkout_head "$CHECKOUT_DIR")"
+  previous_vault_ref="$(checkout_head "$VAULT_CHECKOUT_DIR")"
 
   if [[ "$config_ref" == "$previous_config_ref" && "$vault_ref" == "$previous_vault_ref" ]]; then
     log "No repository changes detected."
@@ -165,11 +168,6 @@ main() {
   fi
   log "Repository change detected; triggering Ansible runner."
   sudo -n systemctl start --no-block grayhaven-ansible-runner.service
-
-  # Record the observed refs only after systemd accepts the runner request. If
-  # the trigger fails, the next poll should retry the same repository change.
-  persist_ref "${STATE_DIR}/config.ref" "$config_ref"
-  persist_ref "${STATE_DIR}/vault.ref" "$vault_ref"
 }
 
 if [[ "${GRAYHAVEN_UNIT_TEST_SOURCE_ONLY:-0}" != "1" ]]; then
