@@ -101,7 +101,8 @@ sudo sed -i "s|^REPO_REF=.*|REPO_REF='${TARGET_BRANCH}'|" \
   /etc/grayhaven/ansible/runner.env
 ```
 
-Start the poller so it records the new tracked ref and triggers convergence:
+Start the poller to compare local checkout HEADs with the configured remote refs
+and trigger convergence when they differ:
 
 ```bash
 sudo systemctl start grayhaven-ansible-poller.service
@@ -109,7 +110,8 @@ sudo journalctl -u grayhaven-ansible-poller.service -n 80 --no-pager
 sudo journalctl -u grayhaven-ansible-runner.service -f --no-pager
 ```
 
-After convergence succeeds, verify the active checkout and poller state:
+After convergence succeeds, verify the active checkout. The poller compares
+this HEAD directly with the remote ref; no cached poller state needs updating:
 
 ```bash
 sudo grep '^REPO_REF=' /etc/grayhaven/ansible/runner.env
@@ -117,7 +119,6 @@ sudo -iu ansible \
   git -C /home/ansible/grayhaven-config-ansible rev-parse --abbrev-ref HEAD
 sudo -iu ansible \
   git -C /home/ansible/grayhaven-config-ansible rev-parse --short HEAD
-sudo cat /var/lib/grayhaven/ansible-poller/config.ref
 ```
 
 Do not delete the previously deployed branch until the environment has

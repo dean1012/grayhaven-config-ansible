@@ -93,29 +93,84 @@ class ShellProgramTests(unittest.TestCase):
     def test_poller_change_and_no_change_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)
-            for name in ("runner.env", "control", "vault"):
+            for name in ("runner.env", "control", "vault-key"):
                 (root / name).touch()
+
+            def git(*args: str) -> str:
+                return subprocess.run(
+                    ["git", *args], check=True, capture_output=True, text=True,
+                ).stdout.strip()
+
+            checkouts = {}
+            for name in ("config", "vault"):
+                remote = root / f"{name}-remote"
+                git("init", "--initial-branch=main", str(remote))
+                git("-C", str(remote), "-c", "user.name=Test", "-c",
+                    "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
+                    "commit", "--allow-empty", "-m", "fixture")
+                local = root / name
+                git("clone", str(remote), str(local))
+                checkouts[name] = local
+
+            # Deliberately stale legacy caches must not cause a post-manual-run trigger.
+            (root / "config.ref").write_text("stale-config\n", encoding="utf-8")
+            (root / "vault.ref").write_text("stale-vault\n", encoding="utf-8")
             (root / "runner.env").write_text(
-                "VAULT_REPO_URL=url\nVAULT_REPO_REF=staging\n", encoding="utf-8"
+                f"REPO_URL='{root / 'config-remote'}'\nREPO_REF=main\n"
+                f"VAULT_REPO_URL='{root / 'vault-remote'}'\nVAULT_REPO_REF=main\n"
+                f"CHECKOUT_DIR='{checkouts['config']}'\n"
+                f"VAULT_CHECKOUT_DIR='{checkouts['vault']}'\n", encoding="utf-8",
             )
-            result = self.run_bash(
-                f"""
-                export GRAYHAVEN_UNIT_TEST_SOURCE_ONLY=1
-                source files/grayhaven-ansible-poller
-                STATE_DIR={str(root)!r}; RUNNER_ENV={str(root / 'runner.env')!r}
-                ANSIBLE_CONTROL_PRIVATE_KEY={str(root / 'control')!r}; VAULT_DEPLOY_PRIVATE_KEY={str(root / 'vault')!r}
-                drop_to_ansible() {{ :; }}; prepare_github_known_hosts() {{ :; }}
-                remote_ref() {{ [[ "$1" == url ]] && printf 'vault-sha\n' || printf 'config-sha\n'; }}
-                sudo() {{ printf 'trigger:%s\n' "$*"; }}
-                main
-                printf '%s|%s|%s|%s\n' "$(cat "$STATE_DIR/config.ref")" "$(cat "$STATE_DIR/vault.ref")" "$(format_ref_for_log '')" "$(format_ref_for_log abc)"
-                main
-                """
-            )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("trigger:-n systemctl start --no-block", result.stdout)
-        self.assertIn("config-sha|vault-sha|<none>|abc", result.stdout)
-        self.assertIn("No repository changes detected", result.stdout)
+
+            def poll(extra: str = "") -> subprocess.CompletedProcess[str]:
+                return self.run_bash(
+                    f"""
+                    export GRAYHAVEN_UNIT_TEST_SOURCE_ONLY=1
+                    source files/grayhaven-ansible-poller
+                    STATE_DIR={str(root)!r}; RUNNER_ENV={str(root / 'runner.env')!r}
+                    ANSIBLE_CONTROL_PRIVATE_KEY={str(root / 'control')!r}
+                    VAULT_DEPLOY_PRIVATE_KEY={str(root / 'vault-key')!r}
+                    drop_to_ansible() {{ :; }}; prepare_github_known_hosts() {{ :; }}
+                    sudo() {{ printf 'trigger:%s\\n' "$*"; }}
+                    {extra}
+                    main
+                    """
+                )
+
+            result = poll()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("No repository changes detected", result.stdout)
+            self.assertNotIn("trigger:", result.stdout)
+
+            for name in ("config", "vault"):
+                remote = root / f"{name}-remote"
+                git("-C", str(remote), "-c", "user.name=Test", "-c",
+                    "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
+                    "commit", "--allow-empty", "-m", "update")
+                result = poll()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("trigger:-n systemctl start --no-block", result.stdout)
+                # Updating the local checkout, as a manual runner does, is sufficient.
+                git("-C", str(checkouts[name]), "pull", "--ff-only")
+                self.assertNotIn("trigger:", poll().stdout)
+
+            checkouts["config"].rename(root / "config-moved")
+            result = poll()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("old=<none>", result.stdout)
+            self.assertIn("trigger:", result.stdout)
+            failed_trigger = poll("sudo() { return 7; }")
+            self.assertEqual(failed_trigger.returncode, 7)
+            for extra in (
+                "remote_ref() { return 1; }",
+                "remote_ref() { :; }",
+            ):
+                result = poll(extra)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("trigger:", result.stdout)
+            self.assertEqual((root / "config.ref").read_text(), "stale-config\n")
+            self.assertEqual((root / "vault.ref").read_text(), "stale-vault\n")
+
         missing = self.run_bash(
             "export GRAYHAVEN_UNIT_TEST_SOURCE_ONLY=1; source files/grayhaven-ansible-poller; require_file /definitely/missing"
         )
