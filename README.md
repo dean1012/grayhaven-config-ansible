@@ -41,6 +41,8 @@ on repository-change poller events, or by manual invocation.
   reboots.
 - Optionally publish production metrics, selected logs, and managed alert rules
   to Grafana Cloud.
+  Managed alerts have a minimum five-minute pending period to tolerate brief
+  failures; longer rule-specific periods are preserved.
 - Deploy repository-backed static websites for hosted domains, or render the
   generic fallback site when no repository is configured.
 - Manage the Time Tracker WebAuthn relying-party ID and exact HTTPS origin from

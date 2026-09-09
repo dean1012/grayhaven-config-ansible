@@ -54,6 +54,32 @@ def complete_config() -> dict[str, object]:
 
 
 class AlertRuleTests(unittest.TestCase):
+    def test_pending_period_floor_preserves_longer_periods(self) -> None:
+        arguments = {
+            "identity": "test:example",
+            "uid_registry": {"test:example": "123e4567-e89b-42d3-a456-426614174000"},
+            "title": "Example", "folder_uid": "folder", "rule_group": "group",
+            "datasource_uid": "prom", "expression": "up", "evaluator_type": "lt",
+            "threshold": 1, "labels": {}, "annotations": {}, "contact_point": "IRM",
+        }
+        baseline = alert_sync.alert_rule(**arguments)
+        self.assertEqual(baseline["for"], "5m")
+        for duration, expected in (
+            ("0s", "5m"), ("1m", "5m"), ("2m", "5m"), ("299s", "5m"),
+            ("300s", "300s"), ("5m", "5m"), ("10m", "10m"), ("1h", "1h"),
+        ):
+            with self.subTest(duration=duration):
+                rule = alert_sync.alert_rule(**arguments, duration=duration)
+                self.assertEqual(rule, {**baseline, "for": expected})
+
+    def test_all_managed_rules_have_fault_tolerant_pending_periods(self) -> None:
+        rules = alert_sync.desired_rules(complete_config(), "folder", "prom")
+        self.assertTrue(rules)
+        for uid, rule in rules.items():
+            with self.subTest(uid=uid):
+                self.assertGreaterEqual(alert_sync.duration_seconds(rule["for"]), 300)
+                self.assertEqual(rule["execErrState"], "Error")
+
     def test_helpers_and_rule_generation(self) -> None:
         self.assertTrue(alert_sync.valid_rule_uid("gh-f06f6e7870b532624240919a"))
         self.assertTrue(

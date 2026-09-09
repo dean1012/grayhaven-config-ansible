@@ -302,7 +302,7 @@ def alert_rule(
     labels: dict[str, str],
     annotations: dict[str, str],
     contact_point: str,
-    duration: str = "0s",
+    duration: str = "5m",
     no_data_state: str = "OK",
 ) -> dict[str, Any]:
     return {
@@ -318,7 +318,7 @@ def alert_rule(
         ],
         "noDataState": no_data_state,
         "execErrState": "Error",
-        "for": duration,
+        "for": duration if duration_seconds(duration) >= 300 else "5m",
         "annotations": annotations,
         "labels": {**labels, MANAGED_LABEL: MANAGED_VALUE},
         "isPaused": False,
@@ -505,7 +505,7 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                     "summary": "Memory utilization is high",
                     "description": (
                         f"{host['fqdn']} memory utilization is >= {thresholds['memory_percent']}% "
-                        "for >= 2 minutes."
+                        "for >= 5 minutes."
                     ),
                     "check_value": "{{ humanize $values.A.Value }}%",
                 },
