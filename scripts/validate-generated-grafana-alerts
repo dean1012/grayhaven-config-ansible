@@ -382,13 +382,13 @@ def main(argv: list[str] | None = None) -> int:
     threshold_boundary_contract(config, rules)
     https_annotation_contract(rules)
     expected = {
-        "grayhaven-core-prod-web-01 Time Tracker service": "0s",
+        "grayhaven-core-prod-web-01 Time Tracker service": "5m",
         "grayhaven-core-prod-web-01 Time Tracker health check": "5m",
-        "timetracker.grayhavensystems.com HTTPS availability": "1m",
-        "timetracker.grayhavensystems.com HTTP to HTTPS redirects": "1m",
-        "timetracker.grayhavensystems.com SSL certificate expired": "0s",
-        "timetracker.grayhavensystems.com using untrusted SSL certificate": "1m",
-        "timetracker.grayhavensystems.com SSL certificate expiring within 14 days": "0s",
+        "timetracker.grayhavensystems.com HTTPS availability": "5m",
+        "timetracker.grayhavensystems.com HTTP to HTTPS redirects": "5m",
+        "timetracker.grayhavensystems.com SSL certificate expired": "5m",
+        "timetracker.grayhavensystems.com using untrusted SSL certificate": "5m",
+        "timetracker.grayhavensystems.com SSL certificate expiring within 14 days": "5m",
     }
     actual = {
         rule["title"]: rule["for"]
