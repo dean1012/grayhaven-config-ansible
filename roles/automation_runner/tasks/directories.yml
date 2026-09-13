@@ -35,6 +35,15 @@
     mode: "0755"
   when: grayhaven_role == "bastion"
 
+- name: Create ansible runner log directory
+  ansible.builtin.file:
+    path: /var/log/grayhaven/ansible-runner
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0750"
+  when: grayhaven_role == "bastion"
+
 - name: Install ansible runner runtime tmpfiles rule
   ansible.builtin.copy:
     dest: /etc/tmpfiles.d/grayhaven-ansible-runner.conf

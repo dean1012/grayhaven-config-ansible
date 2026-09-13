@@ -547,7 +547,7 @@ timezone directly on a managed host or inside the container.
 7. Review the convergence log and require a successful play recap.
 
    ```bash
-   sudo tail -n 100 /var/run/grayhaven-ansible-runner/playbook.log
+   sudo tail -n 100 /var/log/grayhaven/ansible-runner/playbook.log
    ```
 
 8. On a managed web host, verify the operating-system timezone and the Time

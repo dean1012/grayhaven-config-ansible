@@ -429,6 +429,9 @@ uses a custom include list.
 that were included automatically. Excluding the configured homedir archive path
 deliberately opts removed-user archives out of backup.
 
+Retention groups snapshots by host. Changing the configured include paths does
+not create a separate daily-retention stream for that host.
+
 The local restic repository is encrypted. Local backups are not a substitute for
 disaster recovery.
 
