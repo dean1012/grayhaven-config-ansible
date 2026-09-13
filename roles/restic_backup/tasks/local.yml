@@ -247,6 +247,7 @@
           --password-file "$PASSWORD_FILE" \
           forget \
           --keep-daily "$KEEP_DAILY" \
+          --group-by host \
           --prune
 
         backup_end="$(date +%s)"

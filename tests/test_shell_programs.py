@@ -90,6 +90,27 @@ class ShellProgramTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("rotate-control", result.stdout)
 
+    def test_runner_uses_persistent_playbook_log(self) -> None:
+        result = self.run_bash(
+            """
+            export GRAYHAVEN_UNIT_TEST_SOURCE_ONLY=1
+            source files/grayhaven-ansible-runner
+            printf '%s|%s|%s|%s\\n' \
+              "$RUNNER_PLAYBOOK_LOG" \
+              "$RUNNER_RUNTIME_DIR" \
+              "$RUNNER_VARS" \
+              "$RUNNER_SECRET_ENV"
+            """
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.strip(),
+            "/var/log/grayhaven/ansible-runner/playbook.log|"
+            "/run/grayhaven-ansible-runner|"
+            "/run/grayhaven-ansible-runner/vars.yml|"
+            "/run/grayhaven-ansible-runner/secrets.env",
+        )
+
     def test_poller_change_and_no_change_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)

@@ -48,7 +48,7 @@ On bastion hosts, members of `wheel` may follow the clean Ansible playbook log
 without an interactive sudo prompt by running exactly:
 
 ```bash
-sudo -n /usr/bin/tail -F /var/run/grayhaven-ansible-runner/playbook.log
+sudo -n /usr/bin/tail -F /var/log/grayhaven/ansible-runner/playbook.log
 ```
 
 The managed sudoers rule authorizes only that executable, option, and path. It
