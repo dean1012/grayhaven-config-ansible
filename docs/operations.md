@@ -9,6 +9,8 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Runner And Poller Status](#runner-and-poller-status)
 - [Switching Deployed Configuration Branches](#switching-deployed-configuration-branches)
 - [Manual Discord Notification Test](#manual-discord-notification-test)
+- [DigitalOcean Inventory Token Rotation](#digitalocean-inventory-token-rotation)
+- [Certbot DigitalOcean DNS Token Rotation](#certbot-digitalocean-dns-token-rotation)
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
@@ -156,6 +158,169 @@ JSON
 ```
 
 Discord returns HTTP `204` when the webhook accepts the notification.
+
+[Back to top](#operations)
+
+## DigitalOcean Inventory Token Rotation
+
+Rotate the token from the workstation's `grayhaven-vault` checkout. Repeat the
+procedure separately for each target environment: `staging` for staging and
+`main` for production. Keep the environment branches independent.
+
+1. Select the target environment branch and pull the latest changes. Replace
+   `<branch>` with `staging` or `main`:
+
+   ```bash
+   git checkout <branch>
+   git pull
+   ```
+
+2. Decrypt the file using the target environment's vault password:
+
+   ```bash
+   ansible-vault decrypt vault/bastion.yml
+   ```
+
+3. Open the file in Vim:
+
+   ```bash
+   vim vault/bastion.yml
+   ```
+
+   Find `digitalocean_inventory_api_token` and replace its value with the new
+   token, preserving the YAML key and formatting. Save and quit with `:wq`.
+   Use a token with the
+   [documented inventory permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
+
+4. Re-encrypt the file with the
+   same environment's vault password:
+
+   ```bash
+   ansible-vault encrypt vault/bastion.yml
+   ```
+
+5. Stage the encrypted file and commit the change. Replace `<message>` with a
+   concise description of the rotation:
+
+   ```bash
+   git add vault/bastion.yml
+   git commit -s -m "<message>"
+   ```
+
+   The `-s` option adds a sign-off. Keep the repository's cryptographic commit
+   signing and safety hook enabled as required by its contribution guidelines.
+
+6. Push the updated branch:
+
+   ```bash
+   git push
+   ```
+
+7. Connect to the target environment's active control bastion and monitor
+   convergence. The enabled poller normally detects the update within five
+   minutes:
+
+   ```bash
+   sudo systemctl status grayhaven-ansible-runner.service
+   sudo journalctl -u grayhaven-ansible-runner.service -f
+   ```
+
+   Verify a new run starts after the push and completes successfully. If it
+   does not start automatically, start it manually when ready:
+
+   ```bash
+   sudo systemctl start grayhaven-ansible-runner.service
+   ```
+
+Follow [Runner And Poller Status](#runner-and-poller-status) to verify the run
+completes successfully. The runner updates its local vault checkout before
+loading dynamic inventory, so this procedure also works when the previous token
+has expired. Bastions only read the published vault; they do not modify it.
+If the poller is intentionally disabled for maintenance, leave it disabled and
+start convergence manually when ready.
+
+[Back to top](#operations)
+
+## Certbot DigitalOcean DNS Token Rotation
+
+Rotate the token from the workstation's `grayhaven-vault` checkout. Repeat the
+procedure separately for each target environment: `staging` for staging and
+`main` for production. Keep the environment branches independent.
+
+1. Select the target environment branch and pull the latest changes. Replace
+   `<branch>` with `staging` or `main`:
+
+   ```bash
+   git checkout <branch>
+   git pull
+   ```
+
+2. Decrypt the file using the target environment's vault password:
+
+   ```bash
+   ansible-vault decrypt vault/web.yml
+   ```
+
+3. Open the file in Vim:
+
+   ```bash
+   vim vault/web.yml
+   ```
+
+   Find `digitalocean_dns_api_token` and replace its value with the new token,
+   preserving the YAML key and formatting. Save and quit with `:wq`. Use a
+   token with the [documented DNS permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
+
+4. Re-encrypt the file with the same environment's vault password:
+
+   ```bash
+   ansible-vault encrypt vault/web.yml
+   ```
+
+5. Stage the encrypted file and commit the change. Replace `<message>` with a
+   concise description of the rotation:
+
+   ```bash
+   git add vault/web.yml
+   git commit -s -m "<message>"
+   ```
+
+   The `-s` option adds a sign-off. Keep the repository's cryptographic commit
+   signing and safety hook enabled as required by its contribution guidelines.
+
+6. Push the updated branch:
+
+   ```bash
+   git push
+   ```
+
+7. Connect to the target environment's active control bastion and monitor
+   convergence. The enabled poller normally detects the update within five
+   minutes:
+
+   ```bash
+   sudo systemctl status grayhaven-ansible-runner.service
+   sudo journalctl -u grayhaven-ansible-runner.service -f
+   ```
+
+   Verify a new run starts after the push and completes successfully. If it
+   does not start automatically, start it manually when ready:
+
+   ```bash
+   sudo systemctl start grayhaven-ansible-runner.service
+   ```
+
+Convergence deploys the updated DNS credential to the web hosts. On each target
+web host, verify Certbot can complete a DNS-01 challenge with a renewal dry run:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+Confirm the dry run succeeds for the managed certificates. Successful
+convergence alone does not verify renewal if no certificate needed renewing.
+If the poller is intentionally disabled for maintenance, leave it disabled and
+start convergence manually when ready.
 
 [Back to top](#operations)
 
