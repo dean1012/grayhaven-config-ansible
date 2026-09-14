@@ -11,6 +11,8 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Manual Discord Notification Test](#manual-discord-notification-test)
 - [DigitalOcean Inventory Token Rotation](#digitalocean-inventory-token-rotation)
 - [Certbot DigitalOcean DNS Token Rotation](#certbot-digitalocean-dns-token-rotation)
+- [Grafana Alloy Token Rotation](#grafana-alloy-token-rotation)
+- [Grafana Alert Rule API Token Rotation](#grafana-alert-rule-api-token-rotation)
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
@@ -188,7 +190,7 @@ procedure separately for each target environment: `staging` for staging and
    ```
 
    Find `digitalocean_inventory_api_token` and replace its value with the new
-   token, preserving the YAML key and formatting. Save and quit with `:wq`.
+   token, preserving the YAML key and formatting.
    Use a token with the
    [documented inventory permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
 
@@ -204,11 +206,8 @@ procedure separately for each target environment: `staging` for staging and
 
    ```bash
    git add vault/bastion.yml
-   git commit -s -m "<message>"
+   git commit -S -m "<message>"
    ```
-
-   The `-s` option adds a sign-off. Keep the repository's cryptographic commit
-   signing and safety hook enabled as required by its contribution guidelines.
 
 6. Push the updated branch:
 
@@ -268,7 +267,7 @@ procedure separately for each target environment: `staging` for staging and
    ```
 
    Find `digitalocean_dns_api_token` and replace its value with the new token,
-   preserving the YAML key and formatting. Save and quit with `:wq`. Use a
+   preserving the YAML key and formatting. Use a
    token with the [documented DNS permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
 
 4. Re-encrypt the file with the same environment's vault password:
@@ -282,11 +281,8 @@ procedure separately for each target environment: `staging` for staging and
 
    ```bash
    git add vault/web.yml
-   git commit -s -m "<message>"
+   git commit -S -m "<message>"
    ```
-
-   The `-s` option adds a sign-off. Keep the repository's cryptographic commit
-   signing and safety hook enabled as required by its contribution guidelines.
 
 6. Push the updated branch:
 
@@ -321,6 +317,171 @@ Confirm the dry run succeeds for the managed certificates. Successful
 convergence alone does not verify renewal if no certificate needed renewing.
 If the poller is intentionally disabled for maintenance, leave it disabled and
 start convergence manually when ready.
+
+[Back to top](#operations)
+
+## Grafana Alloy Token Rotation
+
+Rotate the collector token from the workstation's `grayhaven-vault` checkout
+on `main`. Grafana Cloud integration is production-only. Create the replacement
+using the [collector token setup](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#collector-token).
+Keep the old token valid until the replacement is verified when possible.
+
+1. Before revoking the old token or deploying its replacement, create a
+   time-limited Grafana Cloud silence for the following telemetry rules. Use
+   equality matchers `configured_by=ansible`, `client=grayhaven`, and
+   `environment=prod`, plus a regular-expression matcher on `check`:
+
+   ```text
+   ^(metrics_data|gcs_service_telemetry_success|gcs_stale_bucket_check_stale|gcs_operation_telemetry_stale|google_monitoring_service_telemetry_success|google_monitoring_telemetry_stale|proton_telemetry_success)$
+   ```
+
+2. Select the production branch and pull the latest changes:
+
+   ```bash
+   git checkout main
+   git pull
+   ```
+
+3. Decrypt the file using the production vault password:
+
+   ```bash
+   ansible-vault decrypt vault/common.yml
+   ```
+
+4. Open the file in Vim:
+
+   ```bash
+   vim vault/common.yml
+   ```
+
+   Replace `grafana_cloud.alloy_api_key` with the new token, preserving the
+   YAML key and formatting.
+
+5. Re-encrypt the file with the production vault password:
+
+   ```bash
+   ansible-vault encrypt vault/common.yml
+   ```
+
+6. Stage the encrypted file and commit the change. Replace `<message>` with a
+   concise description of the rotation:
+
+   ```bash
+   git add vault/common.yml
+   git commit -S -m "<message>"
+   ```
+
+7. Push the updated branch:
+
+   ```bash
+   git push
+   ```
+
+8. Connect to the active control bastion and monitor convergence. The enabled
+   poller normally detects the update within five minutes:
+
+   ```bash
+   sudo systemctl status grayhaven-ansible-runner.service
+   sudo journalctl -u grayhaven-ansible-runner.service -f
+   ```
+
+   Verify a new run starts after the push and completes successfully. If it
+   does not start automatically, start it manually when ready:
+
+   ```bash
+   sudo systemctl start grayhaven-ansible-runner.service
+   ```
+
+   If the poller is intentionally disabled for maintenance, leave it disabled
+   and start convergence manually when ready. Follow
+   [Runner And Poller Status](#runner-and-poller-status) to verify completion.
+
+9. Confirm the Alloy restart, readiness, and remote-write checks succeed on
+   both hosts. In Grafana, verify fresh metrics from both hosts and fresh logs
+   from hosts configured for log shipping. Confirm the eight telemetry rules
+   have returned to normal. Revoke the old collector token if it remains valid,
+   then confirm telemetry continues arriving with the replacement.
+
+10. Remove the rotation silence to restore notifications immediately. Verify
+    that it is no longer active and the telemetry rules remain normal. Any
+    existing rotation-related alert groups should resolve automatically;
+    verify their resolution rather than manually resolving them to hide a
+    remaining telemetry failure.
+
+[Back to top](#operations)
+
+## Grafana Alert Rule API Token Rotation
+
+Rotate this token from the workstation's `grayhaven-vault` checkout on `main`.
+Create the replacement using the [alert rule API token setup](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#alert-rule-api-token).
+Keep the old token valid until the replacement is verified when possible.
+
+1. Select the production branch and pull the latest changes:
+
+   ```bash
+   git checkout main
+   git pull
+   ```
+
+2. Decrypt the file using the production vault password:
+
+   ```bash
+   ansible-vault decrypt vault/common.yml
+   ```
+
+3. Open the file in Vim:
+
+   ```bash
+   vim vault/common.yml
+   ```
+
+   Replace `grafana_cloud.alerting.api_token` with the new token, preserving
+   the YAML key and formatting.
+
+4. Re-encrypt the file with the production vault password:
+
+   ```bash
+   ansible-vault encrypt vault/common.yml
+   ```
+
+5. Stage the encrypted file and commit the change. Replace `<message>` with a
+   concise description of the rotation:
+
+   ```bash
+   git add vault/common.yml
+   git commit -S -m "<message>"
+   ```
+
+6. Push the updated branch:
+
+   ```bash
+   git push
+   ```
+
+7. Connect to the active control bastion and monitor convergence. The enabled
+   poller normally detects the update within five minutes:
+
+   ```bash
+   sudo systemctl status grayhaven-ansible-runner.service
+   sudo journalctl -u grayhaven-ansible-runner.service -f
+   ```
+
+   Verify a new run starts after the push and completes successfully. If it
+   does not start automatically, start it manually when ready:
+
+   ```bash
+   sudo systemctl start grayhaven-ansible-runner.service
+   ```
+
+   If the poller is intentionally disabled for maintenance, leave it disabled
+   and start convergence manually when ready. Follow
+   [Runner And Poller Status](#runner-and-poller-status) to verify completion.
+
+8. Confirm `Sync Grafana Cloud managed alert rules` succeeds on the active
+   control bastion. An unchanged (`ok`) result is successful synchronization;
+   the task is intentionally skipped on other hosts. Verify the managed rules
+   remain healthy in Grafana, then revoke the old token if it remains valid.
 
 [Back to top](#operations)
 
