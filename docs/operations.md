@@ -416,11 +416,6 @@ Keep the old token valid until the replacement is verified when possible.
 Rotate this token from the workstation's `grayhaven-vault` checkout on `main`.
 Create the replacement using the [alert rule API token setup](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#alert-rule-api-token).
 Keep the old token valid until the replacement is verified when possible.
-This token authorizes alert-rule synchronization; it does not authenticate
-Alloy telemetry shipping. Rotating it alone does not require a telemetry
-silence. If rotating both tokens together, also follow the silence and
-verification steps in [Grafana Alloy Token Rotation](#grafana-alloy-token-rotation).
-The separate IRM alert-groups token is not part of this procedure.
 
 1. Select the production branch and pull the latest changes:
 
