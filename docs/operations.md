@@ -190,7 +190,7 @@ procedure separately for each target environment: `staging` for staging and
    ```
 
    Find `digitalocean_inventory_api_token` and replace its value with the new
-   token, preserving the YAML key and formatting. Save and quit with `:wq`.
+   token, preserving the YAML key and formatting.
    Use a token with the
    [documented inventory permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
 
@@ -206,11 +206,8 @@ procedure separately for each target environment: `staging` for staging and
 
    ```bash
    git add vault/bastion.yml
-   git commit -s -m "<message>"
+   git commit -S -m "<message>"
    ```
-
-   The `-s` option adds a sign-off. Keep the repository's cryptographic commit
-   signing and safety hook enabled as required by its contribution guidelines.
 
 6. Push the updated branch:
 
@@ -270,7 +267,7 @@ procedure separately for each target environment: `staging` for staging and
    ```
 
    Find `digitalocean_dns_api_token` and replace its value with the new token,
-   preserving the YAML key and formatting. Save and quit with `:wq`. Use a
+   preserving the YAML key and formatting. Use a
    token with the [documented DNS permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
 
 4. Re-encrypt the file with the same environment's vault password:
@@ -284,11 +281,8 @@ procedure separately for each target environment: `staging` for staging and
 
    ```bash
    git add vault/web.yml
-   git commit -s -m "<message>"
+   git commit -S -m "<message>"
    ```
-
-   The `-s` option adds a sign-off. Keep the repository's cryptographic commit
-   signing and safety hook enabled as required by its contribution guidelines.
 
 6. Push the updated branch:
 
@@ -342,26 +336,6 @@ Keep the old token valid until the replacement is verified when possible.
    ^(metrics_data|gcs_service_telemetry_success|gcs_stale_bucket_check_stale|gcs_operation_telemetry_stale|google_monitoring_service_telemetry_success|google_monitoring_telemetry_stale|proton_telemetry_success)$
    ```
 
-   Preview the matches and confirm these eight rules are covered:
-
-   - Bastion metrics data: `metrics_data`.
-   - Web host metrics data: `metrics_data`.
-   - GCS service telemetry failed for >= 5 min:
-     `gcs_service_telemetry_success`.
-   - GCS stale bucket check stale: `gcs_stale_bucket_check_stale`.
-   - GCS operation telemetry stale: `gcs_operation_telemetry_stale`.
-   - Google Monitoring service telemetry failed for >= 5 min:
-     `google_monitoring_service_telemetry_success`.
-   - Google Monitoring telemetry stale: `google_monitoring_telemetry_stale`.
-   - Proton status telemetry failed for >= 5 min: `proton_telemetry_success`.
-
-   These rules detect missing or stale Alloy telemetry. Other managed rules
-   treat missing data as OK; unrelated failures can still alert. Use rule
-   labels, not historical IRM alert-group numbers. If the managed host or rule
-   set changes, review the preview against the current telemetry rules.
-   Set the silence to cover the maintenance window and extend it before expiry
-   if needed. Keep its identifier for removal after verification.
-
 2. Select the production branch and pull the latest changes:
 
    ```bash
@@ -382,9 +356,9 @@ Keep the old token valid until the replacement is verified when possible.
    ```
 
    Replace `grafana_cloud.alloy_api_key` with the new token, preserving the
-   YAML key and formatting. Save and quit with `:wq`.
+   YAML key and formatting.
 
-5. Re-encrypt the file with the same vault password:
+5. Re-encrypt the file with the production vault password:
 
    ```bash
    ansible-vault encrypt vault/common.yml
@@ -395,11 +369,8 @@ Keep the old token valid until the replacement is verified when possible.
 
    ```bash
    git add vault/common.yml
-   git commit -s -m "<message>"
+   git commit -S -m "<message>"
    ```
-
-   The `-s` option adds a sign-off. Keep the repository's cryptographic commit
-   signing and safety hook enabled as required by its contribution guidelines.
 
 7. Push the updated branch:
 
@@ -471,9 +442,9 @@ The separate IRM alert-groups token is not part of this procedure.
    ```
 
    Replace `grafana_cloud.alerting.api_token` with the new token, preserving
-   the YAML key and formatting. Save and quit with `:wq`.
+   the YAML key and formatting.
 
-4. Re-encrypt the file with the same vault password:
+4. Re-encrypt the file with the production vault password:
 
    ```bash
    ansible-vault encrypt vault/common.yml
@@ -484,11 +455,8 @@ The separate IRM alert-groups token is not part of this procedure.
 
    ```bash
    git add vault/common.yml
-   git commit -s -m "<message>"
+   git commit -S -m "<message>"
    ```
-
-   The `-s` option adds a sign-off. Keep the repository's cryptographic commit
-   signing and safety hook enabled as required by its contribution guidelines.
 
 6. Push the updated branch:
 
