@@ -77,6 +77,13 @@ The poller also retries transient GitHub metadata lookup failures before
 failing the poller service. Persistent lookup failures still surface as service
 failures and should be investigated through the poller journal.
 
+Discord configuration notifications retry transient transport errors, HTTP 429
+rate limits, and HTTP 5xx responses up to three times. Rate-limited requests
+honor Discord's `Retry-After` value. If those retries are exhausted, Ansible
+logs a sanitized warning and allows an otherwise successful convergence to
+complete; rejected notification requests still fail convergence.
+Retries stop instead of waiting more than five minutes for a single response.
+
 The poller is not a convergence queue. If another repository change is pushed
 while convergence is already running, that change may not be applied by the
 active run. In that case, run manual convergence or wait for the next scheduled

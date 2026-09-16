@@ -24,17 +24,35 @@
   register: automation_notifications_timestamp
   changed_when: false
 
-- name: Send Discord automation notification
-  community.general.discord:
-    webhook_id: "{{ automation_notifications_discord_webhook_id }}"
-    webhook_token: "{{ automation_notifications_discord_webhook_token }}"
-    embeds:
-      - title: "{{ automation_notifications_title }}"
-        description: |-
-          {{ automation_notifications_target }}
-
-          Environment: {{ automation_notifications_environment }}
-          {{ automation_notifications_timestamp.stdout }}
-        color: "{{ automation_notifications_color }}"
+- name: Reset Discord notification retry state
+  ansible.builtin.set_fact:
+    automation_notifications_attempt: 0
+    automation_notifications_retry_delay: 0
   changed_when: false
-  no_log: true
+
+- name: Send Discord automation notification with retries
+  ansible.builtin.include_tasks: send-discord-notification.yml
+
+- name: Fail rejected Discord automation notification
+  ansible.builtin.fail:
+    msg: >-
+      Discord automation notification was rejected with HTTP
+      {{ automation_notifications_discord_response.status | default('no response') }}.
+  when: >-
+    automation_notifications_discord_response.status | default(0) != 204
+    and automation_notifications_discord_response.status is defined
+    and automation_notifications_discord_response.status > 0
+    and automation_notifications_discord_response.status != 429
+    and (
+      automation_notifications_discord_response.status < 500
+      or automation_notifications_discord_response.status > 599
+    )
+  changed_when: false
+
+- name: Warn when Discord automation notification retries are exhausted
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: Discord automation notification was not delivered after retrying
+      transient failures (last response: HTTP
+      {{ automation_notifications_discord_response.status | default('no response') }}).
+  when: automation_notifications_discord_response.status | default(0) != 204

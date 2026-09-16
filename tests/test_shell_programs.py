@@ -111,6 +111,24 @@ class ShellProgramTests(unittest.TestCase):
             "/run/grayhaven-ansible-runner/secrets.env",
         )
 
+    def test_runner_retries_failure_notification_delivery(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            curl_args = pathlib.Path(temp_dir) / "curl-args"
+            result = self.run_bash(
+                f"""
+                export GRAYHAVEN_UNIT_TEST_SOURCE_ONLY=1
+                source files/grayhaven-ansible-runner
+                DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/id/token
+                export CURL_ARGS={str(curl_args)!r}
+                failed_playbook_targets() {{ printf 'test-host\\n'; }}
+                curl() {{ cat -- >/dev/null; printf '%s\\n' "$*" > "$CURL_ARGS"; }}
+                send_failure_notification 1
+                """
+            )
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("--retry 3", curl_args.read_text(encoding="utf-8"))
+            self.assertIn("--retry-max-time 300", curl_args.read_text(encoding="utf-8"))
+
     def test_poller_change_and_no_change_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)
