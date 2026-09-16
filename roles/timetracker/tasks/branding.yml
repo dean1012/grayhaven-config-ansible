@@ -9,6 +9,8 @@
   loop:
     - source: logo/svg/grayhaven-logo-wordmark-dark.svg
       destination: grayhaven-logo-wordmark-dark.svg
+    - source: logo/png/grayhaven-logo-wordmark-light.png
+      destination: grayhaven-logo-wordmark-light.png
     - source: web/assets/favicon.ico
       destination: favicon.ico
     - source: web/assets/favicon-16.png
