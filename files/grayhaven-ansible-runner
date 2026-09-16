@@ -371,7 +371,7 @@ send_failure_notification() {
   DISCORD_TIMESTAMP="$(TZ="${MANAGED_BASELINE_TIMEZONE:-America/Chicago}" date '+%Y-%m-%d %I:%M %p %Z')"
   export DISCORD_TARGET DISCORD_TIMESTAMP
 
-  /usr/bin/python3 - <<'PY' | curl --fail --silent --show-error \
+  /usr/bin/python3 - <<'PY' | curl --fail --silent --show-error --retry 3 --retry-max-time 300 \
     --header "Content-Type: application/json" \
     --request POST \
     --data @- \

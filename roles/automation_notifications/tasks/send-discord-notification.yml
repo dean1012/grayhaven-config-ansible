@@ -1,0 +1,60 @@
+---
+- name: Increment Discord notification attempt
+  ansible.builtin.set_fact:
+    automation_notifications_attempt: "{{ automation_notifications_attempt | int + 1 }}"
+  changed_when: false
+
+- name: Send Discord automation notification
+  ansible.builtin.uri:
+    url: >-
+      {{ 'https://discord.com/api/webhooks/'
+         ~ automation_notifications_discord_webhook_id ~ '/'
+         ~ automation_notifications_discord_webhook_token }}
+    method: POST
+    body_format: json
+    body:
+      embeds:
+        - title: "{{ automation_notifications_title }}"
+          description: |-
+            {{ automation_notifications_target }}
+
+            Environment: {{ automation_notifications_environment }}
+            {{ automation_notifications_timestamp.stdout }}
+          color: "{{ automation_notifications_color }}"
+    status_code: 204
+  register: automation_notifications_discord_response
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Set Discord notification retry delay
+  ansible.builtin.set_fact:
+    automation_notifications_retry_delay: >-
+      {{ automation_notifications_discord_response.retry_after | default(1, true) | float | round(0, 'ceil') | int }}
+  changed_when: false
+  when: >-
+    automation_notifications_discord_response.status | default(0) == 429
+    or automation_notifications_discord_response.status | default(0) >= 500
+    and automation_notifications_discord_response.status | default(0) <= 599
+    or automation_notifications_discord_response.status | default(0) <= 0
+
+- name: Wait before retrying Discord automation notification
+  ansible.builtin.wait_for:
+    timeout: "{{ automation_notifications_retry_delay }}"
+  when:
+    - automation_notifications_attempt | int < 4
+    - automation_notifications_retry_delay | int <= 300
+    - automation_notifications_discord_response.status | default(0) == 429
+      or automation_notifications_discord_response.status | default(0) >= 500
+      and automation_notifications_discord_response.status | default(0) <= 599
+      or automation_notifications_discord_response.status | default(0) <= 0
+
+- name: Retry Discord automation notification
+  ansible.builtin.include_tasks: send-discord-notification.yml
+  when:
+    - automation_notifications_attempt | int < 4
+    - automation_notifications_retry_delay | int <= 300
+    - automation_notifications_discord_response.status | default(0) == 429
+      or automation_notifications_discord_response.status | default(0) >= 500
+      and automation_notifications_discord_response.status | default(0) <= 599
+      or automation_notifications_discord_response.status | default(0) <= 0
