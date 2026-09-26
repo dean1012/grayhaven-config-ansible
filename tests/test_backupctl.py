@@ -310,6 +310,7 @@ class BackupctlContractTests(unittest.TestCase):
     def test_restic_exclusion_uses_nested_checkout(self) -> None:
         text = RESTIC_SETTINGS_PATH.read_text(encoding="utf-8")
         self.assertIn("grayhaven_backupctl.checkout_dir ~ '/.git'", text)
+        self.assertIn("'/home/ansible/.ansible/tmp'", text)
         self.assertNotIn("backupctl_checkout_dir", text)
 
 
