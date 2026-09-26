@@ -94,6 +94,37 @@ while convergence is already running, that change may not be applied by the
 active run. In that case, run manual convergence or wait for the next scheduled
 runner pass.
 
+Schedule changes that trigger convergence outside the daily Restic backup
+window. Check `grayhaven-restic-backup.timer` on affected hosts before pushing;
+its scheduled start is 02:37 local time with up to a 15-minute randomized
+delay:
+
+```bash
+sudo systemctl list-timers grayhaven-restic-backup.timer
+```
+
+If convergence and a backup overlap, inspect the backup service and journal
+after convergence finishes:
+
+```bash
+sudo systemctl show grayhaven-restic-backup.service \
+  -p Result -p ExecMainStatus --no-pager
+sudo journalctl -u grayhaven-restic-backup.service -n 40 --no-pager
+```
+
+Ansible temporary files may disappear during a backup, leaving a saved local
+snapshot but an unsuccessful job and an unchanged last-success metric. If the
+service failed, start it again after convergence and check the result:
+
+```bash
+sudo systemctl start grayhaven-restic-backup.service
+sudo systemctl show grayhaven-restic-backup.service \
+  -p Result -p ExecMainStatus --no-pager
+```
+
+Confirm `Result=success` and `ExecMainStatus=0` before treating the backup as
+complete.
+
 Managed hosts send one informational `Server Rebooted` Discord notification
 after each boot. The local `grayhaven-reboot-notify.service` records the current
 boot ID after a successful notification so repeated service checks do not resend
@@ -631,7 +662,9 @@ key active until remote access succeeds with the replacement.
 
 5. Monitor convergence and require a successful play recap. The runner uses
    the replacement key to manage the GCS buckets and installs it for remote
-   backups on each managed host.
+   backups on each managed host. Follow the
+   [backup timing and verification guidance](#runner-and-poller-status) if
+   convergence overlaps a scheduled backup.
 
 6. On each host using remote backups, confirm that the remote repository is
    accessible:
