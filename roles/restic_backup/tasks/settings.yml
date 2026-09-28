@@ -20,6 +20,7 @@
           grayhaven_backupctl.checkout_dir ~ '/.git',
           '/home/ansible/grayhaven-config-ansible/.git',
           '/home/ansible/grayhaven-vault/.git',
+          '/home/ansible/.ansible/tmp',
           '/var/lib/grayhaven/observability',
           '/var/log/journal',
           '/var/log/audit',

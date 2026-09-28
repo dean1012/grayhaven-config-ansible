@@ -3,6 +3,7 @@
   hosts: localhost
   vars:
     ansible_python_interpreter: "/usr/bin/python3"
+    baseline_validation_environment: "{{ grayhaven_environment }}"
   connection: local
   become: true
 

@@ -9,10 +9,15 @@ bastion. This document covers manual runner use and maintenance playbooks.
 - [Runner And Poller Status](#runner-and-poller-status)
 - [Switching Deployed Configuration Branches](#switching-deployed-configuration-branches)
 - [Manual Discord Notification Test](#manual-discord-notification-test)
+- [Ansible Discord Webhook Rotation](#ansible-discord-webhook-rotation)
 - [DigitalOcean Inventory Token Rotation](#digitalocean-inventory-token-rotation)
 - [Certbot DigitalOcean DNS Token Rotation](#certbot-digitalocean-dns-token-rotation)
 - [Grafana Alloy Token Rotation](#grafana-alloy-token-rotation)
 - [Grafana Alert Rule API Token Rotation](#grafana-alert-rule-api-token-rotation)
+- [Grafana IRM Alert-Group Token Rotation](#grafana-irm-alert-group-token-rotation)
+- [GCS Restic Service-Account Key Rotation](#gcs-restic-service-account-key-rotation)
+- [Hosted-Domain Deployment Webhook Secret Rotation](#hosted-domain-deployment-webhook-secret-rotation)
+- [Web Deployment Fanout Secret Rotation](#web-deployment-fanout-secret-rotation)
 - [Vault Password Rotation](#vault-password-rotation)
 - [Deploy Key Rotation](#deploy-key-rotation)
 - [Ansible Control Key Rotation](#ansible-control-key-rotation)
@@ -88,6 +93,37 @@ The poller is not a convergence queue. If another repository change is pushed
 while convergence is already running, that change may not be applied by the
 active run. In that case, run manual convergence or wait for the next scheduled
 runner pass.
+
+Schedule changes that trigger convergence outside the daily Restic backup
+window. Check `grayhaven-restic-backup.timer` on affected hosts before pushing;
+its scheduled start is 02:37 local time with up to a 15-minute randomized
+delay:
+
+```bash
+sudo systemctl list-timers grayhaven-restic-backup.timer
+```
+
+If convergence and a backup overlap, inspect the backup service and journal
+after convergence finishes:
+
+```bash
+sudo systemctl show grayhaven-restic-backup.service \
+  -p Result -p ExecMainStatus --no-pager
+sudo journalctl -u grayhaven-restic-backup.service -n 40 --no-pager
+```
+
+Ansible temporary files may disappear during a backup, leaving a saved local
+snapshot but an unsuccessful job and an unchanged last-success metric. If the
+service failed, start it again after convergence and check the result:
+
+```bash
+sudo systemctl start grayhaven-restic-backup.service
+sudo systemctl show grayhaven-restic-backup.service \
+  -p Result -p ExecMainStatus --no-pager
+```
+
+Confirm `Result=success` and `ExecMainStatus=0` before treating the backup as
+complete.
 
 Managed hosts send one informational `Server Rebooted` Discord notification
 after each boot. The local `grayhaven-reboot-notify.service` records the current
@@ -167,6 +203,50 @@ JSON
 ```
 
 Discord returns HTTP `204` when the webhook accepts the notification.
+
+[Back to top](#operations)
+
+## Ansible Discord Webhook Rotation
+
+Rotate the webhook from the workstation's `grayhaven-vault` checkout. Use
+`main` and `discord_webhooks.production` for production, or `staging` and
+`discord_webhooks.testing` for staging. Keep the old webhook active until the
+replacement is in use.
+
+1. Create a replacement webhook in Discord. Leave the old webhook in place.
+
+2. Select the target environment branch and pull the latest changes:
+
+   ```bash
+   git checkout <branch>
+   git pull
+   ```
+
+3. Decrypt and edit the file using that environment's vault password:
+
+   ```bash
+   ansible-vault decrypt vault/bastion.yml
+   vim vault/bastion.yml
+   ```
+
+   Replace the selected `discord_webhooks` URL, preserving the YAML structure.
+
+4. Re-encrypt, commit, and push the file:
+
+   ```bash
+   ansible-vault encrypt vault/bastion.yml
+   git add vault/bastion.yml
+   git commit -S -m "Rotate Ansible Discord webhook (Refs #<issue>)"
+   git push
+   ```
+
+5. For an active environment, allow the poller to start convergence or start
+   the runner manually. Confirm a successful play recap and that the
+   replacement webhook receives the configuration notifications.
+
+6. Remove the old webhook after the replacement is confirmed. If the
+   environment is not running, the vault change is ready for its next
+   deployment; notification delivery cannot yet be verified.
 
 [Back to top](#operations)
 
@@ -489,6 +569,170 @@ Keep the old token valid until the replacement is verified when possible.
    control bastion. An unchanged (`ok`) result is successful synchronization;
    the task is intentionally skipped on other hosts. Verify the managed rules
    remain healthy in Grafana, then revoke the old token if it remains valid.
+
+[Back to top](#operations)
+
+## Grafana IRM Alert-Group Token Rotation
+
+Rotate this token from the workstation's `grayhaven-vault` checkout on `main`.
+Keep the old token active until the replacement is verified.
+
+1. Create a replacement token for the existing Grafana Cloud service account
+   using the
+   [documented IRM alert-group token permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#irm-alert-groups-api-token).
+
+2. Select the production branch and pull the latest changes:
+
+   ```bash
+   git checkout main
+   git pull
+   ```
+
+3. Decrypt and edit the file using the production vault password:
+
+   ```bash
+   ansible-vault decrypt vault/common.yml
+   vim vault/common.yml
+   ```
+
+   Replace `grafana_cloud.irm_alert_groups.api_token`.
+
+4. Re-encrypt, commit, and push the file:
+
+   ```bash
+   ansible-vault encrypt vault/common.yml
+   git add vault/common.yml
+   git commit -S -m "Rotate Grafana IRM alert-group token (Refs #<issue>)"
+   git push
+   ```
+
+5. Monitor production convergence and require a successful play recap. The
+   runner installs the replacement token in the control bastion's protected
+   IRM reporting configuration.
+
+6. Confirm the collector succeeds with the replacement token:
+
+   ```bash
+   sudo systemctl start grayhaven-irm-alert-groups-textfile.service
+   sudo systemctl show grayhaven-irm-alert-groups-textfile.service \
+     -p Result -p ExecMainStatus -p ActiveState --no-pager
+   ```
+
+   `Result=success` and `ExecMainStatus=0` confirm a successful run. The
+   one-shot service is normally inactive afterward.
+
+7. Revoke the old token after the collector succeeds.
+
+[Back to top](#operations)
+
+## GCS Restic Service-Account Key Rotation
+
+Rotate the key from the workstation's `grayhaven-vault` checkout. Keep the old
+key active until remote access succeeds with the replacement.
+
+1. Create a new JSON key for the existing GCS Restic service account. Retain
+   the old key during the change.
+
+2. Select the branch for the environment using GCS remote backups and pull the
+   latest changes:
+
+   ```bash
+   git checkout <branch>
+   git pull
+   ```
+
+3. Decrypt and edit the file using that environment's vault password:
+
+   ```bash
+   ansible-vault decrypt vault/common.yml
+   vim vault/common.yml
+   ```
+
+   Replace `restic.remotes.gcs.credentials_json` with the complete replacement
+   JSON, preserving the YAML block indentation.
+
+4. Re-encrypt, commit, and push the file:
+
+   ```bash
+   ansible-vault encrypt vault/common.yml
+   git add vault/common.yml
+   git commit -S -m "Rotate GCS Restic service-account key (Refs #<issue>)"
+   git push
+   ```
+
+5. Monitor convergence and require a successful play recap. The runner uses
+   the replacement key to manage the GCS buckets and installs it for remote
+   backups on each managed host. Follow the
+   [backup timing and verification guidance](#runner-and-poller-status) if
+   convergence overlaps a scheduled backup.
+
+6. On each host using remote backups, confirm that the remote repository is
+   accessible:
+
+   ```bash
+   sudo grayhaven-backupctl list --repo remote
+   ```
+
+7. Delete the old service-account key after the replacement works on each
+   affected host.
+
+[Back to top](#operations)
+
+## Hosted-Domain Deployment Webhook Secret Rotation
+
+Follow the
+[hosted-domain webhook secret rotation procedure](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#rotating-website-deployment-secrets)
+to replace each domain's vault value and converge the web hosts. Use a distinct
+secret for each hosted-domain repository.
+
+After convergence succeeds, update `GRAYHAVEN_DEPLOY_WEBHOOK_SECRET` in each
+hosted-domain repository on GitHub under **Security and quality → Secrets and
+variables → Actions → Repository secrets**. Keep website deployments idle
+between convergence and the matching GitHub secret updates. Run a normal
+deployment for each domain to confirm the new secrets work.
+
+[Back to top](#operations)
+
+## Web Deployment Fanout Secret Rotation
+
+Rotate this shared secret from the workstation's `grayhaven-vault` checkout.
+Keep website deployments idle while the replacement is being deployed to all
+web hosts.
+
+1. Generate a new secret:
+
+   ```bash
+   openssl rand -hex 48
+   ```
+
+2. Select the target environment branch and pull the latest changes:
+
+   ```bash
+   git checkout <branch>
+   git pull
+   ```
+
+3. Decrypt and edit the file using that environment's vault password:
+
+   ```bash
+   ansible-vault decrypt vault/web.yml
+   vim vault/web.yml
+   ```
+
+   Replace `web_deploy_fanout_secret`.
+
+4. Re-encrypt, commit, and push the file:
+
+   ```bash
+   ansible-vault encrypt vault/web.yml
+   git add vault/web.yml
+   git commit -S -m "Rotate web deployment fanout secret (Refs #<issue>)"
+   git push
+   ```
+
+5. Monitor convergence and require a successful play recap on all web hosts.
+   Resume website deployments after every web host has the replacement. When
+   fanout is active, verify a deployment reaches each peer.
 
 [Back to top](#operations)
 
