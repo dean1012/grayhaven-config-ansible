@@ -13,7 +13,7 @@
 {% endfor %}
 {% for source_tag in rule.source_tags | default([]) %}
 {% if source_tag == "bastion" %}
-{% for source in managed_inventory_web_ssh_sources %}
+{% for source in (managed_inventory_bastion_private_sources if grayhaven_role == "mcp" else managed_inventory_web_ssh_sources) %}
   <rule family="ipv4">
     <source address="{{ source }}"/>
     <port protocol="{{ rule.protocol }}" port="{{ rule.port_range }}"/>

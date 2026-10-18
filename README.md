@@ -50,6 +50,8 @@ on repository-change poller events, or by manual invocation.
 - Manage Nginx, host TLS certificates, load-balancer backend behavior, dev
   basic authentication, per-domain htpasswd files, and certificate renewal on
   web hosts.
+- Manage the private MCP container, persistent state, HTTPS certificate, and
+  verified encrypted database backups on dedicated MCP hosts.
 - Validate Ansible, YAML, Markdown, and shell scripts through GitHub Actions.
 
 This repository is not a general-purpose deployment template. Deploying similar

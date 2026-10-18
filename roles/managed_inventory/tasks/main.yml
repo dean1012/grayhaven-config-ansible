@@ -20,6 +20,8 @@
         if 'role-bastion' in (hostvars[item].do_tags | default([]))
         else 'web'
         if 'role-web' in (hostvars[item].do_tags | default([]))
+        else 'mcp'
+        if 'role-mcp' in (hostvars[item].do_tags | default([]))
         else 'unknown'
       }}
     managed_inventory_host_private_ip: >-

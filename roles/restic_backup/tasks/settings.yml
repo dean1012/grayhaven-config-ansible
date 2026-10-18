@@ -36,6 +36,16 @@
           if grayhaven_role == 'web'
           else []
         )
+        + (
+          [
+            '/var/lib/grayhaven/mcp/state/state.sqlite3',
+            '/var/lib/grayhaven/mcp/state/state.sqlite3-wal',
+            '/var/lib/grayhaven/mcp/state/state.sqlite3-shm',
+            '/var/lib/grayhaven/mcp/state/state.sqlite3-journal'
+          ]
+          if grayhaven_role == 'mcp'
+          else []
+        )
         + (backup.exclude | default([]))
       }}
 
@@ -56,6 +66,7 @@
         (
           [restic_backup_homedir_archive_path]
           + ([timetracker.backup_dir] if grayhaven_role == 'web' else [])
+          + (['/var/lib/grayhaven/mcp'] if grayhaven_role == 'mcp' else [])
           +
           (
             backup.include

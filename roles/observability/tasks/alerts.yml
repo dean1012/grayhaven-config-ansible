@@ -81,6 +81,7 @@
       service_units:
         common: "{{ observability_service_units_common }}"
         web: "{{ observability_service_units_web }}"
+        mcp: "{{ observability_service_units_mcp }}"
         control_node: "{{ observability_service_units_control_node }}"
   when:
     - observability_metrics_enabled

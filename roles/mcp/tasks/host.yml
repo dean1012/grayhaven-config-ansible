@@ -1,0 +1,156 @@
+---
+- name: Validate MCP deployment settings
+  ansible.builtin.assert:
+    that:
+      - mcp is defined
+      - mcp is mapping
+      - mcp.hostname is match('^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$')
+      - mcp.image_digest is match('^sha256:[0-9a-f]{64}$')
+      - mcp.known_hosts is string
+      - mcp.known_hosts | trim | length > 0
+      - mcp.backup_retention_days | default(14) | int >= 1
+      - mcp.backup_retention_days | default(14) | int <= 365
+      - mcp_secrets.config_passphrase is string
+      - mcp_secrets.config_passphrase | length > 0
+      - mcp_secrets.registry_username | length > 0
+      - mcp_secrets.registry_token | length > 0
+      - mcp_certificate_environment in ['staging', 'production']
+      - deploy_websites_certbot_email | length > 0
+      - digitalocean_dns_api_token | length > 0
+    fail_msg: Required MCP deployment configuration is missing or unsafe.
+    quiet: true
+  no_log: true
+
+- name: Install MCP host packages
+  ansible.builtin.dnf:
+    name:
+      - nginx
+      - podman
+      - certbot
+      - python3-certbot-dns-digitalocean
+      - openssh-clients
+    state: present
+
+- name: Create MCP service group
+  ansible.builtin.group:
+    name: "{{ mcp_group }}"
+    gid: "{{ mcp_gid }}"
+    system: true
+
+- name: Create MCP service account
+  ansible.builtin.user:
+    name: "{{ mcp_user }}"
+    uid: "{{ mcp_uid }}"
+    group: "{{ mcp_group }}"
+    home: "{{ mcp_root }}"
+    create_home: false
+    shell: /sbin/nologin
+    password: "!"
+    system: true
+
+- name: Create persistent MCP directories without replacing contents
+  ansible.builtin.file:
+    path: "{{ mcp_root }}/{{ item }}"
+    state: directory
+    owner: "{{ mcp_user }}"
+    group: "{{ mcp_group }}"
+    mode: "0700"
+  loop:
+    - ""
+    - config
+    - secrets
+    - state
+    - sessions
+    - logs
+    - backups
+    - .ssh
+
+- name: Persist MCP configuration decryption password from Vault
+  ansible.builtin.copy:
+    dest: "{{ mcp_root }}/secrets/config_passphrase"
+    content: "{{ mcp_secrets.config_passphrase }}"
+    owner: "{{ mcp_user }}"
+    group: "{{ mcp_group }}"
+    mode: "0400"
+  no_log: true
+  notify: Restart MCP
+
+- name: Persist MCP verified SSH host keys
+  ansible.builtin.copy:
+    dest: "{{ mcp_root }}/.ssh/known_hosts"
+    content: "{{ mcp.known_hosts }}\n"
+    owner: "{{ mcp_user }}"
+    group: "{{ mcp_group }}"
+    mode: "0600"
+  notify: Restart MCP
+
+- name: Create the private container registry authentication directory
+  ansible.builtin.file:
+    path: /root/.config/containers
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Authenticate the private container registry
+  containers.podman.podman_login:
+    registry: ghcr.io
+    username: "{{ mcp_secrets.registry_username }}"
+    password: "{{ mcp_secrets.registry_token }}"
+    authfile: /root/.config/containers/grayhaven-mcp-auth.json
+  no_log: true
+
+- name: Pull the approved MCP image by digest
+  containers.podman.podman_image:
+    name: "{{ mcp_image_repository }}@{{ mcp.image_digest }}"
+    auth_file: /root/.config/containers/grayhaven-mcp-auth.json
+    pull: true
+
+- name: Read the pinned image encrypted secret configuration
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --network=none
+      - --entrypoint=cat
+      - "{{ mcp_image_repository }}@{{ mcp.image_digest }}"
+      - /app/config.secrets.enc
+  register: mcp_image_secrets
+  changed_when: false
+  no_log: true
+
+- name: Persist MCP encrypted configuration
+  ansible.builtin.copy:
+    dest: "{{ mcp_root }}/config/config.secrets.enc"
+    content: "{{ mcp_image_secrets.stdout }}"
+    owner: "{{ mcp_user }}"
+    group: "{{ mcp_group }}"
+    mode: "0400"
+  no_log: true
+  notify: Restart MCP
+
+- name: Read the pinned image public configuration
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --network=none
+      - --entrypoint=cat
+      - "{{ mcp_image_repository }}@{{ mcp.image_digest }}"
+      - /app/config.json
+  register: mcp_image_configuration
+  changed_when: false
+
+- name: Persist MCP public configuration
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ mcp_root }}/config/config.json"
+    owner: "{{ mcp_user }}"
+    group: "{{ mcp_group }}"
+    mode: "0600"
+  notify: Restart MCP
+
+- name: Install MCP container and proxy
+  ansible.builtin.import_tasks: service.yml

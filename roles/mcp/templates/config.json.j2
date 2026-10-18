@@ -1,0 +1,12 @@
+{{ (mcp_image_configuration.stdout | from_json) | combine(mcp_config_overrides, recursive=true) | combine({
+  'secret_passphrase_path': mcp_root ~ '/secrets/config_passphrase',
+  'system_error_logpath': mcp_root ~ '/logs',
+  'state_database_path': mcp_root ~ '/state/state.sqlite3',
+  'proton': {'state_dir': mcp_root ~ '/sessions/proton'},
+  'notesnook': {'state_dir': mcp_root ~ '/sessions/notesnook'},
+  'ssh': {'binary': '/usr/bin/ssh', 'known_hosts_path': mcp_root ~ '/.ssh/known_hosts'},
+  'transport': {'mode': 'http', 'host': '0.0.0.0', 'port': mcp_host_port,
+                'public_base_url': 'https://' ~ mcp.hostname,
+                'health_path': mcp_health_path, 'readiness_path': mcp_readiness_path,
+                'allowed_hosts': [mcp.hostname, 'localhost', '127.0.0.1']}
+}, recursive=true) | to_nice_json }}

@@ -1,0 +1,35 @@
+# Managed by Ansible.
+[Unit]
+Description=Grayhaven Systems LLC MCP
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image={{ mcp_image_repository }}@{{ mcp.image_digest }}
+ContainerName={{ mcp_container_name }}
+Pull=never
+User={{ mcp_uid }}:{{ mcp_gid }}
+PublishPort=127.0.0.1:{{ mcp_host_port }}:{{ mcp_host_port }}
+Volume={{ mcp_root }}:{{ mcp_root }}:Z
+Environment=GRAYHAVEN_MCP_CONFIG={{ mcp_root }}/config/config.json
+Environment=TZ={{ baseline_validation_timezone }}
+DropCapability=all
+NoNewPrivileges=true
+PidsLimit=256
+ReadOnly=true
+Tmpfs=/tmp:rw,nosuid,nodev,size=128m
+HealthCmd=python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:{{ mcp_host_port }}{{ mcp_readiness_path }}', timeout=5)"
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=120s
+Notify=healthy
+
+[Service]
+Restart=always
+RestartSec=10s
+TimeoutStartSec=240
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

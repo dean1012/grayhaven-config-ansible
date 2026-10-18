@@ -1,0 +1,76 @@
+---
+- name: Check MCP certificate
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ mcp.hostname }}/fullchain.pem"
+  register: mcp_certificate_file
+  when: mcp_tls_mode == "host"
+
+- name: Check MCP certificate environment marker
+  ansible.builtin.stat:
+    path: "{{ mcp_certbot_marker_dir }}/{{ mcp.hostname }}.environment"
+  register: mcp_certificate_marker_file
+  when: mcp_tls_mode == "host"
+
+- name: Read MCP certificate environment marker
+  ansible.builtin.slurp:
+    src: "{{ mcp_certbot_marker_dir }}/{{ mcp.hostname }}.environment"
+  register: mcp_certificate_marker
+  when:
+    - mcp_tls_mode == "host"
+    - mcp_certificate_marker_file.stat.exists
+
+- name: Issue MCP certificate when required
+  ansible.builtin.command:
+    argv: "{{ mcp_certbot_command }}"
+  vars:
+    mcp_certbot_command: >-
+      {{
+        [
+          'certbot', 'certonly', '--non-interactive', '--agree-tos',
+          '--email', deploy_websites_certbot_email,
+          '--cert-name', mcp.hostname,
+          '--force-renewal',
+          '--dns-digitalocean',
+          '--dns-digitalocean-credentials', mcp_certbot_credentials_file,
+          '--dns-digitalocean-propagation-seconds', '30',
+          '-d', mcp.hostname
+        ]
+        + (['--test-cert'] if mcp_certificate_environment == 'staging' else [])
+      }}
+  register: mcp_certificate_issuance
+  changed_when: true
+  retries: 3
+  delay: 20
+  until: mcp_certificate_issuance.rc == 0
+  when:
+    - mcp_tls_mode == "host"
+    - >-
+      not mcp_certificate_file.stat.exists
+      or not mcp_certificate_marker_file.stat.exists
+      or (mcp_certificate_marker.content | default('') | b64decode | trim)
+      != mcp_certificate_environment
+
+- name: Record MCP certificate environment
+  ansible.builtin.copy:
+    dest: "{{ mcp_certbot_marker_dir }}/{{ mcp.hostname }}.environment"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ mcp_certificate_environment }}\n"
+  when:
+    - mcp_tls_mode == "host"
+    - mcp_certificate_issuance is changed
+
+- name: Verify MCP certificate exists
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ mcp.hostname }}/fullchain.pem"
+  register: mcp_certificate_result
+  when: mcp_tls_mode == "host"
+
+- name: Require MCP certificate after issuance
+  ansible.builtin.assert:
+    that:
+      - mcp_certificate_result.stat.exists
+    fail_msg: "MCP certificate is missing after Certbot execution."
+    quiet: true
+  when: mcp_tls_mode == "host"

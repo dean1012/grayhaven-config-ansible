@@ -51,6 +51,8 @@
         if 'role-bastion' in observability_loop_tags
         else 'web'
         if 'role-web' in observability_loop_tags
+        else 'mcp'
+        if 'role-mcp' in observability_loop_tags
         else 'unknown'
       }}
     observability_host_entry:
@@ -130,6 +132,28 @@
     - timetracker is defined
     - timetracker is mapping
     - timetracker.hostname is defined
+
+- name: Add MCP observability site metadata
+  ansible.builtin.set_fact:
+    observability_web_sites: "{{ observability_web_sites + [observability_mcp_site] }}"
+  vars:
+    observability_mcp_site:
+      root_name: mcp
+      display_name: MCP
+      kind: application
+      role: mcp
+      domain: "{{ mcp.hostname }}"
+      aliases: []
+      dev_domain: ""
+      cert_name: "{{ mcp.hostname }}"
+      redirect_http: false
+      health_check: mcp_health
+      health_url: "http://127.0.0.1:{{ mcp_host_port | default(8787) }}{{ mcp_health_path | default('/healthz') }}"
+      nginx_log_names: [error]
+  when:
+    - mcp is defined
+    - mcp is mapping
+    - mcp.hostname is defined
 
 - name: Initialize observability fail2ban jail metadata
   ansible.builtin.set_fact:
