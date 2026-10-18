@@ -30,6 +30,20 @@ def render(path, values):
 
 
 class MCPRoleTests(unittest.TestCase):
+    def test_certificate_environment_uses_mcp_override_or_baseline(self):
+        expression = yaml.safe_load((ROLE / "defaults/main.yml").read_text())[
+            "mcp_certificate_environment"
+        ]
+        environment = Environment(undefined=StrictUndefined)
+        template = environment.from_string(expression)
+        for values, expected in [
+            ({"mcp": {}}, "staging"),
+            ({"mcp": {}, "baseline_validation_certificate_environment": "production"}, "production"),
+            ({"mcp": {"certificate_environment": "production"}, "baseline_validation_certificate_environment": "staging"}, "production"),
+        ]:
+            with self.subTest(values=values):
+                self.assertEqual(template.render(**values), expected)
+
     def test_required_deployment_contract_accepts_only_complete_inputs(self):
         task = yaml.safe_load((ROLE / "tasks/host.yml").read_text())[0]
         valid = {

@@ -8,7 +8,7 @@ mcp_image_repository: ghcr.io/dean1012/grayhaven-mcp
 mcp_container_name: grayhaven-mcp
 mcp_service_name: grayhaven-mcp.service
 mcp_host_port: 8787
-mcp_certificate_environment: "{{ baseline_validation_certificate_environment | default('staging') }}"
+mcp_certificate_environment: "{{ mcp.certificate_environment | default(baseline_validation_certificate_environment | default('staging')) }}"
 mcp_config_overrides: {}
 mcp_tls_mode: host
 mcp_certbot_credentials_file: /etc/letsencrypt/digitalocean.ini
