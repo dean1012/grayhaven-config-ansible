@@ -30,6 +30,42 @@ def render(path, values):
 
 
 class MCPRoleTests(unittest.TestCase):
+    def test_known_hosts_preserve_external_keys_and_derive_managed_environment(self):
+        hosts = [
+            {
+                "inventory_name": "bastion",
+                "fqdn": "grayhaven-sec-staging-bastion-01.staging.example.invalid",
+                "host_alias": "grayhaven-sec-staging-bastion-01",
+                "private_ip": "10.20.0.2",
+                "role": "bastion",
+            },
+            {
+                "inventory_name": "web",
+                "fqdn": "grayhaven-core-staging-web-01.staging.example.invalid",
+                "host_alias": "grayhaven-core-staging-web-01",
+                "private_ip": "10.20.0.3",
+                "role": "web",
+            },
+            {"inventory_name": "mcp", "role": "mcp"},
+        ]
+        output = render(
+            ROLE / "templates/known_hosts.j2",
+            {
+                "mcp": {
+                    "known_hosts": "production.example.invalid ssh-ed25519 external-key"
+                },
+                "managed_inventory_hosts": hosts,
+                "hostvars": {
+                    name: {"ansible_facts": {"ssh_host_key_ed25519_public": key}}
+                    for name, key in [("bastion", "bastion-key"), ("web", "web-key")]
+                },
+            },
+        )
+        self.assertIn("production.example.invalid ssh-ed25519 external-key", output)
+        self.assertIn("bastion.staging.example.invalid ssh-ed25519 bastion-key", output)
+        self.assertIn("10.20.0.3 ssh-ed25519 web-key", output)
+        self.assertEqual(output.count("ssh-ed25519"), 3)
+
     def test_certificate_environment_uses_mcp_override_or_baseline(self):
         expression = yaml.safe_load((ROLE / "defaults/main.yml").read_text())[
             "mcp_certificate_environment"
@@ -38,8 +74,20 @@ class MCPRoleTests(unittest.TestCase):
         template = environment.from_string(expression)
         for values, expected in [
             ({"mcp": {}}, "staging"),
-            ({"mcp": {}, "baseline_validation_certificate_environment": "production"}, "production"),
-            ({"mcp": {"certificate_environment": "production"}, "baseline_validation_certificate_environment": "staging"}, "production"),
+            (
+                {
+                    "mcp": {},
+                    "baseline_validation_certificate_environment": "production",
+                },
+                "production",
+            ),
+            (
+                {
+                    "mcp": {"certificate_environment": "production"},
+                    "baseline_validation_certificate_environment": "staging",
+                },
+                "production",
+            ),
         ]:
             with self.subTest(values=values):
                 self.assertEqual(template.render(**values), expected)

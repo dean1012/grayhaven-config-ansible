@@ -76,9 +76,9 @@
   notify: Restart MCP
 
 - name: Persist MCP verified SSH host keys
-  ansible.builtin.copy:
+  ansible.builtin.template:
+    src: known_hosts.j2
     dest: "{{ mcp_root }}/.ssh/known_hosts"
-    content: "{{ mcp.known_hosts }}\n"
     owner: "{{ mcp_user }}"
     group: "{{ mcp_group }}"
     mode: "0600"
