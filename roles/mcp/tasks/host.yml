@@ -10,17 +10,29 @@
       - mcp.backup_retention_days | default(14) | int >= 1
       - mcp.backup_retention_days | default(14) | int <= 365
       - mcp.data_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - mcp.data_dir != '/'
       - "'..' not in mcp.data_dir.split('/')"
+      - "'.' not in mcp.data_dir.split('/')"
       - mcp.config_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - mcp.config_dir != '/'
       - "'..' not in mcp.config_dir.split('/')"
+      - "'.' not in mcp.config_dir.split('/')"
       - mcp.secrets_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - mcp.secrets_dir != '/'
       - "'..' not in mcp.secrets_dir.split('/')"
+      - "'.' not in mcp.secrets_dir.split('/')"
       - mcp.sessions_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - mcp.sessions_dir != '/'
       - "'..' not in mcp.sessions_dir.split('/')"
+      - "'.' not in mcp.sessions_dir.split('/')"
       - mcp.logs_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - mcp.logs_dir != '/'
       - "'..' not in mcp.logs_dir.split('/')"
+      - "'.' not in mcp.logs_dir.split('/')"
       - mcp.backup_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - mcp.backup_dir != '/'
       - "'..' not in mcp.backup_dir.split('/')"
+      - "'.' not in mcp.backup_dir.split('/')"
       - mcp_secrets.config_passphrase is string
       - mcp_secrets.config_passphrase | length > 0
       - mcp_secrets.registry_username | length > 0

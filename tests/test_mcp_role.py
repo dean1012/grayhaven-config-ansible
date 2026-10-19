@@ -114,6 +114,10 @@ class MCPRoleTests(unittest.TestCase):
         for key, value in [
             ("image_digest", "latest"),
             ("hostname", "https://invalid"),
+            ("data_dir", "/"),
+            ("config_dir", "relative/path"),
+            ("secrets_dir", "/var/../etc"),
+            ("sessions_dir", "/var/./sessions"),
             ("backup_retention_days", 0),
             ("backup_retention_days", 366),
         ]:
