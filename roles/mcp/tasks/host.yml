@@ -37,7 +37,6 @@
       - mcp_secrets.config_passphrase | length > 0
       - mcp_secrets.registry_username | length > 0
       - mcp_secrets.registry_token | length > 0
-      - mcp_certificate_environment in ['staging', 'production']
       - deploy_websites_certbot_email | length > 0
       - digitalocean_dns_api_token | length > 0
     fail_msg: Required MCP deployment configuration is missing or unsafe.

@@ -27,6 +27,7 @@
       {{
         [
           'certbot', 'certonly', '--non-interactive', '--agree-tos',
+          '--server', 'https://acme-v02.api.letsencrypt.org/directory',
           '--email', deploy_websites_certbot_email,
           '--cert-name', mcp.hostname,
           '--force-renewal',
@@ -35,7 +36,6 @@
           '--dns-digitalocean-propagation-seconds', '30',
           '-d', mcp.hostname
         ]
-        + (['--test-cert'] if mcp_certificate_environment == 'staging' else [])
       }}
   register: mcp_certificate_issuance
   changed_when: true
@@ -48,7 +48,7 @@
       not mcp_certificate_file.stat.exists
       or not mcp_certificate_marker_file.stat.exists
       or (mcp_certificate_marker.content | default('') | b64decode | trim)
-      != mcp_certificate_environment
+      != 'production'
 
 - name: Record MCP certificate environment
   ansible.builtin.copy:
@@ -56,7 +56,7 @@
     owner: root
     group: root
     mode: "0644"
-    content: "{{ mcp_certificate_environment }}\n"
+    content: "production\n"
   when:
     - mcp_tls_mode == "host"
     - mcp_certificate_issuance is changed

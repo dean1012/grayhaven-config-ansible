@@ -66,31 +66,25 @@ class MCPRoleTests(unittest.TestCase):
         self.assertIn("10.20.0.3 ssh-ed25519 web-key", output)
         self.assertEqual(output.count("ssh-ed25519"), 2)
 
-    def test_certificate_environment_uses_mcp_override_or_baseline(self):
-        expression = yaml.safe_load((ROLE / "defaults/main.yml").read_text())[
-            "mcp_certificate_environment"
-        ]
-        environment = Environment(undefined=StrictUndefined)
-        template = environment.from_string(expression)
-        for values, expected in [
-            ({"mcp": {}}, "staging"),
-            (
-                {
-                    "mcp": {},
-                    "baseline_validation_certificate_environment": "production",
-                },
-                "production",
-            ),
-            (
-                {
-                    "mcp": {"certificate_environment": "production"},
-                    "baseline_validation_certificate_environment": "staging",
-                },
-                "production",
-            ),
-        ]:
-            with self.subTest(values=values):
-                self.assertEqual(template.render(**values), expected)
+    def test_mcp_always_uses_production_acme_even_in_staging(self):
+        import ast
+
+        tasks = yaml.safe_load((ROLE / "tasks/certificate.yml").read_text())
+        issue = next(task for task in tasks if task["name"] == "Issue MCP certificate when required")
+        for global_environment in ("staging", "production"):
+            values = {
+                "mcp": {"hostname": "mcp.example.invalid", "certificate_environment": "staging"},
+                "baseline_validation_certificate_environment": global_environment,
+                "deploy_websites_certbot_email": "fixture@example.invalid",
+                "mcp_certbot_credentials_file": "/fixture/credentials",
+            }
+            output = Environment(undefined=StrictUndefined).from_string(issue["vars"]["mcp_certbot_command"]).render(**values)
+            command = ast.literal_eval(output)
+            self.assertNotIn("--test-cert", command)
+            self.assertEqual(command[command.index("--server") + 1], "https://acme-v02.api.letsencrypt.org/directory")
+        marker = next(task for task in tasks if task["name"] == "Record MCP certificate environment")
+        self.assertEqual(marker["ansible.builtin.copy"]["content"], "production\n")
+        self.assertNotIn("mcp_certificate_environment", yaml.safe_load((ROLE / "defaults/main.yml").read_text()))
 
     def test_required_deployment_contract_accepts_only_complete_inputs(self):
         task = yaml.safe_load((ROLE / "tasks/host.yml").read_text())[0]
@@ -105,7 +99,6 @@ class MCPRoleTests(unittest.TestCase):
                 "registry_username": "fixture",
                 "registry_token": "fixture",
             },
-            "mcp_certificate_environment": "staging",
             "baseline_validation_environment": "staging",
             "deploy_websites_certbot_email": "fixture@example.invalid",
             "digitalocean_dns_api_token": "fixture",
