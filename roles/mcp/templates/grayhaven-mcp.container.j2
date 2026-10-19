@@ -10,8 +10,10 @@ ContainerName={{ mcp_container_name }}
 Pull=never
 User={{ mcp_uid }}:{{ mcp_gid }}
 PublishPort=127.0.0.1:{{ mcp_host_port }}:{{ mcp_host_port }}
-Volume={{ mcp_root }}:{{ mcp_root }}:Z
-Environment=GRAYHAVEN_MCP_CONFIG={{ mcp_root }}/config/config.json
+{% for directory in [mcp.data_dir, mcp.config_dir, mcp.secrets_dir, mcp.sessions_dir, mcp.logs_dir, mcp.backup_dir, mcp_root ~ "/.ssh"] | unique %}
+Volume={{ directory }}:{{ directory }}:Z
+{% endfor %}
+Environment=GRAYHAVEN_MCP_CONFIG={{ mcp.config_dir }}/config.json
 Environment=TZ={{ baseline_validation_timezone }}
 DropCapability=all
 NoNewPrivileges=true

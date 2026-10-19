@@ -113,7 +113,7 @@
       TIMETRACKER_BACKUP_RETENTION_DAYS={{ (timetracker.backup_retention_days | default(14)) | quote }}
       TIMETRACKER_CONTAINER=grayhaven-timetracker
       MCP_BACKUP_ENABLED={{ 'true' if grayhaven_role == 'mcp' else 'false' }}
-      MCP_BACKUP_DIR=/var/lib/grayhaven/mcp/backups
+      MCP_BACKUP_DIR={{ (mcp.backup_dir if grayhaven_role == 'mcp' else '') | quote }}
       MCP_BACKUP_RETENTION_DAYS={{ (mcp.backup_retention_days | default(14)) | quote }}
 
       export RESTIC_CACHE_DIR

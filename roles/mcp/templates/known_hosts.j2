@@ -1,4 +1,3 @@
-{{ mcp.known_hosts | trim }}
 {% for host in managed_inventory_hosts | default([]) %}
 {% if host.role in ['bastion', 'web'] %}
 {% set names = [host.fqdn, host.host_alias, host.host_alias ~ '.internal', host.private_ip] %}

@@ -30,7 +30,7 @@ def render(path, values):
 
 
 class MCPRoleTests(unittest.TestCase):
-    def test_known_hosts_preserve_external_keys_and_derive_managed_environment(self):
+    def test_known_hosts_use_only_managed_environment_facts(self):
         hosts = [
             {
                 "inventory_name": "bastion",
@@ -61,10 +61,10 @@ class MCPRoleTests(unittest.TestCase):
                 },
             },
         )
-        self.assertIn("production.example.invalid ssh-ed25519 external-key", output)
+        self.assertNotIn("production.example.invalid", output)
         self.assertIn("bastion.staging.example.invalid ssh-ed25519 bastion-key", output)
         self.assertIn("10.20.0.3 ssh-ed25519 web-key", output)
-        self.assertEqual(output.count("ssh-ed25519"), 3)
+        self.assertEqual(output.count("ssh-ed25519"), 2)
 
     def test_certificate_environment_uses_mcp_override_or_baseline(self):
         expression = yaml.safe_load((ROLE / "defaults/main.yml").read_text())[
@@ -98,7 +98,7 @@ class MCPRoleTests(unittest.TestCase):
             "mcp": {
                 "hostname": "mcp.staging.grayhavensystems.com",
                 "image_digest": "sha256:" + "a" * 64,
-                "known_hosts": "verified-key",
+                **{key + "_dir": "/var/lib/grayhaven/mcp/" + key for key in ("data", "config", "secrets", "sessions", "logs", "backup")},
             },
             "mcp_secrets": {
                 "config_passphrase": "fixture-password",
@@ -106,6 +106,7 @@ class MCPRoleTests(unittest.TestCase):
                 "registry_token": "fixture",
             },
             "mcp_certificate_environment": "staging",
+            "baseline_validation_environment": "staging",
             "deploy_websites_certbot_email": "fixture@example.invalid",
             "digitalocean_dns_api_token": "fixture",
         }
@@ -113,7 +114,6 @@ class MCPRoleTests(unittest.TestCase):
         for key, value in [
             ("image_digest", "latest"),
             ("hostname", "https://invalid"),
-            ("known_hosts", ""),
             ("backup_retention_days", 0),
             ("backup_retention_days", 366),
         ]:
@@ -131,7 +131,8 @@ class MCPRoleTests(unittest.TestCase):
     def test_public_config_preserves_settings_and_enforces_persistent_paths(self):
         values = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
         values.update(
-            mcp={"hostname": "mcp.staging.grayhavensystems.com"},
+            mcp={"hostname": "mcp.staging.grayhavensystems.com", **{key + "_dir": "/var/lib/grayhaven/mcp/" + key for key in ("data", "config", "secrets", "sessions", "logs", "backup")}},
+            baseline_validation_environment="staging",
             mcp_config_overrides={
                 "polling_seconds": {"mail": 45},
                 "secret_passphrase_path": "/wrong",
@@ -160,10 +161,34 @@ class MCPRoleTests(unittest.TestCase):
             "/var/lib/grayhaven/mcp/sessions/notesnook",
         )
         self.assertEqual(config["ssh"]["binary"], "/usr/bin/ssh")
+        self.assertEqual(config["deployment_environment"], "staging")
+        values["baseline_validation_environment"] = "prod"
+        self.assertEqual(json.loads(render(ROLE / "templates/config.json.j2", values))["deployment_environment"], "production")
         self.assertEqual(
             config["transport"]["public_base_url"],
             "https://mcp.staging.grayhavensystems.com",
         )
+
+    def test_custom_paths_are_used_for_config_mounts_and_backups(self):
+        mcp = {key + "_dir": "/srv/mcp/" + key for key in ("data", "config", "secrets", "sessions", "logs", "backup")}
+        mcp.update(hostname="mcp.example.invalid", image_digest="sha256:" + "a" * 64)
+        values = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
+        values.update(mcp=mcp, baseline_validation_environment="staging", baseline_validation_timezone="America/Chicago", mcp_image_configuration={"stdout": "{}"})
+        config = json.loads(render(ROLE / "templates/config.json.j2", values))
+        self.assertEqual(config["state_database_path"], "/srv/mcp/data/state.sqlite3")
+        self.assertEqual(config["secret_passphrase_path"], "/srv/mcp/secrets/config_passphrase")
+        self.assertEqual(config["system_error_logpath"], "/srv/mcp/logs")
+        service = render(ROLE / "templates/grayhaven-mcp.container.j2", values)
+        for key in ("data", "config", "secrets", "sessions", "logs", "backup"):
+            path = mcp[key + "_dir"]
+            self.assertIn("Volume=" + path + ":" + path + ":Z", service)
+        self.assertIn("GRAYHAVEN_MCP_CONFIG=/srv/mcp/config/config.json", service)
+        settings = yaml.safe_load((REPO_ROOT / "roles/restic_backup/tasks/settings.yml").read_text())
+        values.update(grayhaven_role="mcp", restic_backup_homedir_archive_path="/archive", backup={"include": []})
+        expression = settings[2]["ansible.builtin.set_fact"]["restic_backup_include_paths"].replace("| unique", "| unique | list")
+        included = Environment(undefined=StrictUndefined).from_string(expression).render(**values)
+        for key in ("data", "config", "secrets", "sessions", "logs", "backup"):
+            self.assertIn(mcp[key + "_dir"], included)
 
     def test_firewall_limits_mcp_to_bastion_without_changing_web_sources(self):
         template = (

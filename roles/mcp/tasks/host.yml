@@ -6,10 +6,21 @@
       - mcp is mapping
       - mcp.hostname is match('^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$')
       - mcp.image_digest is match('^sha256:[0-9a-f]{64}$')
-      - mcp.known_hosts is string
-      - mcp.known_hosts | trim | length > 0
+      - baseline_validation_environment in ['staging', 'prod', 'production']
       - mcp.backup_retention_days | default(14) | int >= 1
       - mcp.backup_retention_days | default(14) | int <= 365
+      - mcp.data_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - "'..' not in mcp.data_dir.split('/')"
+      - mcp.config_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - "'..' not in mcp.config_dir.split('/')"
+      - mcp.secrets_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - "'..' not in mcp.secrets_dir.split('/')"
+      - mcp.sessions_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - "'..' not in mcp.sessions_dir.split('/')"
+      - mcp.logs_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - "'..' not in mcp.logs_dir.split('/')"
+      - mcp.backup_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - "'..' not in mcp.backup_dir.split('/')"
       - mcp_secrets.config_passphrase is string
       - mcp_secrets.config_passphrase | length > 0
       - mcp_secrets.registry_username | length > 0
@@ -50,24 +61,24 @@
 
 - name: Create persistent MCP directories without replacing contents
   ansible.builtin.file:
-    path: "{{ mcp_root }}/{{ item }}"
+    path: "{{ item }}"
     state: directory
     owner: "{{ mcp_user }}"
     group: "{{ mcp_group }}"
     mode: "0700"
   loop:
-    - ""
-    - config
-    - secrets
-    - state
-    - sessions
-    - logs
-    - backups
-    - .ssh
+    - "{{ mcp_root }}"
+    - "{{ mcp.data_dir }}"
+    - "{{ mcp.config_dir }}"
+    - "{{ mcp.secrets_dir }}"
+    - "{{ mcp.sessions_dir }}"
+    - "{{ mcp.logs_dir }}"
+    - "{{ mcp.backup_dir }}"
+    - "{{ mcp_root }}/.ssh"
 
 - name: Persist MCP configuration decryption password from Vault
   ansible.builtin.copy:
-    dest: "{{ mcp_root }}/secrets/config_passphrase"
+    dest: "{{ mcp.secrets_dir }}/config_passphrase"
     content: "{{ mcp_secrets.config_passphrase }}"
     owner: "{{ mcp_user }}"
     group: "{{ mcp_group }}"
@@ -122,7 +133,7 @@
 
 - name: Persist MCP encrypted configuration
   ansible.builtin.copy:
-    dest: "{{ mcp_root }}/config/config.secrets.enc"
+    dest: "{{ mcp.config_dir }}/config.secrets.enc"
     content: "{{ mcp_image_secrets.stdout }}"
     owner: "{{ mcp_user }}"
     group: "{{ mcp_group }}"
@@ -146,7 +157,7 @@
 - name: Persist MCP public configuration
   ansible.builtin.template:
     src: config.json.j2
-    dest: "{{ mcp_root }}/config/config.json"
+    dest: "{{ mcp.config_dir }}/config.json"
     owner: "{{ mcp_user }}"
     group: "{{ mcp_group }}"
     mode: "0600"
