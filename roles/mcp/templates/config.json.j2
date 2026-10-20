@@ -1,4 +1,4 @@
-{{ (mcp_image_configuration.stdout | from_json) | combine(mcp_config_overrides, recursive=true) | combine({
+{{ mcp_repository_configuration | combine(mcp_config_overrides, recursive=true) | combine({
   'secret_passphrase_path': mcp.secrets_dir ~ '/config_passphrase',
   'deployment_environment': 'production' if baseline_validation_environment in ['prod', 'production'] else 'staging',
   'system_error_logpath': mcp.logs_dir,

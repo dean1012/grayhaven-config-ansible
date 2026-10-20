@@ -52,7 +52,9 @@ on repository-change poller events, or by manual invocation.
   web hosts.
 - Manage the private MCP container, persistent state, HTTPS certificate, and
   verified encrypted database backups on dedicated MCP hosts. Environment-specific
-  public and encrypted configuration is extracted from the pinned image.
+  public and encrypted configuration is downloaded from the private repository’s
+  `main` branch using the existing registry token with `repo` and `read:packages`
+  scopes. Both files use the same commit and are validated before installation.
 - Validate Ansible, YAML, Markdown, and shell scripts through GitHub Actions.
 
 This repository is not a general-purpose deployment template. Deploying similar

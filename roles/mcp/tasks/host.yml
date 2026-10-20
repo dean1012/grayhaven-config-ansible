@@ -87,16 +87,6 @@
     - "{{ mcp.backup_dir }}"
     - "{{ mcp_root }}/.ssh"
 
-- name: Persist MCP configuration decryption password from Vault
-  ansible.builtin.copy:
-    dest: "{{ mcp.secrets_dir }}/config_passphrase"
-    content: "{{ mcp_secrets.config_passphrase }}"
-    owner: "{{ mcp_user }}"
-    group: "{{ mcp_group }}"
-    mode: "0400"
-  no_log: true
-  notify: Restart MCP
-
 - name: Persist MCP verified SSH host keys
   ansible.builtin.template:
     src: known_hosts.j2
@@ -128,55 +118,149 @@
     auth_file: /root/.config/containers/grayhaven-mcp-auth.json
     pull: true
 
-- name: Read the pinned image encrypted secret configuration
-  ansible.builtin.command:
-    argv:
-      - podman
-      - run
-      - --rm
-      - --network=none
-      - --entrypoint=cat
-      - "{{ mcp_image_repository }}@{{ mcp.image_digest }}"
-      - >-
-        /app/{{ 'production' if baseline_validation_environment
-        in ['prod', 'production'] else 'staging' }}/config.secrets.enc
-  register: mcp_image_secrets
-  changed_when: false
+- name: Resolve the MCP configuration main commit
+  ansible.builtin.uri:
+    url: "{{ mcp_configuration_api_url }}/commits/main"
+    headers:
+      Authorization: "Bearer {{ mcp_secrets.registry_token }}"
+      Accept: application/vnd.github+json
+    unredirected_headers:
+      - Authorization
+    return_content: true
+    timeout: 30
+    status_code: 200
+  register: mcp_configuration_commit
   no_log: true
 
-- name: Persist MCP encrypted configuration
-  ansible.builtin.copy:
-    dest: "{{ mcp.config_dir }}/config.secrets.enc"
-    content: "{{ mcp_image_secrets.stdout }}"
-    owner: "{{ mcp_user }}"
-    group: "{{ mcp_group }}"
-    mode: "0400"
-  no_log: true
-  notify: Restart MCP
+- name: Validate the resolved MCP configuration commit
+  ansible.builtin.assert:
+    that:
+      - mcp_configuration_commit.json.sha is match('^[0-9a-f]{40}$')
+    fail_msg: Cannot resolve the MCP configuration main commit.
+    quiet: true
 
-- name: Read the pinned image public configuration
-  ansible.builtin.command:
-    argv:
-      - podman
-      - run
-      - --rm
-      - --network=none
-      - --entrypoint=cat
-      - "{{ mcp_image_repository }}@{{ mcp.image_digest }}"
-      - >-
-        /app/{{ 'production' if baseline_validation_environment
-        in ['prod', 'production'] else 'staging' }}/config.json
-  register: mcp_image_configuration
+- name: Create temporary MCP configuration validation directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: grayhaven-mcp-config-
+  register: mcp_configuration_temporary
   changed_when: false
 
-- name: Persist MCP public configuration
-  ansible.builtin.template:
-    src: config.json.j2
-    dest: "{{ mcp.config_dir }}/config.json"
-    owner: "{{ mcp_user }}"
-    group: "{{ mcp_group }}"
-    mode: "0600"
-  notify: Restart MCP
+- name: Prepare and validate MCP configuration before installation
+  block:
+    - name: Download the environment MCP configuration at the resolved commit
+      ansible.builtin.uri:
+        url: >-
+          {{ mcp_configuration_api_url }}/contents/{{ mcp_configuration_environment }}/{{ item
+          }}?ref={{ mcp_configuration_commit.json.sha }}
+        headers:
+          Authorization: "Bearer {{ mcp_secrets.registry_token }}"
+          Accept: application/vnd.github.raw+json
+        unredirected_headers:
+          - Authorization
+        return_content: true
+        timeout: 30
+        status_code: 200
+      loop:
+        - config.json
+        - config.secrets.enc
+      register: mcp_repository_files
+      no_log: true
+
+    - name: Select the downloaded MCP public configuration
+      ansible.builtin.set_fact:
+        mcp_repository_configuration: "{{ mcp_repository_files.results[0].content | from_json }}"
+      no_log: true
+
+    - name: Verify the source MCP configuration environment
+      ansible.builtin.assert:
+        that:
+          - mcp_repository_configuration.deployment_environment == mcp_configuration_environment
+        fail_msg: The MCP repository configuration does not match the deployed environment.
+        quiet: true
+      no_log: true
+
+    - name: Prepare the candidate MCP public configuration
+      ansible.builtin.template:
+        src: config.json.j2
+        dest: "{{ mcp_configuration_temporary.path }}/config.json"
+        owner: root
+        group: root
+        mode: "0600"
+      changed_when: false
+
+    - name: Prepare the candidate MCP encrypted configuration
+      ansible.builtin.copy:
+        dest: "{{ mcp_configuration_temporary.path }}/config.secrets.enc"
+        content: "{{ mcp_repository_files.results[1].content }}"
+        owner: root
+        group: root
+        mode: "0600"
+      changed_when: false
+      no_log: true
+
+    - name: Prepare the candidate MCP decryption password
+      ansible.builtin.copy:
+        dest: "{{ mcp_configuration_temporary.path }}/config_passphrase"
+        content: "{{ mcp_secrets.config_passphrase }}"
+        owner: root
+        group: root
+        mode: "0400"
+      changed_when: false
+      no_log: true
+
+    - name: Validate both candidate MCP configuration files using the approved image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - run
+          - --rm
+          - --network=none
+          - --user=0
+          - --volume
+          - "{{ mcp_configuration_temporary.path }}:/candidate:ro,Z"
+          - --volume
+          - "{{ mcp_configuration_temporary.path }}/config_passphrase:{{ mcp.secrets_dir }}/config_passphrase:ro,Z"
+          - --env
+          - "GRAYHAVEN_MCP_ENVIRONMENT={{ mcp_configuration_environment }}"
+          - --entrypoint=python
+          - "{{ mcp_image_repository }}@{{ mcp.image_digest }}"
+          - -c
+          - >-
+            from connector.configuration import load;
+            load('/candidate/config.json')
+      changed_when: false
+      no_log: true
+
+    - name: Persist MCP configuration decryption password from Vault
+      ansible.builtin.copy:
+        dest: "{{ mcp.secrets_dir }}/config_passphrase"
+        content: "{{ mcp_secrets.config_passphrase }}"
+        owner: "{{ mcp_user }}"
+        group: "{{ mcp_group }}"
+        mode: "0400"
+      no_log: true
+      notify: Restart MCP
+
+    - name: Persist validated MCP configuration
+      ansible.builtin.copy:
+        src: "{{ mcp_configuration_temporary.path }}/{{ item }}"
+        dest: "{{ mcp.config_dir }}/{{ item }}"
+        remote_src: true
+        owner: "{{ mcp_user }}"
+        group: "{{ mcp_group }}"
+        mode: "0400"
+      loop:
+        - config.json
+        - config.secrets.enc
+      no_log: true
+      notify: Restart MCP
+  always:
+    - name: Remove temporary MCP configuration files
+      ansible.builtin.file:
+        path: "{{ mcp_configuration_temporary.path }}"
+        state: absent
+      changed_when: false
 
 - name: Install MCP container and proxy
   ansible.builtin.import_tasks: service.yml

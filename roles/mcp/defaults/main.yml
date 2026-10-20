@@ -5,6 +5,9 @@ mcp_uid: 778
 mcp_gid: 778
 mcp_root: /var/lib/grayhaven/mcp
 mcp_image_repository: ghcr.io/dean1012/grayhaven-mcp
+mcp_configuration_api_url: https://api.github.com/repos/dean1012/grayhaven-mcp
+mcp_configuration_environment: >-
+  {{ 'production' if baseline_validation_environment in ['prod', 'production'] else 'staging' }}
 mcp_container_name: grayhaven-mcp
 mcp_service_name: grayhaven-mcp.service
 mcp_host_port: 8787

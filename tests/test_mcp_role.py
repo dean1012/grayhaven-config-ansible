@@ -30,20 +30,98 @@ def render(path, values):
 
 
 class MCPRoleTests(unittest.TestCase):
-    def test_image_config_paths_follow_the_deployed_environment(self):
+    def test_repository_config_uses_one_commit_and_existing_token(self):
         tasks = yaml.safe_load((ROLE / "tasks/host.yml").read_text())
-        reads = [task for task in tasks if task["name"] in (
-            "Read the pinned image encrypted secret configuration",
-            "Read the pinned image public configuration",
-        )]
-        self.assertEqual(len(reads), 2)
+        resolve = next(t for t in tasks if t["name"] == "Resolve the MCP configuration main commit")
+        prepare = next(t for t in tasks if t["name"] == "Prepare and validate MCP configuration before installation")
+        download = prepare["block"][0]
+        self.assertEqual(download["loop"], ["config.json", "config.secrets.enc"])
+        self.assertTrue(resolve["no_log"])
+        self.assertTrue(download["no_log"])
+        self.assertEqual(download["ansible.builtin.uri"]["headers"]["Authorization"],
+                         "Bearer {{ mcp_secrets.registry_token }}")
+        self.assertEqual(download["ansible.builtin.uri"]["unredirected_headers"], ["Authorization"])
+        defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
         for environment, directory in (("staging", "staging"), ("prod", "production"), ("production", "production")):
-            for task in reads:
-                path = Environment(undefined=StrictUndefined).from_string(
-                    task["ansible.builtin.command"]["argv"][-1]
-                ).render(baseline_validation_environment=environment)
-                filename = "config.secrets.enc" if "encrypted" in task["name"] else "config.json"
-                self.assertEqual(path, f"/app/{directory}/{filename}")
+            selected = Environment(undefined=StrictUndefined).from_string(
+                defaults["mcp_configuration_environment"]
+            ).render(baseline_validation_environment=environment)
+            for filename in download["loop"]:
+                url = Environment(undefined=StrictUndefined).from_string(download["ansible.builtin.uri"]["url"]).render(
+                    mcp_configuration_api_url=defaults["mcp_configuration_api_url"],
+                    mcp_configuration_environment=selected, item=filename,
+                    mcp_configuration_commit={"json": {"sha": "a" * 40}},
+                )
+                self.assertEqual(url, f"https://api.github.com/repos/dean1012/grayhaven-mcp/contents/{directory}/{filename}?ref=" + "a" * 40)
+        names = [task["name"] for task in prepare["block"]]
+        self.assertLess(names.index("Validate both candidate MCP configuration files using the approved image"),
+                        names.index("Persist validated MCP configuration"))
+        self.assertEqual(prepare["always"][0]["ansible.builtin.file"]["state"], "absent")
+        validation = next(t for t in prepare["block"] if t["name"].startswith("Validate both candidate"))
+        self.assertIn("--network=none", validation["ansible.builtin.command"]["argv"])
+        self.assertTrue(validation["no_log"])
+        install = prepare["block"][-1]
+        self.assertTrue(install["ansible.builtin.copy"]["remote_src"])
+        self.assertEqual(install["notify"], "Restart MCP")
+
+    def test_candidate_failure_preserves_installed_files_and_always_cleans_up(self):
+        import grp
+        import pwd
+        import sys
+
+        original = yaml.safe_load((ROLE / "tasks/host.yml").read_text())
+        prepare = next(t for t in original if t["name"] == "Prepare and validate MCP configuration before installation")
+        for outcome in ("success", "download_failure", "wrong_environment", "validation_failure"):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                installed, credentials, candidate = (root / name for name in ("installed", "credentials", "candidate"))
+                for path in (installed, credentials, candidate):
+                    path.mkdir()
+                for filename in ("config.json", "config.secrets.enc"):
+                    (installed / filename).write_text("original")
+                (credentials / "config_passphrase").write_text("original-password")
+                tasks = copy.deepcopy(prepare)
+                for task in tasks["block"]:
+                    task.pop("notify", None)
+                if outcome == "download_failure":
+                    tasks["block"][0] = {"name": "Simulate failed authenticated download", "ansible.builtin.fail": {"msg": "fixture download failed"}}
+                else:
+                    source = {"deployment_environment": "production" if outcome == "wrong_environment" else "staging"}
+                    tasks["block"][0] = {"name": "Supply downloaded fixture files", "ansible.builtin.set_fact": {
+                        "mcp_repository_files": {"results": [{"content": json.dumps(source)}, {"content": "fixture-envelope"}]}
+                    }}
+                for task in tasks["block"]:
+                    if task["name"] == "Prepare the candidate MCP public configuration":
+                        task["ansible.builtin.template"]["src"] = str(ROLE / "templates/config.json.j2")
+                    if task["name"].startswith("Validate both candidate"):
+                        task["ansible.builtin.command"]["argv"] = [sys.executable, "-c", "raise SystemExit(" + ("1" if outcome == "validation_failure" else "0") + ")"]
+                values = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
+                values.update(
+                    mcp={"hostname": "mcp.example.invalid", "config_dir": str(installed), "secrets_dir": str(credentials),
+                         "data_dir": str(root / "data"), "sessions_dir": str(root / "sessions"), "logs_dir": str(root / "logs")},
+                    mcp_configuration_temporary={"path": str(candidate)},
+                    mcp_secrets={"config_passphrase": "new-password"},
+                    baseline_validation_environment="staging",
+                    mcp_user=pwd.getpwuid(os.getuid()).pw_name,
+                    mcp_group=grp.getgrgid(os.getgid()).gr_name,
+                )
+                # The fixture runs as the local operator, without managed-host privilege changes.
+                for task in tasks["block"]:
+                    for module in ("ansible.builtin.copy", "ansible.builtin.template"):
+                        if module in task:
+                            task[module]["owner"] = values["mcp_user"]
+                            task[module]["group"] = values["mcp_group"]
+                result = run_playbook([{"name": "Exercise configuration installation", "vars": values, "block": [tasks]}])
+                self.assertEqual(result.returncode == 0, outcome == "success", result.stdout + result.stderr)
+                self.assertFalse(candidate.exists())
+                if outcome == "success":
+                    self.assertEqual(json.loads((installed / "config.json").read_text())["deployment_environment"], "staging")
+                    self.assertEqual((installed / "config.secrets.enc").read_text(), "fixture-envelope")
+                    self.assertEqual((credentials / "config_passphrase").read_text(), "new-password")
+                else:
+                    for filename in ("config.json", "config.secrets.enc"):
+                        self.assertEqual((installed / filename).read_text(), "original")
+                    self.assertEqual((credentials / "config_passphrase").read_text(), "original-password")
 
     def test_known_hosts_use_only_managed_environment_facts(self):
         hosts = [
@@ -149,13 +227,9 @@ class MCPRoleTests(unittest.TestCase):
                 "polling_seconds": {"mail": 45},
                 "secret_passphrase_path": "/wrong",
             },
-            mcp_image_configuration={
-                "stdout": json.dumps(
-                    {
-                        "proton": {"profile": "grayhaven-mail"},
-                        "polling_seconds": {"mail": 30},
-                    }
-                )
+            mcp_repository_configuration={
+                "proton": {"profile": "grayhaven-mail"},
+                "polling_seconds": {"mail": 30},
             },
         )
         config = json.loads(render(ROLE / "templates/config.json.j2", values))
@@ -185,7 +259,7 @@ class MCPRoleTests(unittest.TestCase):
         mcp = {key + "_dir": "/srv/mcp/" + key for key in ("data", "config", "secrets", "sessions", "logs", "backup")}
         mcp.update(hostname="mcp.example.invalid", image_digest="sha256:" + "a" * 64)
         values = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
-        values.update(mcp=mcp, baseline_validation_environment="staging", baseline_validation_timezone="America/Chicago", mcp_image_configuration={"stdout": "{}"})
+        values.update(mcp=mcp, baseline_validation_environment="staging", baseline_validation_timezone="America/Chicago", mcp_repository_configuration={})
         config = json.loads(render(ROLE / "templates/config.json.j2", values))
         self.assertEqual(config["state_database_path"], "/srv/mcp/data/state.sqlite3")
         self.assertEqual(config["secret_passphrase_path"], "/srv/mcp/secrets/config_passphrase")
