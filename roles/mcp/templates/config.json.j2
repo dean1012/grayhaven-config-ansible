@@ -1,0 +1,13 @@
+{{ mcp_repository_configuration | combine(mcp_config_overrides, recursive=true) | combine({
+  'secret_passphrase_path': mcp.secrets_dir ~ '/config_passphrase',
+  'deployment_environment': 'production' if baseline_validation_environment in ['prod', 'production'] else 'staging',
+  'system_error_logpath': mcp.logs_dir,
+  'state_database_path': mcp.data_dir ~ '/state.sqlite3',
+  'proton': {'state_dir': mcp.sessions_dir ~ '/proton'},
+  'notesnook': {'state_dir': mcp.sessions_dir ~ '/notesnook'},
+  'ssh': {'binary': '/usr/bin/ssh', 'known_hosts_path': mcp_root ~ '/.ssh/known_hosts'},
+  'transport': {'mode': 'http', 'host': '0.0.0.0', 'port': mcp_host_port,
+                'public_base_url': 'https://' ~ mcp.hostname,
+                'health_path': mcp_health_path, 'readiness_path': mcp_readiness_path,
+                'allowed_hosts': [mcp.hostname, 'localhost', '127.0.0.1']}
+}, recursive=true) | to_nice_json }}

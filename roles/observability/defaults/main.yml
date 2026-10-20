@@ -83,6 +83,17 @@ observability_service_units_web:
     check: website_deploy_webhook_service
     summary: Website deploy webhook service is down
 
+observability_service_units_mcp:
+  - name: nginx.service
+    check: nginx_service
+    summary: Nginx service is down
+  - name: grayhaven-mcp.service
+    check: mcp_service
+    summary: MCP service is down
+  - name: certbot-renew.timer
+    check: certbot_renew_timer
+    summary: Certbot renewal timer is down
+
 observability_service_units_control_node:
   - name: grayhaven-ansible-runner.timer
     check: ansible_runner_timer

@@ -147,7 +147,7 @@
   when:
     - observability_metrics_enabled
     - observability_logs_enabled
-    - grayhaven_role == "web"
+    - grayhaven_role in ["web", "mcp"]
 
 - name: Keep rotated nginx logs in the Alloy group
   ansible.builtin.lineinfile:
@@ -160,7 +160,7 @@
   when:
     - observability_metrics_enabled
     - observability_logs_enabled
-    - grayhaven_role == "web"
+    - grayhaven_role in ["web", "mcp"]
     - observability_nginx_log_directory.stat.isdir | default(false)
 
 - name: Find existing managed nginx log files for Alloy access
@@ -173,12 +173,13 @@
       - "*.dev.error.log"
       - "timetracker.access.log"
       - "timetracker.error.log"
+      - "mcp.error.log"
     file_type: file
   register: observability_nginx_log_files
   when:
     - observability_metrics_enabled
     - observability_logs_enabled
-    - grayhaven_role == "web"
+    - grayhaven_role in ["web", "mcp"]
     - observability_nginx_log_directory.stat.isdir | default(false)
 
 - name: Allow Alloy to read existing managed nginx log files
@@ -193,7 +194,7 @@
   when:
     - observability_metrics_enabled
     - observability_logs_enabled
-    - grayhaven_role == "web"
+    - grayhaven_role in ["web", "mcp"]
 
 - name: Store Grafana Alloy API key
   ansible.builtin.copy:

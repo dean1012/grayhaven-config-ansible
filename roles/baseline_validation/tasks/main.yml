@@ -4,7 +4,7 @@
     that:
       - grayhaven_role is defined
       - grayhaven_role is string
-      - grayhaven_role in ["bastion", "web"]
+      - grayhaven_role in ["bastion", "web", "mcp"]
       - root_password_hash is defined
       - root_password_hash is string
       - root_password_hash | trim | length > 0

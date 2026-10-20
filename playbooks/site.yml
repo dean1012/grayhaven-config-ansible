@@ -69,6 +69,7 @@
     - branding
     - deploy_websites
     - timetracker
+    - mcp
     - observability
 
   post_tasks:

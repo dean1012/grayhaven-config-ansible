@@ -1,0 +1,9 @@
+{% for host in managed_inventory_hosts | default([]) %}
+{% if host.role in ['bastion', 'web'] %}
+{% set names = [host.fqdn, host.host_alias, host.host_alias ~ '.internal', host.private_ip] %}
+{% if host.role == 'bastion' %}
+{% set _ = names.append('bastion.' ~ host.fqdn.split('.', 1)[1]) %}
+{% endif %}
+{{ names | join(',') }} ssh-ed25519 {{ hostvars[host.inventory_name].ansible_facts.ssh_host_key_ed25519_public }}
+{% endif %}
+{% endfor %}

@@ -1,0 +1,4 @@
+---
+- name: Enforce MCP on MCP hosts
+  ansible.builtin.include_tasks: host.yml
+  when: grayhaven_role == "mcp"

@@ -899,6 +899,10 @@ prepare_runner_runtime() {
 }
 
 run_convergence() {
+  local mcp_vars=()
+  if [[ -f "${VAULT_CHECKOUT_DIR}/vault/mcp.yml" ]]; then
+    mcp_vars+=(--extra-vars "@${VAULT_CHECKOUT_DIR}/vault/mcp.yml")
+  fi
   prepare_inventory_known_hosts
 
   log "Running full site playbook."
@@ -911,6 +915,7 @@ run_convergence() {
     --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/common.yml" \
     --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/bastion.yml" \
     --extra-vars "@${VAULT_CHECKOUT_DIR}/vault/web.yml" \
+    "${mcp_vars[@]}" \
     --extra-vars "@${RUNNER_VARS}" 2>&1 | tee "$RUNNER_PLAYBOOK_LOG" | write_ordered_runner_log
 }
 

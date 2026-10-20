@@ -48,6 +48,42 @@ class ShellProgramTests(unittest.TestCase):
                 text=True,
             )
 
+    def test_convergence_loads_optional_mcp_vault_without_requiring_it_on_old_hosts(
+        self,
+    ) -> None:
+        for include_mcp in (False, True):
+            with (
+                self.subTest(include_mcp=include_mcp),
+                tempfile.TemporaryDirectory() as folder,
+            ):
+                root = pathlib.Path(folder)
+                (root / "vault").mkdir()
+                if include_mcp:
+                    (root / "vault/mcp.yml").write_text("fixture: true")
+                result = self.run_bash(
+                    """
+                    export GRAYHAVEN_UNIT_TEST_SOURCE_ONLY=1
+                    source files/grayhaven-ansible-runner
+                    VAULT_CHECKOUT_DIR="$FIXTURE_ROOT"
+                    CHECKOUT_DIR="$FIXTURE_ROOT/config"
+                    RUNNER_VARS="$FIXTURE_ROOT/vars"
+                    RUNNER_PLAYBOOK_LOG="$FIXTURE_ROOT/playbook.log"
+                    VAULT_PASSWORD_FILE="$FIXTURE_ROOT/password"
+                    ANSIBLE_PLAYBOOK_BIN=fixture-ansible
+                    prepare_inventory_known_hosts() { :; }
+                    log() { :; }
+                    write_ordered_runner_log() { cat; }
+                    run_as_ansible() { printf '%s\\n' "$@"; }
+                    run_convergence
+                    """,
+                    env={"FIXTURE_ROOT": folder},
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    "@" + folder + "/vault/mcp.yml" in result.stdout, include_mcp
+                )
+                self.assertIn("/vault/web.yml", result.stdout)
+
     def test_runner_arguments_and_dispatch(self) -> None:
         for arguments, expected in (
             ("--converge", "converge|false|"),

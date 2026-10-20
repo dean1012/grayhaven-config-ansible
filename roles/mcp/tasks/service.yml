@@ -1,0 +1,131 @@
+---
+- name: Create MCP service and certificate directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/containers/systemd
+    - /etc/letsencrypt
+    - /etc/letsencrypt/renewal-hooks/deploy
+    - "{{ mcp_certbot_marker_dir }}"
+
+- name: Store MCP certificate DNS credentials
+  ansible.builtin.copy:
+    dest: "{{ mcp_certbot_credentials_file }}"
+    content: "dns_digitalocean_token = {{ digitalocean_dns_api_token | trim }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Enforce MCP certificate
+  ansible.builtin.import_tasks: certificate.yml
+
+- name: Install MCP container service
+  ansible.builtin.template:
+    src: grayhaven-mcp.container.j2
+    dest: /etc/containers/systemd/grayhaven-mcp.container
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart MCP
+
+- name: Allow nginx to reach the MCP upstream
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+
+- name: Remove nginx default welcome configuration
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d/default.conf
+    state: absent
+  notify: Reload MCP nginx
+
+- name: Remove nginx package default HTTP listener
+  ansible.builtin.replace:
+    path: /etc/nginx/nginx.conf
+    regexp: '(?ms)\n\s*server\s*\{\n\s*listen\s+80;.*?include\s+/etc/nginx/default\.d/\*\.conf;\n\s*\}\n?'
+    replace: ""
+  notify: Reload MCP nginx
+
+- name: Install MCP HTTPS proxy
+  ansible.builtin.template:
+    src: grayhaven-mcp.conf.j2
+    dest: /etc/nginx/conf.d/grayhaven-mcp.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload MCP nginx
+
+- name: Validate MCP nginx configuration
+  ansible.builtin.command:
+    argv: [nginx, -t]
+  changed_when: false
+
+- name: Enable and start the validated MCP proxy before reload handlers
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Install MCP certificate renewal hook
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+      systemctl reload nginx
+
+- name: Apply MCP service configuration changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Start MCP service
+  ansible.builtin.systemd_service:
+    name: "{{ mcp_service_name }}"
+    state: started
+    daemon_reload: true
+
+- name: Enable MCP proxy and certificate renewal
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: [nginx, certbot-renew.timer]
+
+- name: Verify local MCP readiness
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ mcp_host_port }}{{ mcp_readiness_path }}"
+    headers:
+      Host: "{{ mcp.hostname }}"
+    return_content: true
+  register: mcp_health
+  retries: 60
+  delay: 3
+  until: mcp_health.status == 200
+  changed_when: false
+
+- name: Inspect running MCP image
+  ansible.builtin.command:
+    argv:
+      - podman
+      - container
+      - inspect
+      - --format
+      - "{{ '{{.ImageDigest}}' }}"
+      - "{{ mcp_container_name }}"
+  register: mcp_running_image
+  changed_when: false
+
+- name: Require the approved MCP image digest
+  ansible.builtin.assert:
+    that:
+      - mcp_running_image.stdout | trim == mcp.image_digest
+    fail_msg: Running MCP image differs from the approved digest.
+    quiet: true

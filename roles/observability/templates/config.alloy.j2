@@ -10,7 +10,7 @@ prometheus.exporter.unix "node" {
   enable_collectors        = ["systemd"]
 
   systemd {
-    unit_include = "(sshd|firewalld|fail2ban|chronyd|auditd|do-agent|nginx|certbot-renew|grayhaven-timetracker|grayhaven-website-deploy-webhook|grayhaven-restic-backup|grayhaven-restic-check|grayhaven-gcs-restic-stale-buckets|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
+    unit_include = "(sshd|firewalld|fail2ban|chronyd|auditd|do-agent|nginx|certbot-renew|grayhaven-timetracker|grayhaven-mcp|grayhaven-website-deploy-webhook|grayhaven-restic-backup|grayhaven-restic-check|grayhaven-gcs-restic-stale-buckets|grayhaven-ansible-runner|grayhaven-ansible-poller)\\.(service|timer)"
     start_time   = true
   }
 
@@ -25,7 +25,7 @@ prometheus.scrape "node" {
   forward_to      = [prometheus.relabel.grayhaven.receiver]
 }
 
-{% if grayhaven_role == "web" and observability_web_sites | length > 0 %}
+{% if grayhaven_role in ["web", "mcp"] and observability_web_sites | length > 0 %}
 prometheus.exporter.blackbox "http" {
   config = `
 modules:
@@ -79,7 +79,7 @@ modules:
       fail_if_header_not_matches:
         - header: Location
           regexp: '^https://'
-{% for site in observability_web_sites if site.kind == "application" %}
+{% for site in observability_web_sites if site.kind == "application" and (site.role | default("web")) == grayhaven_role %}
 {% set site_id = site.root_name | regex_replace('[^A-Za-z0-9_]', '_') %}
   {{ site_id }}_health:
     prober: http
@@ -93,15 +93,15 @@ modules:
 {% endfor %}
 `
 
-{% for site in observability_web_sites %}
+{% for site in observability_web_sites if (site.role | default("web")) == grayhaven_role %}
 {% set site_id = site.root_name | regex_replace('[^A-Za-z0-9_]', '_') %}
 {% if site.kind == "application" %}
   target {
     name    = {{ (site_id ~ "_health") | to_json }}
-    address = "http://127.0.0.1:8000/health"
+    address = {{ site.health_url | default("http://127.0.0.1:8000/health") | to_json }}
     module  = {{ (site_id ~ "_health") | to_json }}
     labels  = {
-      check       = "timetracker_health",
+      check       = {{ site.health_check | default("timetracker_health") | to_json }},
       client      = {{ observability_client | to_json }},
       domain      = {{ site.domain | to_json }},
       environment = {{ baseline_validation_environment | to_json }},
@@ -191,7 +191,7 @@ modules:
     }
   }
 
-{% set redirect_domains = [site.domain] + site.aliases + ([site.dev_domain] if site.dev_domain else []) %}
+{% set redirect_domains = ([site.domain] + site.aliases + ([site.dev_domain] if site.dev_domain else [])) if (site.redirect_http | default(true)) else [] %}
 {% for redirect_domain in redirect_domains %}
   target {
     name    = {{ (site_id ~ "_redirect_" ~ loop.index) | to_json }}
@@ -275,7 +275,7 @@ prometheus.remote_write "grafana" {
 }
 
 {% if observability_logs_enabled %}
-{% for site in observability_web_sites %}
+{% for site in observability_web_sites if (site.role | default("web")) == grayhaven_role %}
 {% set site_id = site.root_name | regex_replace('[^A-Za-z0-9_]', '_') %}
 {% for log_name in site.nginx_log_names %}
 local.file_match "nginx_{{ site_id }}_{{ log_name | regex_replace('[^A-Za-z0-9_]', '_') }}" {

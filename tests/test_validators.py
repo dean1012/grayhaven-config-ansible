@@ -427,7 +427,7 @@ class ValidatorTests(unittest.TestCase):
         config["uid_registry"].pop(next(iter(config["uid_registry"])))
         with (
             mock.patch.object(alerts, "fixture_config", return_value=config),
-            self.assertRaisesRegex(RuntimeError, "Expected 76"),
+            self.assertRaisesRegex(RuntimeError, "Expected 99"),
         ):
             alerts.main([])
 

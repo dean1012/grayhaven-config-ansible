@@ -36,6 +36,16 @@
           if grayhaven_role == 'web'
           else []
         )
+        + (
+          [
+            mcp.data_dir ~ '/state.sqlite3',
+            mcp.data_dir ~ '/state.sqlite3-wal',
+            mcp.data_dir ~ '/state.sqlite3-shm',
+            mcp.data_dir ~ '/state.sqlite3-journal'
+          ]
+          if grayhaven_role == 'mcp'
+          else []
+        )
         + (backup.exclude | default([]))
       }}
 
@@ -56,6 +66,11 @@
         (
           [restic_backup_homedir_archive_path]
           + ([timetracker.backup_dir] if grayhaven_role == 'web' else [])
+          + (
+              [mcp.data_dir, mcp.config_dir, mcp.secrets_dir,
+               mcp.sessions_dir, mcp.logs_dir, mcp.backup_dir]
+              if grayhaven_role == 'mcp' else []
+            )
           +
           (
             backup.include

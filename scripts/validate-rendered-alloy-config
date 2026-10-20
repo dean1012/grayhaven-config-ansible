@@ -35,8 +35,8 @@ def build_environment() -> jinja2.Environment:
     return environment
 
 
-def fixture_context() -> dict[str, object]:
-    return {
+def fixture_context(role: str = "web") -> dict[str, object]:
+    context = {
         "grayhaven_role": "web",
         "inventory_hostname": "grayhaven-core-prod-web-01.grayhavensystems.com",
         "baseline_validation_environment": "prod",
@@ -95,10 +95,20 @@ def fixture_context() -> dict[str, object]:
         ],
     }
 
+    if role == "mcp":
+        context.update(grayhaven_role="mcp", observability_role="mcp", inventory_hostname="grayhaven-core-prod-mcp-01.grayhavensystems.com",
+                       observability_short_hostname="grayhaven-core-prod-mcp-01")
+        context["observability_web_sites"].append({
+            "root_name":"mcp", "kind":"application", "role":"mcp", "domain":"mcp.grayhavensystems.com",
+            "aliases":[], "dev_domain":"", "nginx_log_names":["error"], "redirect_http":False,
+            "health_url":"http://127.0.0.1:8787/healthz", "health_check":"mcp_health",
+        })
+    return context
 
-def render_config(output_path: pathlib.Path) -> None:
+
+def render_config(output_path: pathlib.Path, role: str = "web") -> None:
     template = build_environment().get_template(TEMPLATE_NAME)
-    output_path.write_text(template.render(fixture_context()), encoding="utf-8")
+    output_path.write_text(template.render(fixture_context(role)), encoding="utf-8")
 
 
 def validate_timetracker_contract(rendered_path: pathlib.Path) -> None:
@@ -173,6 +183,7 @@ def validate_https_probe_contract(rendered_path: pathlib.Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--role", choices=("web", "mcp"), default="web")
     parser.add_argument(
         "--keep-rendered",
         metavar="PATH",
@@ -183,8 +194,9 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="grayhaven-alloy.") as temp_dir:
         rendered_path = pathlib.Path(args.keep_rendered or pathlib.Path(temp_dir) / "config.alloy")
         rendered_path.parent.mkdir(parents=True, exist_ok=True)
-        render_config(rendered_path)
-        validate_timetracker_contract(rendered_path)
+        render_config(rendered_path, args.role)
+        if args.role == "web":
+            validate_timetracker_contract(rendered_path)
         validate_https_probe_contract(rendered_path)
         try:
             result = subprocess.run(["alloy", "validate", str(rendered_path)], check=False)

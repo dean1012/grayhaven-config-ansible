@@ -19,7 +19,7 @@
           - grayhaven_hostname | trim | length > 0
           - grayhaven_role is defined
           - grayhaven_role is string
-          - grayhaven_role in ["bastion", "web"]
+          - grayhaven_role in ["bastion", "web", "mcp"]
           - grayhaven_environment is defined
           - grayhaven_environment is string
           - grayhaven_environment in ["staging", "prod"]

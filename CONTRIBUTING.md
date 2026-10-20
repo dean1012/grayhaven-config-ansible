@@ -106,6 +106,8 @@ python3 -m py_compile \
   scripts/validate-rendered-alloy-config \
   scripts/validate-rendered-timetracker-config
 scripts/validate-rendered-alloy-config
+scripts/validate-rendered-alloy-config --role mcp
+python3 -m unittest tests.test_mcp_role tests.test_mcp_monitoring -v
 scripts/validate-generated-grafana-alerts
 scripts/validate-observability-textfile-cache
 scripts/validate-rendered-timetracker-config

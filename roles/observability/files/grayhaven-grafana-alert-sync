@@ -356,8 +356,7 @@ def service_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) 
     service_config = config["service_units"]
     for host in config["hosts"]:
         units = list(service_config["common"])
-        if host["role"] == "web":
-            units.extend(service_config["web"])
+        units.extend(service_config.get(host["role"], []))
         if host.get("control_node"):
             units.extend(service_config["control_node"])
 
@@ -394,10 +393,6 @@ def service_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) 
 def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> list[dict[str, Any]]:
     rules = []
     thresholds = config["thresholds"]
-    timetracker_site = next(
-        (site for site in config["sites"] if site.get("kind") == "application"),
-        None,
-    )
     for host in config["hosts"]:
         common = {
             "uid_registry": config["uid_registry"],
@@ -428,16 +423,24 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
             )
         )
 
-        if host["role"] == "web" and timetracker_site is not None:
+        application_site = next(
+            (site for site in config["sites"]
+             if site.get("kind") == "application"
+             and site.get("role", "web") == host["role"]),
+            None,
+        )
+        if application_site is not None:
+            application_name = application_site.get("display_name", "Time Tracker")
+            health_check = application_site.get("health_check", "timetracker_health")
             rules.append(
                 alert_rule(
-                    identity=host_rule_identity(host, "timetracker_health"),
-                    title=f"{host['short_hostname']} Time Tracker health check",
+                    identity=host_rule_identity(host, health_check),
+                    title=f"{host['short_hostname']} {application_name} health check",
                     expression=(
                         "max by (host, domain, environment, role, project, client) "
                         f'(probe_success{{{host_selector(host["fqdn"])},'
-                        f'domain="{promql_string(timetracker_site["domain"])}",'
-                        'check="timetracker_health"})'
+                        f'domain="{promql_string(application_site["domain"])}",'
+                        f'check="{promql_string(health_check)}"}})'
                     ),
                     evaluator_type="lt",
                     threshold=1,
@@ -445,17 +448,17 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                     labels=base_labels(
                         config,
                         {
-                            "check": "timetracker_health",
-                            "domain": timetracker_site["domain"],
+                            "check": health_check,
+                            "domain": application_site["domain"],
                             "host": host["fqdn"],
                             "project": host["project"],
-                            "role": "web",
+                            "role": host["role"],
                         },
                     ),
                     annotations={
-                        "summary": "Time Tracker health check failed",
+                        "summary": f"{application_name} health check failed",
                         "description": (
-                            f"{host['fqdn']} Time Tracker local health endpoint "
+                            f"{host['fqdn']} {application_name} local health endpoint "
                             "has not returned 200 OK for at least five minutes."
                         ),
                     },
@@ -640,10 +643,6 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
     if not config["sites"]:
         return rules
 
-    web_host = next((host for host in config["hosts"] if host["role"] == "web"), None)
-    if web_host is None:
-        return rules
-
     common = {
         "uid_registry": config["uid_registry"],
         "folder_uid": folder_uid,
@@ -653,6 +652,9 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
     }
 
     for site in config["sites"]:
+        site_host = next((host for host in config["hosts"] if host["role"] == site.get("role", "web")), None)
+        if site_host is None:
+            continue
         for target_domain in [site["domain"], *site["aliases"]]:
             rules.append(
                 alert_rule(
@@ -670,8 +672,8 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                         {
                             "check": "https_200",
                             "domain": target_domain,
-                            "project": web_host["project"],
-                            "role": "web",
+                            "project": site_host["project"],
+                            "role": site_host["role"],
                         },
                     ),
                     annotations={
@@ -702,8 +704,8 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                         {
                             "check": "dev_basic_auth_401",
                             "domain": site["dev_domain"],
-                            "project": web_host["project"],
-                            "role": "web",
+                            "project": site_host["project"],
+                            "role": site_host["role"],
                         },
                     ),
                     annotations={
@@ -717,42 +719,43 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                 )
             )
 
-        redirect_domains = [site["domain"], *site["aliases"]]
-        if site.get("dev_domain"):
-            redirect_domains.append(site["dev_domain"])
-        rules.append(
-            alert_rule(
-                identity=domain_rule_identity(site["domain"], "http_https_redirect"),
-                title=f"{site['domain']} HTTP to HTTPS redirects",
-                expression=(
-                    "min by (domain, environment, role, project, client) "
-                    f'(probe_success{{domain=~"{domain_regex(redirect_domains)}",'
-                    'check="http_https_redirect"})'
-                ),
-                evaluator_type="lt",
-                threshold=1,
-                duration="1m",
-                labels=base_labels(
-                    config,
-                    {
-                        "check": "http_https_redirect",
-                        "domain": site["domain"],
-                        "project": web_host["project"],
-                        "role": "web",
-                    },
-                ),
-                annotations={
-                    "summary": "HTTP to HTTPS redirect check failed",
-                    "description": (
-                        f"{site['domain']} HTTP to HTTPS redirect checks did not all return "
-                        "a valid HTTPS redirect."
+        if site.get("redirect_http", True):
+            redirect_domains = [site["domain"], *site["aliases"]]
+            if site.get("dev_domain"):
+                redirect_domains.append(site["dev_domain"])
+            rules.append(
+                alert_rule(
+                    identity=domain_rule_identity(site["domain"], "http_https_redirect"),
+                    title=f"{site['domain']} HTTP to HTTPS redirects",
+                    expression=(
+                        "min by (domain, environment, role, project, client) "
+                        f'(probe_success{{domain=~"{domain_regex(redirect_domains)}",'
+                        'check="http_https_redirect"})'
                     ),
-                },
-                **common,
+                    evaluator_type="lt",
+                    threshold=1,
+                    duration="1m",
+                    labels=base_labels(
+                        config,
+                        {
+                            "check": "http_https_redirect",
+                            "domain": site["domain"],
+                            "project": site_host["project"],
+                            "role": site_host["role"],
+                        },
+                    ),
+                    annotations={
+                        "summary": "HTTP to HTTPS redirect check failed",
+                        "description": (
+                            f"{site['domain']} HTTP to HTTPS redirect checks did not all return "
+                            "a valid HTTPS redirect."
+                        ),
+                    },
+                    **common,
+                )
             )
-        )
 
-        if config.get("tls_mode") == "host":
+        if config.get("tls_mode") == "host" or site.get("role") == "mcp":
             rules.append(
                 alert_rule(
                     identity=domain_rule_identity(site["domain"], "ssl_certificate_expired"),
@@ -769,8 +772,8 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                         {
                             "check": "ssl_certificate_expired",
                             "domain": site["domain"],
-                            "project": web_host["project"],
-                            "role": "web",
+                            "project": site_host["project"],
+                            "role": site_host["role"],
                         },
                     ),
                     annotations={
@@ -802,8 +805,8 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                         {
                             "check": "ssl_certificate_expiring",
                             "domain": site["domain"],
-                            "project": web_host["project"],
-                            "role": "web",
+                            "project": site_host["project"],
+                            "role": site_host["role"],
                         },
                     ),
                     annotations={
@@ -831,8 +834,8 @@ def site_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> 
                         {
                             "check": "ssl_certificate_trusted",
                             "domain": site["domain"],
-                            "project": web_host["project"],
-                            "role": "web",
+                            "project": site_host["project"],
+                            "role": site_host["role"],
                         },
                     ),
                     annotations={
