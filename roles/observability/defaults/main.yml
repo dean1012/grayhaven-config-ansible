@@ -27,6 +27,46 @@ observability_grafana_default_evaluation_group: grayhaven-production-1m
 observability_grafana_default_contact_point: Grafana IRM
 observability_grafana_default_evaluation_interval: 1m
 
+observability_public_status_services:
+  openai:
+    name: OpenAI
+    url: https://status.openai.com/api/v2/summary.json
+    components:
+      - id: "01JMXBNJXGV1T5GT2M9XA83XNG"
+        name: Conversations
+      - id: "01KMKFAMWKQ81YWSE1Z18R6VHR"
+        name: Codex in ChatGPT Desktop
+      - id: "01JQ7EKW990MSPSWVXC7VPV2ZJ"
+        name: Image Generation
+      - id: "01JMXBNJXG1S2D9V65P1ZZTD94"
+        name: ChatGPT Login
+  digitalocean:
+    name: DigitalOcean
+    url: https://status.digitalocean.com/api/v2/summary.json
+    components:
+      - id: "p1x9rv4137gx"
+        name: API
+      - id: "5rzxjrq10gb2"
+        name: Networking — Global
+      - id: "kwqnp70p9wjy"
+        name: VPC — Global
+      - id: "dkbfnt2ghbw4"
+        name: Droplets — Global
+      - id: "czck17wcspr5"
+        name: Cloud Control Panel
+      - id: "qdnryq0lymfk"
+        name: DNS
+      - id: "mrdxgk8b9l9m"
+        name: Droplets — NYC3
+      - id: "4945q9my8ycl"
+        name: VPC — NYC3
+      - id: "4lc0zwg56npx"
+        name: Networking — NYC3
+      - id: "yht2qc1zfp6x"
+        name: Monitoring — Global
+      - id: "grxx637rqt5r"
+        name: Monitoring — NYC3
+
 observability_cpu_warning_percent: 80
 observability_memory_warning_percent: 80
 observability_filesystem_warning_percent: 80
