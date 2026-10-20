@@ -424,10 +424,12 @@ class ValidatorTests(unittest.TestCase):
 
         config = alerts.fixture_config()
         config["uid_registry"] = dict(config["uid_registry"])
-        config["uid_registry"].pop(next(iter(config["uid_registry"])))
+        namespace = alerts.runpy.run_path(str(alerts.ALERT_SYNC))
+        required = namespace["external_service_rules"](config, "folder", "prom")[0]["_identity"]
+        config["uid_registry"].pop(required)
         with (
             mock.patch.object(alerts, "fixture_config", return_value=config),
-            self.assertRaisesRegex(RuntimeError, "Expected 99"),
+            self.assertRaisesRegex(RuntimeError, "not registered"),
         ):
             alerts.main([])
 

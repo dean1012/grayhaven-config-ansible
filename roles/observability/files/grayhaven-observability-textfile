@@ -607,6 +607,22 @@ def render_status(status: str) -> str:
     return status.replace("_", " ").title() if status else "Unknown"
 
 
+# Selected public status-page helpers
+
+def public_status_components(url: str) -> dict[str, dict[str, Any]]:
+    payload = request_json(
+        url,
+        headers={"Accept": "application/json", "User-Agent": "grayhaven-observability/1.0"},
+    )
+    if not isinstance(payload, dict) or not isinstance(payload.get("components"), list):
+        raise ValueError("Public status response has no component list")
+    return {
+        str(component["id"]): component
+        for component in payload["components"]
+        if isinstance(component, dict) and component.get("id")
+    }
+
+
 # fail2ban helpers
 
 def normalize_ip_token(value: str) -> str:
@@ -928,6 +944,47 @@ def render_proton_metrics(config: dict[str, Any]) -> list[str]:
     return output
 
 
+def render_public_status_metrics(config: dict[str, Any]) -> list[str]:
+    current_host = config["host"]
+    public_config = config.get("public_status", {})
+    if not current_host.get("control_node") or not public_config.get("enabled"):
+        return []
+
+    output = []
+    for provider, definition in public_config.get("providers", {}).items():
+        metric_base = {
+            "client": current_host["client"],
+            "environment": current_host["environment"],
+            "provider": definition["name"],
+        }
+        telemetry = f"grayhaven_{provider}_telemetry_success"
+        metric = f"grayhaven_{provider}_service_status"
+        output.extend(
+            [
+                f"# HELP {telemetry} {definition['name']} public service-health telemetry collection success.",
+                f"# TYPE {telemetry} gauge",
+                f"# HELP {metric} {definition['name']} public service-health status.",
+                f"# TYPE {metric} gauge",
+            ]
+        )
+        try:
+            components = public_status_components(definition["url"])
+        except (OSError, urllib.error.URLError, ValueError):
+            output.append(line(telemetry, metric_base, 0))
+            continue
+        output.append(line(telemetry, metric_base, 1))
+        for component in definition["components"]:
+            raw_status = str(components.get(component["id"], {}).get("status", "unknown"))
+            metric_labels = {
+                **metric_base,
+                "service": component["name"],
+                "component": component["id"],
+                "status": render_status(raw_status),
+            }
+            output.append(line(metric, metric_labels, int(raw_status == "operational")))
+    return output
+
+
 def render_fail2ban_metrics(config: dict[str, Any]) -> list[str]:
     current_host = config["host"]
     jails = config.get("fail2ban", {}).get("jails", [])
@@ -1014,6 +1071,7 @@ def render(config: dict[str, Any]) -> str:
     output.extend(render_gcs_metrics(config))
     output.extend(render_google_monitoring_metrics(config))
     output.extend(render_proton_metrics(config))
+    output.extend(render_public_status_metrics(config))
 
     return "\n".join(output) + "\n"
 

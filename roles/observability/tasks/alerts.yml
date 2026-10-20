@@ -78,6 +78,7 @@
       tls_mode: "{{ baseline_validation_tls_mode }}"
       hosts: "{{ observability_hosts }}"
       sites: "{{ observability_web_sites }}"
+      public_status: "{{ observability_public_status_services }}"
       service_units:
         common: "{{ observability_service_units_common }}"
         web: "{{ observability_service_units_web }}"

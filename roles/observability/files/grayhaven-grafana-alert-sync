@@ -1232,12 +1232,75 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
     return rules
 
 
+def public_status_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> list[dict[str, Any]]:
+    common = {
+        "uid_registry": config["uid_registry"],
+        "folder_uid": folder_uid,
+        "rule_group": config["grafana"]["evaluation_group"],
+        "datasource_uid": datasource_uid,
+        "contact_point": config["grafana"]["contact_point"],
+    }
+    selector = (
+        f'client="{promql_string(config["labels"]["client"])}",'
+        f'environment="{promql_string(config["labels"]["environment"])}"'
+    )
+    rules = []
+    for provider, definition in config.get("public_status", {}).items():
+        name = definition["name"]
+        check = f"{provider}_telemetry_success"
+        rules.append(
+            alert_rule(
+                identity=service_rule_identity(name, check),
+                title=f"{name} status telemetry failed for >= 5 min",
+                expression=(
+                    "max by (client, environment, provider) "
+                    f"(grayhaven_{check}{{{selector}}})"
+                ),
+                evaluator_type="lt",
+                threshold=1,
+                duration="5m",
+                labels=base_labels(config, {"check": check, "service": name}),
+                annotations={
+                    "summary": f"{name} status telemetry collection failed",
+                    "description": f"The {name} public service-health collector is not reporting successful telemetry.",
+                },
+                no_data_state="Alerting",
+                **common,
+            )
+        )
+        for component in definition["components"]:
+            check = f"{provider}_service_status"
+            service = f"{name} {component['name']}"
+            rules.append(
+                alert_rule(
+                    identity=service_rule_identity(service, check),
+                    title=f"{service} Degraded for >= 5 min",
+                    expression=(
+                        "max by (client, environment, provider, service, component, status) "
+                        f'(grayhaven_{check}{{{selector},component="{promql_string(component["id"])}"}})'
+                    ),
+                    evaluator_type="lt",
+                    threshold=1,
+                    duration="5m",
+                    labels=base_labels(config, {"check": check, "service": service}),
+                    annotations={
+                        "summary": f"{service} is degraded",
+                        "description": f"{service} is not reporting Operational status.",
+                        "service_status": "{{ $labels.status }}",
+                    },
+                    **common,
+                )
+            )
+    return rules
+
+
 def desired_rules(config: dict[str, Any], folder_uid: str, datasource_uid: str) -> dict[str, dict[str, Any]]:
     rules = []
     rules.extend(host_metric_rules(config, folder_uid, datasource_uid))
     rules.extend(service_rules(config, folder_uid, datasource_uid))
     rules.extend(site_rules(config, folder_uid, datasource_uid))
     rules.extend(external_service_rules(config, folder_uid, datasource_uid))
+    rules.extend(public_status_rules(config, folder_uid, datasource_uid))
     identities = [rule.pop("_identity") for rule in rules]
     if len(set(identities)) != len(identities):
         raise GrafanaError("generated Grafana alert identities are not unique")

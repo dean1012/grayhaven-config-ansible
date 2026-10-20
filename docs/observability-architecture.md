@@ -66,6 +66,7 @@ Metrics include:
 - Cloud Monitoring public service-health status and Pacific billing-month billed
   query series;
 - Proton public service-health status for Grayhaven Systems LLC-used services;
+- selected OpenAI and DigitalOcean global/NYC3 public service-health components;
 - sanitized active Grafana IRM alert-group state;
 - HTTP, HTTPS, redirect, basic-auth, and certificate probes for configured web
   domains and the Time Tracker application.
@@ -208,7 +209,11 @@ dashboards where alerting is useful, including host metrics, service state,
 backup freshness, Ansible convergence, web and Time Tracker availability,
 development basic-auth behavior, certificate expiration,
 certificate-expiration warning, certificate trust, and external service-health
-state for Google Cloud Storage and Proton. Certificate-expiration warnings fire
+state for Google Cloud Storage, Cloud Monitoring, Proton, OpenAI, and
+DigitalOcean. Selected OpenAI and DigitalOcean components are configured in
+`observability_public_status_services` and collected by the active control node
+on its normal one-minute cycle. Collection failures have separate alerts.
+Certificate-expiration warnings fire
 when a certificate is valid but expires within 14 days; an expiry at or before
 the current time is handled by the separate expired-certificate alert. CPU,
 memory, filesystem, inode, and swap thresholds include the configured boundary

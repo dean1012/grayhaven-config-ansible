@@ -269,6 +269,9 @@
             component_name: Proton Drive
           - name: VPN
             component_name: Proton VPN
+      public_status:
+        enabled: "{{ observability_host_is_control_node }}"
+        providers: "{{ observability_public_status_services }}"
   when: observability_metrics_enabled
 
 - name: Install Grafana IRM alert-group textfile helper

@@ -428,8 +428,7 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError(f"Generated title mismatch for permanent UID {uid}")
 
     registry = config["uid_registry"]
-    if len(registry) != 99:
-        raise RuntimeError(f"Expected 99 permanent rule identities, found {len(registry)}")
+    namespace["load_uid_registry"](str(UID_REGISTRY))
     if args.live_export:
         live_rules = json.loads(args.live_export.read_text(encoding="utf-8"))
         validate_live_registry(namespace, registry, live_rules, rules)
