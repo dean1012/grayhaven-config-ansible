@@ -51,7 +51,8 @@ on repository-change poller events, or by manual invocation.
   basic authentication, per-domain htpasswd files, and certificate renewal on
   web hosts.
 - Manage the private MCP container, persistent state, HTTPS certificate, and
-  verified encrypted database backups on dedicated MCP hosts.
+  verified encrypted database backups on dedicated MCP hosts. Environment-specific
+  public and encrypted configuration is extracted from the pinned image.
 - Validate Ansible, YAML, Markdown, and shell scripts through GitHub Actions.
 
 This repository is not a general-purpose deployment template. Deploying similar

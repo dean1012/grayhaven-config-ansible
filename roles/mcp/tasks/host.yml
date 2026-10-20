@@ -137,7 +137,9 @@
       - --network=none
       - --entrypoint=cat
       - "{{ mcp_image_repository }}@{{ mcp.image_digest }}"
-      - /app/config.secrets.enc
+      - >-
+        /app/{{ 'production' if baseline_validation_environment
+        in ['prod', 'production'] else 'staging' }}/config.secrets.enc
   register: mcp_image_secrets
   changed_when: false
   no_log: true
@@ -161,7 +163,9 @@
       - --network=none
       - --entrypoint=cat
       - "{{ mcp_image_repository }}@{{ mcp.image_digest }}"
-      - /app/config.json
+      - >-
+        /app/{{ 'production' if baseline_validation_environment
+        in ['prod', 'production'] else 'staging' }}/config.json
   register: mcp_image_configuration
   changed_when: false
 

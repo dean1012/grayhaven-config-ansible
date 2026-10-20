@@ -30,6 +30,21 @@ def render(path, values):
 
 
 class MCPRoleTests(unittest.TestCase):
+    def test_image_config_paths_follow_the_deployed_environment(self):
+        tasks = yaml.safe_load((ROLE / "tasks/host.yml").read_text())
+        reads = [task for task in tasks if task["name"] in (
+            "Read the pinned image encrypted secret configuration",
+            "Read the pinned image public configuration",
+        )]
+        self.assertEqual(len(reads), 2)
+        for environment, directory in (("staging", "staging"), ("prod", "production"), ("production", "production")):
+            for task in reads:
+                path = Environment(undefined=StrictUndefined).from_string(
+                    task["ansible.builtin.command"]["argv"][-1]
+                ).render(baseline_validation_environment=environment)
+                filename = "config.secrets.enc" if "encrypted" in task["name"] else "config.json"
+                self.assertEqual(path, f"/app/{directory}/{filename}")
+
     def test_known_hosts_use_only_managed_environment_facts(self):
         hosts = [
             {
@@ -176,6 +191,9 @@ class MCPRoleTests(unittest.TestCase):
         self.assertEqual(config["secret_passphrase_path"], "/srv/mcp/secrets/config_passphrase")
         self.assertEqual(config["system_error_logpath"], "/srv/mcp/logs")
         service = render(ROLE / "templates/grayhaven-mcp.container.j2", values)
+        self.assertIn("Environment=GRAYHAVEN_MCP_ENVIRONMENT=staging", service)
+        production = render(ROLE / "templates/grayhaven-mcp.container.j2", {**values, "baseline_validation_environment": "prod"})
+        self.assertIn("Environment=GRAYHAVEN_MCP_ENVIRONMENT=production", production)
         for key in ("data", "config", "secrets", "sessions", "logs", "backup"):
             path = mcp[key + "_dir"]
             self.assertIn("Volume=" + path + ":" + path + ":Z", service)
