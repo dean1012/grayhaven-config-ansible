@@ -98,7 +98,7 @@ class MCPRoleTests(unittest.TestCase):
                 values = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
                 values.update(
                     mcp={"hostname": "mcp.example.invalid", "config_dir": str(installed), "secrets_dir": str(credentials),
-                         "data_dir": str(root / "data"), "sessions_dir": str(root / "sessions"), "logs_dir": str(root / "logs")},
+                         "data_dir": str(root / "data"), "sessions_dir": str(root / "sessions")},
                     mcp_configuration_temporary={"path": str(candidate)},
                     mcp_secrets={"config_passphrase": "new-password"},
                     baseline_validation_environment="staging",
@@ -185,7 +185,7 @@ class MCPRoleTests(unittest.TestCase):
             "mcp": {
                 "hostname": "mcp.staging.grayhavensystems.com",
                 "image_digest": "sha256:" + "a" * 64,
-                **{key + "_dir": "/var/lib/grayhaven/mcp/" + key for key in ("data", "config", "secrets", "sessions", "logs", "backup")},
+                **{key + "_dir": "/var/lib/grayhaven/mcp/" + key for key in ("data", "config", "secrets", "sessions", "backup")},
             },
             "mcp_secrets": {
                 "config_passphrase": "fixture-password",
@@ -221,7 +221,7 @@ class MCPRoleTests(unittest.TestCase):
     def test_public_config_preserves_settings_and_enforces_persistent_paths(self):
         values = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
         values.update(
-            mcp={"hostname": "mcp.staging.grayhavensystems.com", **{key + "_dir": "/var/lib/grayhaven/mcp/" + key for key in ("data", "config", "secrets", "sessions", "logs", "backup")}},
+            mcp={"hostname": "mcp.staging.grayhavensystems.com", **{key + "_dir": "/var/lib/grayhaven/mcp/" + key for key in ("data", "config", "secrets", "sessions", "backup")}},
             baseline_validation_environment="staging",
             mcp_config_overrides={
                 "polling_seconds": {"mail": 45},
@@ -256,19 +256,18 @@ class MCPRoleTests(unittest.TestCase):
         )
 
     def test_custom_paths_are_used_for_config_mounts_and_backups(self):
-        mcp = {key + "_dir": "/srv/mcp/" + key for key in ("data", "config", "secrets", "sessions", "logs", "backup")}
+        mcp = {key + "_dir": "/srv/mcp/" + key for key in ("data", "config", "secrets", "sessions", "backup")}
         mcp.update(hostname="mcp.example.invalid", image_digest="sha256:" + "a" * 64)
         values = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
         values.update(mcp=mcp, baseline_validation_environment="staging", baseline_validation_timezone="America/Chicago", mcp_repository_configuration={})
         config = json.loads(render(ROLE / "templates/config.json.j2", values))
         self.assertEqual(config["state_database_path"], "/srv/mcp/data/state.sqlite3")
         self.assertEqual(config["secret_passphrase_path"], "/srv/mcp/secrets/config_passphrase")
-        self.assertEqual(config["system_error_logpath"], "/srv/mcp/logs")
         service = render(ROLE / "templates/grayhaven-mcp.container.j2", values)
         self.assertIn("Environment=GRAYHAVEN_MCP_ENVIRONMENT=staging", service)
         production = render(ROLE / "templates/grayhaven-mcp.container.j2", {**values, "baseline_validation_environment": "prod"})
         self.assertIn("Environment=GRAYHAVEN_MCP_ENVIRONMENT=production", production)
-        for key in ("data", "config", "secrets", "sessions", "logs", "backup"):
+        for key in ("data", "config", "secrets", "sessions", "backup"):
             path = mcp[key + "_dir"]
             self.assertIn("Volume=" + path + ":" + path + ":Z", service)
         self.assertIn("GRAYHAVEN_MCP_CONFIG=/srv/mcp/config/config.json", service)
@@ -276,7 +275,7 @@ class MCPRoleTests(unittest.TestCase):
         values.update(grayhaven_role="mcp", restic_backup_homedir_archive_path="/archive", backup={"include": []})
         expression = settings[2]["ansible.builtin.set_fact"]["restic_backup_include_paths"].replace("| unique", "| unique | list")
         included = Environment(undefined=StrictUndefined).from_string(expression).render(**values)
-        for key in ("data", "config", "secrets", "sessions", "logs", "backup"):
+        for key in ("data", "config", "secrets", "sessions", "backup"):
             self.assertIn(mcp[key + "_dir"], included)
 
     def test_firewall_limits_mcp_to_bastion_without_changing_web_sources(self):
@@ -302,12 +301,14 @@ class MCPRoleTests(unittest.TestCase):
     def test_proxy_is_https_only_and_supports_event_streaming(self):
         proxy = render(
             ROLE / "templates/grayhaven-mcp.conf.j2",
-            {"mcp": {"hostname": "mcp.example.invalid"}, "mcp_host_port": 8787},
+            {"mcp": {"hostname": "mcp.example.invalid"}, "mcp_host_port": 8787,
+             "mcp_repository_configuration": {"file_transfers": {"download_path": "/fixture-downloads"}},
+             "mcp_config_overrides": {}},
         )
         self.assertIn("listen 443 ssl;", proxy)
         self.assertNotIn("listen 80", proxy)
         self.assertIn("proxy_buffering off;", proxy)
-        self.assertIn("access_log off;", proxy)
+        self.assertIn("access_log /var/log/nginx/mcp.access.log grayhaven_mcp;", proxy)
 
     def test_backup_snapshot_is_required_and_failed_output_is_not_published(self):
         tasks = yaml.safe_load(

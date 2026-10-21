@@ -149,7 +149,7 @@
       redirect_http: false
       health_check: mcp_health
       health_url: "http://127.0.0.1:{{ mcp_host_port | default(8787) }}{{ mcp_health_path | default('/healthz') }}"
-      nginx_log_names: [error]
+      nginx_log_names: [access, error]
   when:
     - mcp is defined
     - mcp is mapping

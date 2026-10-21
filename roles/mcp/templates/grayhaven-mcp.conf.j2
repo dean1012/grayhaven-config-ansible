@@ -1,4 +1,17 @@
-# Managed by Ansible.
+# Managed by Ansible. Local changes will be overwritten.
+
+{% set download_path = (mcp_repository_configuration | combine(mcp_config_overrides, recursive=true)).file_transfers.download_path %}
+map $uri $grayhaven_mcp_safe_path {
+    default $uri;
+    "~^/connect/" /connect/[redacted];
+    "~^{{ download_path }}/" {{ download_path }}/[redacted];
+}
+
+log_format grayhaven_mcp
+    '$remote_addr - $remote_user [$time_local] '
+    '"$request_method $grayhaven_mcp_safe_path $server_protocol" '
+    '$status $body_bytes_sent "-" "$http_user_agent"';
+
 server {
     listen 443 ssl;
     server_name {{ mcp.hostname }};
@@ -8,8 +21,8 @@ server {
     ssl_ciphers PROFILE=SYSTEM;
     ssl_session_cache shared:SSL:10m;
     add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
-    # OAuth queries and temporary transfer links must not enter access logs.
-    access_log off;
+    # Omit query strings, transfer capabilities, approval IDs, and Referer URLs.
+    access_log /var/log/nginx/mcp.access.log grayhaven_mcp;
     error_log /var/log/nginx/mcp.error.log warn;
     client_max_body_size 40m;
     location / {
