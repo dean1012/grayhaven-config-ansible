@@ -24,6 +24,7 @@ PROPERTIES = (
     "NextElapseUSecRealtime",
     "NextElapseUSecMonotonic",
     "LastTriggerUSec",
+    "TimersCalendar",
 )
 
 
@@ -99,6 +100,7 @@ def inspect(components: tuple[str, ...], units: dict[str, str] | None = None) ->
             and timer.get("UnitFileState") == "enabled"
             and timer.get("Result") == "success"
             and timer.get("NeedDaemonReload") == "no"
+            and bool(timer.get("TimersCalendar"))
         )
         armed = False
         if timer.get("LoadState") == "loaded":
@@ -118,6 +120,8 @@ def inspect(components: tuple[str, ...], units: dict[str, str] | None = None) ->
             and timer_ok
             and ((timer.get("SubState") == "waiting" and armed) or executing)
         )
+    for record in records:
+        record.pop("TimersCalendar", None)
     return {"units": records, "components": checks, "healthy": all(checks.values())}
 
 
