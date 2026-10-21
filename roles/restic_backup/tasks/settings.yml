@@ -68,7 +68,7 @@
           + ([timetracker.backup_dir] if grayhaven_role == 'web' else [])
           + (
               [mcp.data_dir, mcp.config_dir, mcp.secrets_dir,
-               mcp.sessions_dir, mcp.logs_dir, mcp.backup_dir]
+               mcp.sessions_dir, mcp.backup_dir]
               if grayhaven_role == 'mcp' else []
             )
           +

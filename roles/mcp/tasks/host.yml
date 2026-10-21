@@ -25,10 +25,6 @@
       - mcp.sessions_dir != '/'
       - "'..' not in mcp.sessions_dir.split('/')"
       - "'.' not in mcp.sessions_dir.split('/')"
-      - mcp.logs_dir is match('^/[a-zA-Z0-9_./-]+$')
-      - mcp.logs_dir != '/'
-      - "'..' not in mcp.logs_dir.split('/')"
-      - "'.' not in mcp.logs_dir.split('/')"
       - mcp.backup_dir is match('^/[a-zA-Z0-9_./-]+$')
       - mcp.backup_dir != '/'
       - "'..' not in mcp.backup_dir.split('/')"
@@ -83,7 +79,6 @@
     - "{{ mcp.config_dir }}"
     - "{{ mcp.secrets_dir }}"
     - "{{ mcp.sessions_dir }}"
-    - "{{ mcp.logs_dir }}"
     - "{{ mcp.backup_dir }}"
     - "{{ mcp_root }}/.ssh"
 

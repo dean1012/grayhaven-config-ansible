@@ -95,7 +95,7 @@ class MCPMonitoringTests(unittest.TestCase):
                 "domain": "mcp.example.invalid",
                 "aliases": [],
                 "dev_domain": "",
-                "nginx_log_names": ["error"],
+                "nginx_log_names": ["access", "error"],
                 "redirect_http": False,
                 "health_url": "http://127.0.0.1:8787/healthz",
                 "health_check": "mcp_health",

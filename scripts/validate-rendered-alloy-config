@@ -100,7 +100,7 @@ def fixture_context(role: str = "web") -> dict[str, object]:
                        observability_short_hostname="grayhaven-core-prod-mcp-01")
         context["observability_web_sites"].append({
             "root_name":"mcp", "kind":"application", "role":"mcp", "domain":"mcp.grayhavensystems.com",
-            "aliases":[], "dev_domain":"", "nginx_log_names":["error"], "redirect_http":False,
+            "aliases":[], "dev_domain":"", "nginx_log_names":["access", "error"], "redirect_http":False,
             "health_url":"http://127.0.0.1:8787/healthz", "health_check":"mcp_health",
         })
     return context

@@ -159,10 +159,17 @@ The log set is intentionally targeted:
 
 - Nginx access and error logs for configured domains;
 - Time Tracker Nginx logs with shared-report tokens redacted at the source;
+- MCP Nginx access and error logs with transfer capabilities and query strings
+  redacted;
 - audit logs;
 - Certbot logs;
 - systemd journal entries, including sudo and `grayhaven-root-command` command
-  audit entries and structured Time Tracker application events.
+  audit entries and structured Time Tracker application events, MCP Systems
+  emissions, integration health, and collector status.
+
+MCP operational logs use separate structured journal loggers. They do not record
+tool arguments or results. Journal retention and the existing nginx logrotate
+policy manage local cleanup; MCP has no separate application log directory.
 
 Cloud-init logs are excluded. Shipped log lines pass through a defensive
 redaction stage for common secret-like key names before leaving the host, but

@@ -950,6 +950,22 @@ loki.process "grayhaven_dashboard_system_errors" {
 }
 
 loki.process "grayhaven_redact" {
+{% if grayhaven_role == "mcp" %}
+  // Error logs can contain original request URLs; scrub capabilities and queries.
+  stage.match {
+    selector = `{job=~"nginx_access|nginx_error"}`
+
+    stage.replace {
+      expression = "/([A-Za-z0-9_-]{32,})"
+      replace    = "<redacted>"
+    }
+
+    stage.replace {
+      expression = {{ '(\?[^\s"<>]+)' | to_json }}
+      replace    = "<redacted>"
+    }
+  }
+{% endif %}
   stage.replace {
     expression = "(?i)(?:password|passwd|token|secret|private_key)\\s*[:=]\\s*(\\S+)"
     replace    = "<redacted>"
