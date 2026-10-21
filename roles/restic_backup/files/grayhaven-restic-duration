@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""Measure elapsed Restic operation time without losing fractional seconds."""
+
+from __future__ import annotations
+
+import argparse
+import time
+
+
+def elapsed_seconds(start_ns: int) -> str:
+    if start_ns < 0:
+        raise ValueError("Start time must be nonnegative")
+    elapsed_ns = time.monotonic_ns() - start_ns
+    if elapsed_ns < 0:
+        raise ValueError("Start time must not be in the future")
+    seconds, nanoseconds = divmod(elapsed_ns, 1_000_000_000)
+    return f"{seconds}.{nanoseconds:09d}"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("start_ns", type=int, nargs="?")
+    args = parser.parse_args(argv)
+    if args.start_ns is None:
+        print(time.monotonic_ns())
+    else:
+        try:
+            print(elapsed_seconds(args.start_ns))
+        except ValueError as error:
+            parser.error(str(error))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - command-line entrypoint
+    raise SystemExit(main())

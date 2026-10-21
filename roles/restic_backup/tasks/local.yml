@@ -86,6 +86,14 @@
   when: restic_backup_remote_gcs_enabled | bool
   no_log: true
 
+- name: Install restic duration helper
+  ansible.builtin.copy:
+    src: grayhaven-restic-duration
+    dest: /usr/local/sbin/grayhaven-restic-duration
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Install local restic backup script
   ansible.builtin.copy:
     dest: /usr/local/sbin/grayhaven-restic-backup
@@ -252,9 +260,8 @@
         local repository=$1
         local label=$2
         local backup_start
-        local backup_end
 
-        backup_start="$(date +%s)"
+        backup_start="$(/usr/local/sbin/grayhaven-restic-duration)"
 
         restic \
           --repo "$repository" \
@@ -273,8 +280,9 @@
           --group-by host \
           --prune
 
-        backup_end="$(date +%s)"
-        repository_backup_duration_seconds["$label"]=$((backup_end - backup_start))
+        repository_backup_duration_seconds["$label"]="$(
+          /usr/local/sbin/grayhaven-restic-duration "$backup_start"
+        )"
         if [[ "$label" == "local" ]]; then
           repository_restore_size_bytes["$label"]="$(
             restic \
@@ -452,9 +460,8 @@
         local repository=$1
         local label=$2
         local check_start
-        local check_end
 
-        check_start="$(date +%s)"
+        check_start="$(/usr/local/sbin/grayhaven-restic-duration)"
 
         restic \
           --repo "$repository" \
@@ -462,8 +469,9 @@
           check \
           --read-data-subset=5%
 
-        check_end="$(date +%s)"
-        repository_check_duration_seconds["$label"]=$((check_end - check_start))
+        repository_check_duration_seconds["$label"]="$(
+          /usr/local/sbin/grayhaven-restic-duration "$check_start"
+        )"
         successful_repositories+=("$label")
       }
 
