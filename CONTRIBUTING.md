@@ -99,6 +99,7 @@ python3 -m py_compile \
   files/grayhaven-refresh-motd \
   files/grayhaven-ansible-automation-status \
   roles/deploy_websites/files/grayhaven-website-deploy \
+  roles/restic_backup/files/grayhaven-restic-duration \
   roles/observability/files/grayhaven-grafana-alert-sync \
   roles/observability/files/grayhaven-irm-alert-groups-textfile \
   roles/observability/files/grayhaven-observability-textfile \

@@ -60,7 +60,8 @@ Metrics include:
 - Ansible convergence status;
 - fail2ban jail status and ban counts;
 - Time Tracker service state and authentication-ban status;
-- restic backup, integrity-check, retention, and restore-size status;
+- restic backup, integrity-check, retention, and restore-size status, with
+  subsecond precision for backup and integrity-check durations;
 - Google Cloud Storage public service-health status, Pacific billing-month API
   operation totals, and daily stale restic bucket state;
 - Cloud Monitoring public service-health status and Pacific billing-month billed
