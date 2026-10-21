@@ -88,6 +88,15 @@ normal runner service. Manual convergences therefore update the comparison
 without a separate poller cache. Existing `config.ref` and `vault.ref` files are
 unused. The daily runner timer remains a convergence safety net.
 
+The poller uses a five-minute calendar timer so its next execution does not
+rely on retained service activation history. Convergence reloads unit files,
+restarts changed timers, repairs unarmed timers, and verifies enabled schedules
+using systemd's integer clock values. An elapsed timer without a future
+execution fails verification. A timer whose oneshot is currently executing is
+valid; verification never restarts the runner service from inside convergence.
+`grayhaven-ansible-automation-status` provides the same read-only health result
+to the MCP SSH integration.
+
 The poller retries transient GitHub metadata lookup failures before failing the
 poller service. Persistent lookup failures remain visible in systemd and the
 poller journal.

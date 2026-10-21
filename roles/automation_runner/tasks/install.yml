@@ -24,6 +24,7 @@
     owner: root
     group: root
     mode: "0644"
+  register: automation_runner_timer_unit
   when: grayhaven_role == "bastion"
 
 - name: Install bastion poller executable
@@ -51,4 +52,14 @@
     owner: root
     group: root
     mode: "0644"
+  register: automation_runner_poller_timer_unit
+  when: grayhaven_role == "bastion"
+
+- name: Install bastion automation schedule check
+  ansible.builtin.copy:
+    src: "{{ playbook_dir | dirname }}/files/grayhaven-ansible-automation-status"
+    dest: /usr/local/sbin/grayhaven-ansible-automation-status
+    owner: root
+    group: root
+    mode: "0755"
   when: grayhaven_role == "bastion"

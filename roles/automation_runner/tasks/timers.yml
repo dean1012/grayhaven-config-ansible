@@ -3,7 +3,11 @@
   ansible.builtin.systemd_service:
     name: grayhaven-ansible-runner.timer
     enabled: "{{ automation_runner_effective_is_control_node }}"
-    state: "{{ 'started' if automation_runner_effective_is_control_node else 'stopped' }}"
+    state: >-
+      {{
+        ('restarted' if automation_runner_timer_unit.changed else 'started')
+        if automation_runner_effective_is_control_node else 'stopped'
+      }}
     daemon_reload: true
   when: grayhaven_role == "bastion"
   vars:
@@ -18,9 +22,32 @@
   ansible.builtin.systemd_service:
     name: grayhaven-ansible-poller.timer
     enabled: "{{ automation_runner_effective_is_control_node }}"
-    state: "{{ 'started' if automation_runner_effective_is_control_node else 'stopped' }}"
+    state: >-
+      {{
+        ('restarted' if automation_runner_poller_timer_unit.changed else 'started')
+        if automation_runner_effective_is_control_node else 'stopped'
+      }}
     daemon_reload: true
   when: grayhaven_role == "bastion"
+  vars:
+    automation_runner_effective_is_control_node: >-
+      {{
+        automation_runner_bootstrap_is_control_node
+        if automation_runner_bootstrap_is_control_node is defined
+        else 'control-node' in (do_tags | default([]))
+      }}
+
+- name: Repair and verify control bastion automation schedules
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/grayhaven-ansible-automation-status
+      - --repair
+  register: automation_runner_schedule_check
+  changed_when: (automation_runner_schedule_check.stdout | from_json).changed
+  when:
+    - grayhaven_role == "bastion"
+    - automation_runner_effective_is_control_node
+    - not ansible_check_mode
   vars:
     automation_runner_effective_is_control_node: >-
       {{

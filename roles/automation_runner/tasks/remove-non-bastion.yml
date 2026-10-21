@@ -6,6 +6,7 @@
   loop:
     - /usr/local/sbin/grayhaven-ansible-runner
     - /usr/local/sbin/grayhaven-ansible-poller
+    - /usr/local/sbin/grayhaven-ansible-automation-status
     - /etc/systemd/system/grayhaven-ansible-runner.service
     - /etc/systemd/system/grayhaven-ansible-runner.timer
     - /etc/systemd/system/grayhaven-ansible-poller.service
