@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Inspect and, during convergence, repair control-node automation timers."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import time
+
+
+COMPONENTS = ("poller", "runner")
+INFINITY = 2**64 - 1
+PROPERTIES = (
+    "Id",
+    "LoadState",
+    "ActiveState",
+    "SubState",
+    "UnitFileState",
+    "Result",
+    "ExecMainStatus",
+    "NeedDaemonReload",
+    "NextElapseUSecRealtime",
+    "NextElapseUSecMonotonic",
+    "LastTriggerUSec",
+    "TimersCalendar",
+)
+
+
+def command(arguments: list[str]) -> str:
+    result = subprocess.run(
+        arguments, check=True, capture_output=True, text=True, timeout=30
+    )
+    return result.stdout.strip()
+
+
+def next_elapse(unit: str, clock: str) -> int:
+    # D-Bus exposes integer microseconds; systemctl formats the same values as
+    # locale-dependent dates/durations and prints infinity as ordinary text.
+    path = "".join(
+        character
+        if character.isascii() and character.isalnum()
+        else f"_{ord(character):02x}"
+        for character in unit
+    )
+    value = command(
+        [
+            "/usr/bin/busctl",
+            "get-property",
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1/unit/" + path,
+            "org.freedesktop.systemd1.Timer",
+            "NextElapseUSec" + clock,
+        ]
+    ).split()
+    if len(value) != 2 or value[0] != "t":
+        raise ValueError("Invalid timer clock response")
+    result = int(value[1])
+    if not 0 <= result <= INFINITY:
+        raise ValueError("Invalid timer clock value")
+    return result
+
+
+def inspect(components: tuple[str, ...], units: dict[str, str] | None = None) -> dict:
+    units = units or {part: "grayhaven-ansible-" + part for part in COMPONENTS}
+    names = [
+        units[part] + suffix for part in components for suffix in (".timer", ".service")
+    ]
+    raw = command(
+        [
+            "/usr/bin/systemctl",
+            "show",
+            "--no-pager",
+            "--property=" + ",".join(PROPERTIES),
+            *names,
+        ]
+    )
+    records = [
+        dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+        for block in raw.split("\n\n")
+        if block.strip()
+    ]
+    by_name = {unit.get("Id"): unit for unit in records}
+    checks = {}
+    for part in components:
+        prefix = units[part]
+        timer = by_name.get(prefix + ".timer", {})
+        service = by_name.get(prefix + ".service", {})
+        service_ok = (
+            service.get("LoadState") == "loaded"
+            and service.get("ActiveState") in ("inactive", "active", "activating")
+            and service.get("Result") == "success"
+            and service.get("ExecMainStatus") == "0"
+            and service.get("NeedDaemonReload") == "no"
+        )
+        timer_ok = (
+            timer.get("LoadState") == "loaded"
+            and timer.get("ActiveState") == "active"
+            and timer.get("UnitFileState") == "enabled"
+            and timer.get("Result") == "success"
+            and timer.get("NeedDaemonReload") == "no"
+            and bool(timer.get("TimersCalendar"))
+        )
+        armed = False
+        if timer.get("LoadState") == "loaded":
+            realtime = next_elapse(prefix + ".timer", "Realtime")
+            monotonic = next_elapse(prefix + ".timer", "Monotonic")
+            armed = (
+                time.time_ns() // 1000 < realtime < INFINITY
+                or time.monotonic_ns() // 1000 < monotonic < INFINITY
+            )
+        # A oneshot may legitimately be executing (including this convergence).
+        # Its calendar timer becomes waiting again once that service completes.
+        executing = timer.get("SubState") == "running" and service.get(
+            "ActiveState"
+        ) in ("active", "activating")
+        checks[part] = bool(
+            service_ok
+            and timer_ok
+            and ((timer.get("SubState") == "waiting" and armed) or executing)
+        )
+    for record in records:
+        record.pop("TimersCalendar", None)
+    return {"units": records, "components": checks, "healthy": all(checks.values())}
+
+
+def evaluate(
+    components: tuple[str, ...],
+    repair: bool = False,
+    units: dict[str, str] | None = None,
+) -> dict:
+    units = units or {part: "grayhaven-ansible-" + part for part in COMPONENTS}
+    result = inspect(components, units)
+    changed = False
+    if repair:
+        for part, healthy in result["components"].items():
+            if not healthy:
+                # Restart only timers. Never restart or wait for the runner
+                # service from inside its own convergence.
+                command(
+                    [
+                        "/usr/bin/systemctl",
+                        "restart",
+                        units[part] + ".timer",
+                    ]
+                )
+                changed = True
+        if changed:
+            result = inspect(components, units)
+    return {**result, "changed": changed}
+
+
+def unit_base(value: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:@-]*", value):
+        raise argparse.ArgumentTypeError("Invalid automation unit name")
+    return value
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--component", choices=(*COMPONENTS, "both"), default="both")
+    parser.add_argument("--repair", action="store_true")
+    for part in COMPONENTS:
+        parser.add_argument(
+            "--" + part + "-unit", type=unit_base, default="grayhaven-ansible-" + part
+        )
+    args = parser.parse_args(argv)
+    units = {part: getattr(args, part + "_unit") for part in COMPONENTS}
+    components = COMPONENTS if args.component == "both" else (args.component,)
+    try:
+        result = evaluate(components, args.repair, units)
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        result = {
+            "healthy": False,
+            "changed": False,
+            "error": "Automation schedule check failed: " + str(exc),
+        }
+    print(json.dumps(result))
+    return 1 if args.repair and not result["healthy"] else 0
+
+
+if __name__ == "__main__":  # pragma: no cover - process entry point
+    raise SystemExit(main())

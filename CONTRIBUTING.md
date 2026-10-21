@@ -97,6 +97,7 @@ python3 -m py_compile \
   files/grayhaven-gcs-restic-bucket-cleanup \
   files/grayhaven-reboot-notify \
   files/grayhaven-refresh-motd \
+  files/grayhaven-ansible-automation-status \
   roles/deploy_websites/files/grayhaven-website-deploy \
   roles/observability/files/grayhaven-grafana-alert-sync \
   roles/observability/files/grayhaven-irm-alert-groups-textfile \
