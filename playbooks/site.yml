@@ -122,30 +122,48 @@
           }}
       run_once: true
 
+    - name: Record hosts requiring reboot after successful convergence  # noqa: run-once[task]
+      ansible.builtin.set_fact:
+        automation_notifications_reboot_targets: >-
+          {{
+            automation_notifications_success_targets
+            | zip(
+                automation_notifications_success_targets
+                | map('extract', hostvars, 'host_status_reboot_required')
+              )
+            | selectattr('1', 'defined')
+            | selectattr('1', 'equalto', true)
+            | map('first')
+            | list
+          }}
+      run_once: true
+
+    - name: Record hosts not requiring reboot after successful convergence  # noqa: run-once[task]
+      ansible.builtin.set_fact:
+        automation_notifications_completed_targets: >-
+          {{
+            automation_notifications_success_targets
+            | reject('in', automation_notifications_reboot_targets)
+            | list
+          }}
+      run_once: true
+
     - name: Notify Discord that configuration completed  # noqa: run-once[task]
       ansible.builtin.include_role:
         name: automation_notifications
       vars:
-        automation_notifications_reboot_required: >-
-          {{
-            automation_notifications_success_targets
-            | map('extract', hostvars, 'host_status_reboot_required')
-            | select('defined')
-            | select('equalto', true)
-            | list
-            | length > 0
-          }}
-        automation_notifications_target: "{{ automation_notifications_success_targets | join('\n') }}"
-        automation_notifications_title: >-
-          {{
-            'Ansible Configuration Completed - Reboot Required'
-            if automation_notifications_reboot_required
-            else 'Ansible Configuration Completed'
-          }}
-        automation_notifications_color: >-
-          {{
-            automation_notifications_colors.warning
-            if automation_notifications_reboot_required
-            else automation_notifications_colors.success
-          }}
+        automation_notifications_target: "{{ automation_notifications_completed_targets | join('\n') }}"
+        automation_notifications_title: Ansible Configuration Completed
+        automation_notifications_color: "{{ automation_notifications_colors.success }}"
+      when: automation_notifications_completed_targets | length > 0
+      run_once: true
+
+    - name: Notify Discord that configuration completed with reboot required  # noqa: run-once[task]
+      ansible.builtin.include_role:
+        name: automation_notifications
+      vars:
+        automation_notifications_target: "{{ automation_notifications_reboot_targets | join('\n') }}"
+        automation_notifications_title: Ansible Configuration Completed - Reboot Required
+        automation_notifications_color: "{{ automation_notifications_colors.warning }}"
+      when: automation_notifications_reboot_targets | length > 0
       run_once: true
