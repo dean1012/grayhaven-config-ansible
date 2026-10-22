@@ -894,14 +894,14 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
         ),
         alert_rule(
             identity=service_rule_identity("Google Cloud Storage", "gcs_service_status"),
-            title="GCS Degraded for >= 5 min",
+            title="GCS Degraded for >= 15 min",
             expression=(
                 "max by (client, environment, location, product, project_id, status) "
                 f"(grayhaven_gcs_service_status{{{selector}}})"
             ),
             evaluator_type="lt",
             threshold=1,
-            duration="5m",
+            duration="15m",
             labels=base_labels(
                 config,
                 {
@@ -1083,14 +1083,14 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
             identity=service_rule_identity(
                 "Google Cloud Monitoring", "google_monitoring_service_status"
             ),
-            title="Google Monitoring Degraded for >= 5 min",
+            title="Google Monitoring Degraded for >= 15 min",
             expression=(
                 "max by (client, environment, location, product, project_id, status) "
                 f"(grayhaven_google_monitoring_service_status{{{selector}}})"
             ),
             evaluator_type="lt",
             threshold=1,
-            duration="5m",
+            duration="15m",
             labels=base_labels(
                 config,
                 {
@@ -1203,7 +1203,7 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
                 identity=service_rule_identity(
                     f"Proton {service_name}", "proton_service_status"
                 ),
-                title=f"Proton {service_name} Degraded for >= 5 min",
+                title=f"Proton {service_name} Degraded for >= 15 min",
                 expression=(
                     "max by (client, environment, provider, service, component, status) "
                     f"(grayhaven_proton_service_status{{{selector},"
@@ -1212,7 +1212,7 @@ def external_service_rules(config: dict[str, Any], folder_uid: str, datasource_u
                 ),
                 evaluator_type="lt",
                 threshold=1,
-                duration="5m",
+                duration="15m",
                 labels=base_labels(
                     config,
                     {
@@ -1274,14 +1274,14 @@ def public_status_rules(config: dict[str, Any], folder_uid: str, datasource_uid:
             rules.append(
                 alert_rule(
                     identity=service_rule_identity(service, check),
-                    title=f"{service} Degraded for >= 5 min",
+                    title=f"{service} Degraded for >= 15 min",
                     expression=(
                         "max by (client, environment, provider, service, component, status) "
                         f'(grayhaven_{check}{{{selector},component="{promql_string(component["id"])}"}})'
                     ),
                     evaluator_type="lt",
                     threshold=1,
-                    duration="5m",
+                    duration="15m",
                     labels=base_labels(config, {"check": check, "service": service}),
                     annotations={
                         "summary": f"{service} is degraded",
