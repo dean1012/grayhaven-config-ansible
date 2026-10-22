@@ -161,8 +161,10 @@ smaller task boundaries. The baseline covers:
 - root-only Discord webhook configuration for post-reboot notifications;
 - local encrypted restic backups.
 
-The playbook records whether a reboot is required, displays that status in the
-login MOTD, and includes it in the completion notification. A managed
+The playbook records whether each host requires a reboot and displays only that
+host's status in the login MOTD. Separate completion notifications list hosts
+with and without a required reboot using the warning and success colors
+respectively. Empty host lists do not produce a notification. A managed
 `grayhaven-refresh-motd.service` refreshes the MOTD at boot so a completed
 reboot clears the login warning before the next convergence run. Ansible does
 not reboot servers automatically.
