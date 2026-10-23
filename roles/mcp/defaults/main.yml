@@ -17,5 +17,5 @@ mcp_certbot_credentials_file: /etc/letsencrypt/digitalocean.ini
 mcp_certbot_marker_dir: /etc/grayhaven/certbot
 mcp_health_path: /healthz
 mcp_readiness_path: /readyz
-mcp_maintenance_cpu_quota_percent: 40
+mcp_maintenance_cpu_quota_percent: 20
 mcp_maintenance_cpu_weight: 20
