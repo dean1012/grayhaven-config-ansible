@@ -55,6 +55,8 @@ on repository-change poller events, or by manual invocation.
   public and encrypted configuration is downloaded from the private repository’s
   `main` branch using the existing registry token with `repo` and `read:packages`
   scopes. Both files use the same commit and are validated before installation.
+  Remote maintenance uses a bounded automation-user CPU quota and weight on MCP
+  hosts, configurable through the MCP role defaults.
 - Validate Ansible, YAML, Markdown, and shell scripts through GitHub Actions.
 
 This repository is not a general-purpose deployment template. Deploying similar

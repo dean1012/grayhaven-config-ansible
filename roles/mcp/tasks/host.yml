@@ -39,6 +39,70 @@
     quiet: true
   no_log: true
 
+- name: Validate MCP maintenance resource settings
+  ansible.builtin.assert:
+    that:
+      - mcp_maintenance_cpu_quota_percent | int >= 1
+      - mcp_maintenance_cpu_quota_percent | int <= 90
+      - mcp_maintenance_cpu_weight | int >= 1
+      - mcp_maintenance_cpu_weight | int <= 10000
+    fail_msg: MCP maintenance CPU quota or weight is outside the supported range.
+
+- name: Resolve the MCP automation account
+  ansible.builtin.getent:
+    database: passwd
+    key: ansible
+
+- name: Create the MCP maintenance slice configuration directory
+  ansible.builtin.file:
+    path: "/etc/systemd/system/user-{{ ansible_facts.getent_passwd.ansible[1] }}.slice.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure MCP automation CPU resources
+  ansible.builtin.template:
+    src: maintenance-resources.conf.j2
+    dest: "/etc/systemd/system/user-{{ ansible_facts.getent_passwd.ansible[1] }}.slice.d/90-grayhaven-maintenance.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  register: mcp_maintenance_resources
+
+# The active SSH slice must be constrained before the remaining maintenance tasks.
+- name: Load MCP maintenance slice configuration  # noqa: no-handler
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: mcp_maintenance_resources.changed
+
+- name: Read current MCP automation CPU resources
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - "user-{{ ansible_facts.getent_passwd.ansible[1] }}.slice"
+      - --property=CPUWeight,CPUQuotaPerSecUSec
+  register: mcp_maintenance_current
+  changed_when: false
+  check_mode: false
+
+- name: Apply MCP automation CPU resources to the active slice
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - set-property
+      - --runtime
+      - "user-{{ ansible_facts.getent_passwd.ansible[1] }}.slice"
+      - "CPUQuota={{ mcp_maintenance_cpu_quota_percent }}%"
+      - "CPUWeight={{ mcp_maintenance_cpu_weight }}"
+  changed_when: true
+  when: >-
+    mcp_maintenance_resources.changed or
+    ('CPUWeight=' ~ mcp_maintenance_cpu_weight) not in mcp_maintenance_current.stdout_lines or
+    ('CPUQuotaPerSecUSec=' ~ (mcp_maintenance_cpu_quota_percent | int * 10) ~ 'ms')
+    not in mcp_maintenance_current.stdout_lines
+
 - name: Install MCP host packages
   ansible.builtin.dnf:
     name:
