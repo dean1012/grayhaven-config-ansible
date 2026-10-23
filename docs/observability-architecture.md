@@ -225,7 +225,9 @@ Certificate-expiration warnings fire
 when a certificate is valid but expires within 14 days; an expiry at or before
 the current time is handled by the separate expired-certificate alert. CPU,
 memory, filesystem, inode, and swap thresholds include the configured boundary
-exactly. CPU alerts require five minutes at or above threshold before firing.
+exactly. CPU alerts use a ten-minute average for MCP hosts and a five-minute
+average for other hosts. They require five minutes at or above threshold before
+firing.
 External service-health alerts require fifteen minutes of degradation before
 firing. Alert rules send to the configured Grafana IRM contact point.
 

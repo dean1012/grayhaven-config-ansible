@@ -466,13 +466,14 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 )
             )
 
+        cpu_minutes = 10 if host["role"] == "mcp" else 5
         rules.append(
             alert_rule(
                 identity=host_rule_identity(host, "cpu_utilization"),
                 title=f"{host['short_hostname']} CPU utilization",
                 expression=(
                     "100 * (1 - avg by (host, environment, role, project, client) "
-                    f'(rate(node_cpu_seconds_total{{{host_selector(host["fqdn"])},mode="idle"}}[5m])))'
+                    f'(rate(node_cpu_seconds_total{{{host_selector(host["fqdn"])},mode="idle"}}[{cpu_minutes}m])))'
                 ),
                 evaluator_type="gte",
                 threshold=float(thresholds["cpu_percent"]),
@@ -481,7 +482,7 @@ def host_metric_rules(config: dict[str, Any], folder_uid: str, datasource_uid: s
                 annotations={
                     "summary": "CPU utilization is high",
                     "description": (
-                        f"{host['fqdn']} 5-minute average CPU utilization is >= "
+                        f"{host['fqdn']} {cpu_minutes}-minute average CPU utilization is >= "
                         f"{thresholds['cpu_percent']}% for >= 5 minutes."
                     ),
                     "check_value": "{{ humanize $values.A.Value }}%",

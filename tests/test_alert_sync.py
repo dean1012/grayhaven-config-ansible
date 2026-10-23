@@ -54,6 +54,49 @@ def complete_config() -> dict[str, object]:
 
 
 class AlertRuleTests(unittest.TestCase):
+    def test_host_role_selects_cpu_window_without_changing_threshold_or_pending(self) -> None:
+        checks = (
+            "metrics_data", "cpu_utilization", "memory_utilization",
+            "filesystem_space", "filesystem_inode", "swap_utilization",
+            "restic_stale_backup",
+        )
+        for role, minutes in (("mcp", 10), ("web", 5), ("bastion", 5)):
+            for threshold in (37.5, 91):
+                with self.subTest(role=role, threshold=threshold):
+                    host = {
+                        "role": role, "fqdn": f"{role}.example.invalid",
+                        "short_hostname": role, "project": "example",
+                    }
+                    config = {
+                        "hosts": [host], "sites": [],
+                        "labels": {"client": "example", "environment": "test"},
+                        "grafana": {
+                            "evaluation_group": "example", "contact_point": "example",
+                        },
+                        "thresholds": {
+                            "cpu_percent": threshold, "memory_percent": 75,
+                            "filesystem_percent": 85, "filesystem_inode_percent": 85,
+                            "swap_percent": 75, "restic_stale_seconds": 3_600,
+                        },
+                        "uid_registry": {
+                            alert_sync.host_rule_identity(host, check):
+                            f"00000000-0000-4000-8000-{index:012d}"
+                            for index, check in enumerate(checks, 1)
+                        },
+                    }
+                    rules = alert_sync.host_metric_rules(config, "folder", "prom")
+                    cpu = next(rule for rule in rules
+                               if rule["labels"]["check"] == "cpu_utilization")
+                    self.assertIn(f"[{minutes}m]", cpu["data"][0]["model"]["expr"])
+                    self.assertIn(f"{minutes}-minute", cpu["annotations"]["description"])
+                    self.assertEqual(cpu["data"][1]["model"]["conditions"][0]["evaluator"],
+                                     {"type": "gte", "params": [threshold]})
+                    self.assertEqual(cpu["for"], "5m")
+                    self.assertEqual(cpu["uid"], config["uid_registry"][
+                        alert_sync.host_rule_identity(host, "cpu_utilization")
+                    ])
+                    self.assertEqual(cpu["labels"]["role"], role)
+
     def test_pending_period_floor_preserves_longer_periods(self) -> None:
         arguments = {
             "identity": "test:example",
