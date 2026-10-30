@@ -42,17 +42,18 @@ class MCPRoleTests(unittest.TestCase):
                          "Bearer {{ mcp_secrets.registry_token }}")
         self.assertEqual(download["ansible.builtin.uri"]["unredirected_headers"], ["Authorization"])
         defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
+        example_api_url = "https://api.example.invalid/repos/example-org/example-project"
         for environment, directory in (("staging", "staging"), ("prod", "production"), ("production", "production")):
             selected = Environment(undefined=StrictUndefined).from_string(
                 defaults["mcp_configuration_environment"]
             ).render(baseline_validation_environment=environment)
             for filename in download["loop"]:
                 url = Environment(undefined=StrictUndefined).from_string(download["ansible.builtin.uri"]["url"]).render(
-                    mcp_configuration_api_url=defaults["mcp_configuration_api_url"],
+                    mcp_configuration_api_url=example_api_url,
                     mcp_configuration_environment=selected, item=filename,
                     mcp_configuration_commit={"json": {"sha": "a" * 40}},
                 )
-                self.assertEqual(url, f"https://api.github.com/repos/dean1012/grayhaven-mcp/contents/{directory}/{filename}?ref=" + "a" * 40)
+                self.assertEqual(url, f"{example_api_url}/contents/{directory}/{filename}?ref=" + "a" * 40)
         names = [task["name"] for task in prepare["block"]]
         self.assertLess(names.index("Validate both candidate MCP configuration files using the approved image"),
                         names.index("Persist validated MCP configuration"))

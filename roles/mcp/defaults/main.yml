@@ -4,8 +4,8 @@ mcp_group: mcp
 mcp_uid: 778
 mcp_gid: 778
 mcp_root: /var/lib/grayhaven/mcp
-mcp_image_repository: ghcr.io/dean1012/grayhaven-mcp
-mcp_configuration_api_url: https://api.github.com/repos/dean1012/grayhaven-mcp
+mcp_image_repository: ghcr.io/grayhavensystemsllc/grayhaven-mcp
+mcp_configuration_api_url: https://api.github.com/repos/grayhavensystemsllc/grayhaven-mcp
 mcp_configuration_environment: >-
   {{ 'production' if baseline_validation_environment in ['prod', 'production'] else 'staging' }}
 mcp_container_name: grayhaven-mcp
