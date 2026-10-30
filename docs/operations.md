@@ -884,16 +884,16 @@ and use systemd to control the container.
 
 Prefer a suitable verified artifact already present in the Time Tracker backup
 directory. Follow the authoritative
-[local Time Tracker database restore procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#restore-a-local-backup)
+[local Time Tracker database restore procedure](https://github.com/grayhavensystemsllc/grayhaven-timetracker/blob/main/docs/operations.md#restore-a-local-backup)
 when one is available.
 
 When no suitable local artifact is available, follow the authoritative
-[Time Tracker database restore from restic procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#restore-a-backup-from-restic).
+[Time Tracker database restore from restic procedure](https://github.com/grayhavensystemsllc/grayhaven-timetracker/blob/main/docs/operations.md#restore-a-backup-from-restic).
 `grayhaven-backupctl` prefers the local restic repository and then uses the
 remote restic repository when necessary.
 
 If the SQLCipher passphrase must also change, complete the authoritative
-[Time Tracker SQLCipher passphrase rotation procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#rotate-the-sqlcipher-passphrase)
+[Time Tracker SQLCipher passphrase rotation procedure](https://github.com/grayhavensystemsllc/grayhaven-timetracker/blob/main/docs/operations.md#rotate-the-sqlcipher-passphrase)
 before updating the encrypted configuration value. Ansible refuses to replace
 the deployed passphrase while an existing database and deployed key are
 present.
@@ -903,7 +903,7 @@ present.
 ## Checking Time Tracker Health
 
 Use the authoritative
-[Time Tracker service health procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#check-service-health)
+[Time Tracker service health procedure](https://github.com/grayhavensystemsllc/grayhaven-timetracker/blob/main/docs/operations.md#check-service-health)
 to verify the systemd service, running immutable image digest, and application
 health endpoint after convergence or maintenance.
 
@@ -971,7 +971,7 @@ timezone directly on a managed host or inside the container.
    ```
 
 9. Follow the application
-   [service health procedure](https://github.com/dean1012/grayhaven-timetracker/blob/main/docs/operations.md#check-service-health),
+   [service health procedure](https://github.com/grayhavensystemsllc/grayhaven-timetracker/blob/main/docs/operations.md#check-service-health),
    then verify a representative time entry and report in the application.
 
 [Back to top](#operations)

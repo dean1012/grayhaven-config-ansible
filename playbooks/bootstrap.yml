@@ -183,7 +183,7 @@
         name: automation_runner
         tasks_from: environment
       vars:
-        automation_runner_bootstrap_repo_url: https://github.com/dean1012/grayhaven-config-ansible.git
+        automation_runner_bootstrap_repo_url: https://github.com/grayhavensystemsllc/grayhaven-config-ansible.git
         automation_runner_bootstrap_config_repo_ref: "{{ grayhaven_config_repo_ref }}"
         automation_runner_bootstrap_checkout_dir: /home/ansible/grayhaven-config-ansible
         automation_runner_bootstrap_vault_repo_url: "{{ grayhaven_vault_repo_url }}"
