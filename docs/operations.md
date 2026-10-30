@@ -747,10 +747,10 @@ Vault password rotation has three coordinated parts:
    [`grayhaven-vault-example`](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
    repository.
 2. Update the matching variable in
-   [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu),
+   [`grayhaven-infra-opentofu`](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu),
    `TF_VAR_grayhaven_vault_password_staging` or
    `TF_VAR_grayhaven_vault_password_prod`, by following the
-   [Ansible vault passphrase rotation documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#ansible-vault-passphrase-rotation)
+   [Ansible vault passphrase rotation documentation](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu/blob/main/docs/operations.md#ansible-vault-passphrase-rotation)
    in the `grayhaven-infra-opentofu` repository so future droplets bootstrap
    with the new password.
 3. Rotate the persisted password already stored on deployed bastions.
@@ -1198,15 +1198,15 @@ describes what Ansible manages and what remains manual in Grafana Cloud.
 ## Infrastructure Policy Changes
 
 Active control bastion selection and web TLS mode are defined in
-[`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu)
+[`grayhaven-infra-opentofu`](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu)
 policy. Changes to these settings must be applied in the
 `grayhaven-infra-opentofu` repository. After applying the target workspace, run
 a manual configuration pass from the active control bastion.
 
 See the
-[bastion failover documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#bastion-failover)
+[bastion failover documentation](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu/blob/main/docs/operations.md#bastion-failover)
 and
-[TLS mode documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/operations.md#updating-workspace-environment-tls-mode)
+[TLS mode documentation](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu/blob/main/docs/operations.md#updating-workspace-environment-tls-mode)
 in the
 `grayhaven-infra-opentofu`
 repository.

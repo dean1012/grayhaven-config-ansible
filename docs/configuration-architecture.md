@@ -22,9 +22,9 @@ full-playbook convergence.
 ## Bootstrap Phase
 
 The
-[grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
+[grayhaven-infra-opentofu](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu)
 repository renders
-[role-specific cloud-init user-data](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/runtime-architecture.md#configuration-handoff)
+[role-specific cloud-init user-data](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu/blob/main/docs/runtime-architecture.md#configuration-handoff)
 for each droplet. During first boot, cloud-init installs Ansible, writes
 bootstrap variables to `/etc/grayhaven/bootstrap/bootstrap-vars.yml`, and runs
 `ansible-pull` against this repository.
@@ -301,11 +301,11 @@ development basic-auth failures. The jail is disabled in load-balancer TLS mode
 until client IP handling is explicitly configured for that path.
 
 New hosted domains require both
-[environment DNS policy](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/policy.md#environment-dns-policy)
+[environment DNS policy](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu/blob/main/docs/policy.md#environment-dns-policy)
 in
-[grayhaven-infra-opentofu](https://github.com/dean1012/grayhaven-infra-opentofu)
+[grayhaven-infra-opentofu](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu)
 and matching `hosted_domains` data in `grayhaven-vault`. See the
-[DNS architecture documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/dns-architecture.md)
+[DNS architecture documentation](https://github.com/grayhavensystemsllc/grayhaven-infra-opentofu/blob/main/docs/dns-architecture.md)
 in the `grayhaven-infra-opentofu` repository and the
 [hosted domain DNS coordination documentation](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/schema.md#hosted-domain-dns-coordination)
 in the
