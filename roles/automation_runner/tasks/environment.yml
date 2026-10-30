@@ -33,7 +33,7 @@
         automation_runner_bootstrap_vault_repo_url
         | default(
             automation_runner_vault_repo_url
-            | default('git@github.com:dean1012/grayhaven-vault.git')
+            | default('git@github.com:grayhavensystemsllc/grayhaven-vault.git')
           )
       }}
     automation_runner_effective_vault_repo_ref: >-
