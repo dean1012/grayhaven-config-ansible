@@ -279,7 +279,7 @@ procedure separately for each target environment: `staging` for staging and
    Find `digitalocean_inventory_api_token` and replace its value with the new
    token, preserving the YAML key and formatting.
    Use a token with the
-   [documented inventory permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
+   [documented inventory permissions](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
 
 4. Re-encrypt the file with the
    same environment's vault password:
@@ -355,7 +355,7 @@ procedure separately for each target environment: `staging` for staging and
 
    Find `digitalocean_dns_api_token` and replace its value with the new token,
    preserving the YAML key and formatting. Use a
-   token with the [documented DNS permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
+   token with the [documented DNS permissions](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/operations.md#generating-api-keys).
 
 4. Re-encrypt the file with the same environment's vault password:
 
@@ -411,7 +411,7 @@ start convergence manually when ready.
 
 Rotate the collector token from the workstation's `grayhaven-vault` checkout
 on `main`. Grafana Cloud integration is production-only. Create the replacement
-using the [collector token setup](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#collector-token).
+using the [collector token setup](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#collector-token).
 Keep the old token valid until the replacement is verified when possible.
 
 1. Before revoking the old token or deploying its replacement, create a
@@ -501,7 +501,7 @@ Keep the old token valid until the replacement is verified when possible.
 ## Grafana Alert Rule API Token Rotation
 
 Rotate this token from the workstation's `grayhaven-vault` checkout on `main`.
-Create the replacement using the [alert rule API token setup](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#alert-rule-api-token).
+Create the replacement using the [alert rule API token setup](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#alert-rule-api-token).
 Keep the old token valid until the replacement is verified when possible.
 
 1. Select the production branch and pull the latest changes:
@@ -579,7 +579,7 @@ Keep the old token active until the replacement is verified.
 
 1. Create a replacement token for the existing Grafana Cloud service account
    using the
-   [documented IRM alert-group token permissions](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#irm-alert-groups-api-token).
+   [documented IRM alert-group token permissions](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md#irm-alert-groups-api-token).
 
 2. Select the production branch and pull the latest changes:
 
@@ -681,7 +681,7 @@ key active until remote access succeeds with the replacement.
 ## Hosted-Domain Deployment Webhook Secret Rotation
 
 Follow the
-[hosted-domain webhook secret rotation procedure](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#rotating-website-deployment-secrets)
+[hosted-domain webhook secret rotation procedure](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/operations.md#rotating-website-deployment-secrets)
 to replace each domain's vault value and converge the web hosts. Use a distinct
 secret for each hosted-domain repository.
 
@@ -742,9 +742,9 @@ Vault password rotation has three coordinated parts:
 
 1. Rekey the encrypted files in `grayhaven-vault` for the target
    environment branch by following the
-   [vault password rotation documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#vault-password-rotation)
+   [vault password rotation documentation](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/operations.md#vault-password-rotation)
    in the
-   [`grayhaven-vault-example`](https://github.com/dean1012/grayhaven-vault-example)
+   [`grayhaven-vault-example`](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
    repository.
 2. Update the matching variable in
    [`grayhaven-infra-opentofu`](https://github.com/dean1012/grayhaven-infra-opentofu),
@@ -1122,9 +1122,9 @@ ssh -A -tt <user>@bastion.grayhavensystems.com 'cat /etc/motd; GRAYHAVEN_TMUX_AU
 The
 [operator tmux architecture](operator-tmux-architecture.md)
 documentation explains how workspace files are built and loaded. The public
-[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+[grayhaven-vault-example](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
 repository documents the
-[managed user schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#managed-user-entries)
+[managed user schema](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/schema.md#managed-user-entries)
 for enabling auto-attach and selecting workspace files.
 
 [Back to top](#operations)

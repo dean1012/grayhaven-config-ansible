@@ -111,9 +111,9 @@ active control bastion.
 
 `grayhaven-vault` supplies runtime selectors and encrypted operational values.
 Its structure follows the
-[file schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md)
+[file schema](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/schema.md)
 documented in the
-[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+[grayhaven-vault-example](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
 repository. The `config.yml` and `firewall.yml` files remain plaintext, and the
 `vault/*.yml` files are decrypted by Ansible at runtime.
 
@@ -187,11 +187,11 @@ DigitalOcean API access.
 ## Managed Users
 
 Managed users are defined in `vault/common.yml`. The
-[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+[grayhaven-vault-example](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
 repository documents the expected
-[user file schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#vaultcommonyml)
+[user file schema](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/schema.md#vaultcommonyml)
 and
-[user management procedure](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/operations.md#managing-users).
+[user management procedure](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/operations.md#managing-users).
 Users may be marked `present` or `absent`.
 
 `present` users are created with configured password hashes, SSH keys, and
@@ -223,8 +223,8 @@ Per-user tmux workspaces are optional and are stored in `grayhaven-vault` under
 `gtmux` automatically. The
 [operator tmux architecture](operator-tmux-architecture.md)
 documentation describes workspace behavior and capture guidance. See the
-[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
-[managed user schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#managed-user-entries)
+[grayhaven-vault-example](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
+[managed user schema](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/schema.md#managed-user-entries)
 for the public example shape.
 
 All present managed users receive a stable forwarded-agent socket helper at
@@ -307,9 +307,9 @@ in
 and matching `hosted_domains` data in `grayhaven-vault`. See the
 [DNS architecture documentation](https://github.com/dean1012/grayhaven-infra-opentofu/blob/main/docs/dns-architecture.md)
 in the `grayhaven-infra-opentofu` repository and the
-[hosted domain DNS coordination documentation](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#hosted-domain-dns-coordination)
+[hosted domain DNS coordination documentation](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/schema.md#hosted-domain-dns-coordination)
 in the
-[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+[grayhaven-vault-example](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
 repository.
 
 [Back to top](#configuration-architecture)
@@ -366,9 +366,9 @@ force, and the values are never derived from request headers.
 The firewalld policy role reads the environment firewall policy from `firewall.yml`
 in the checked-out `grayhaven-vault` repository and caches it locally under
 `/etc/grayhaven/firewall/policy.yml`. The
-[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+[grayhaven-vault-example](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
 repository documents the
-[firewall policy schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#firewallyml).
+[firewall policy schema](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/schema.md#firewallyml).
 
 If the vault firewall policy is unavailable and a cached policy exists, Ansible
 uses the cached policy and sends an informational Discord notification. If no
@@ -400,9 +400,9 @@ the host.
 
 Each managed server creates encrypted restic backups using settings from
 `grayhaven-vault/config.yml`. The
-[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+[grayhaven-vault-example](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
 repository documents the
-[backup settings schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#configyml).
+[backup settings schema](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/schema.md#configyml).
 The local repository path defaults to
 `/var/backups/restic`, and the homedir archive path defaults to
 `/var/backups/deleted-homedir-archives`.
