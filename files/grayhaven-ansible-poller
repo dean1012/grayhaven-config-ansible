@@ -10,7 +10,7 @@ ANSIBLE_CONTROL_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/id_ed25519"
 VAULT_DEPLOY_PRIVATE_KEY="${ANSIBLE_HOME}/.ssh/grayhaven_vault_deploy_key"
 GITHUB_KNOWN_HOSTS="${ANSIBLE_HOME}/.ssh/github_known_hosts"
 GITHUB_META_URL="https://api.github.com/meta"
-DEFAULT_REPO_URL="https://github.com/dean1012/grayhaven-config-ansible.git"
+DEFAULT_REPO_URL="https://github.com/grayhavensystemsllc/grayhaven-config-ansible.git"
 DEFAULT_REPO_REF="main"
 
 log() {
