@@ -6,7 +6,7 @@ timetracker_gid: 777
 timetracker_container_name: grayhaven-timetracker
 timetracker_container_port: 8000
 timetracker_host_port: 8000
-timetracker_image_repository: ghcr.io/dean1012/grayhaven-timetracker
+timetracker_image_repository: ghcr.io/grayhavensystemsllc/grayhaven-timetracker
 timetracker_database_filename: timetracker.sqlite3
 timetracker_quadlet_dir: /etc/containers/systemd
 timetracker_quadlet_path: "{{ timetracker_quadlet_dir }}/grayhaven-timetracker.container"
