@@ -1,8 +1,8 @@
 # Grayhaven Systems LLC Configuration (Ansible)
 
-[![CI](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/ci.yml/badge.svg)](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/ci.yml)
-[![Unit Tests](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/dean1012/grayhaven-config-ansible/actions/workflows/unit-tests.yml)
-[![Codecov](https://codecov.io/gh/dean1012/grayhaven-config-ansible/graph/badge.svg)](https://codecov.io/gh/dean1012/grayhaven-config-ansible)
+[![CI](https://github.com/grayhavensystemsllc/grayhaven-config-ansible/actions/workflows/ci.yml/badge.svg)](https://github.com/grayhavensystemsllc/grayhaven-config-ansible/actions/workflows/ci.yml)
+[![Unit Tests](https://github.com/grayhavensystemsllc/grayhaven-config-ansible/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/grayhavensystemsllc/grayhaven-config-ansible/actions/workflows/unit-tests.yml)
+[![Codecov](https://codecov.io/gh/grayhavensystemsllc/grayhaven-config-ansible/graph/badge.svg)](https://codecov.io/gh/grayhavensystemsllc/grayhaven-config-ansible)
 
 Ansible configuration management for Grayhaven Systems LLC infrastructure.
 
