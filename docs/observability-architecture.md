@@ -34,11 +34,11 @@ enabled, but Grafana Cloud is the primary alerting path when enabled.
 
 `grayhaven-vault` supplies the Grafana Cloud endpoint and credential values.
 The public
-[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+[grayhaven-vault-example](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
 repository documents the expected
-[configuration schema](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/schema.md#observability)
+[configuration schema](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/schema.md#observability)
 and
-[Grafana Cloud setup](https://github.com/dean1012/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md).
+[Grafana Cloud setup](https://github.com/grayhavensystemsllc/grayhaven-vault-example/blob/main/docs/grafana-cloud-setup.md).
 
 When Grafana Cloud is enabled, Ansible expects production hosts to carry the
 `alerts-in-grafana-cloud` tag. Log shipping additionally requires

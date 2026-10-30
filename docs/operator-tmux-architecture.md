@@ -36,7 +36,7 @@ stable inside tmux and also helps users who maintain their own tmux sessions.
 
 Per-user workspace files live in `grayhaven-vault` under
 `files/tmux-workspaces/`. The public
-[grayhaven-vault-example](https://github.com/dean1012/grayhaven-vault-example)
+[grayhaven-vault-example](https://github.com/grayhavensystemsllc/grayhaven-vault-example)
 repository includes a sanitized example.
 
 Workspace files are shell scripts executed by `gtmux` when it needs to create a
