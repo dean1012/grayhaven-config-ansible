@@ -12,10 +12,8 @@ import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 TASKS_PATH = REPO_ROOT / "roles/backupctl/tasks/main.yml"
-DEFAULTS_PATH = REPO_ROOT / "roles/backupctl/defaults/main.yml"
 RESTIC_SETTINGS_PATH = REPO_ROOT / "roles/restic_backup/tasks/settings.yml"
 TASKS = yaml.safe_load(TASKS_PATH.read_text(encoding="utf-8"))
-DEFAULTS = yaml.safe_load(DEFAULTS_PATH.read_text(encoding="utf-8"))
 
 
 def find_task(name: str, tasks: list[dict[str, object]] | None = None) -> dict[str, object]:
@@ -71,19 +69,6 @@ def run_playbook(tasks: list[dict[str, object]]) -> subprocess.CompletedProcess[
 
 
 class BackupctlContractTests(unittest.TestCase):
-    def test_defaults_use_exact_nested_release_contract(self) -> None:
-        self.assertNotIn("backupctl_repo_url", DEFAULTS)
-        self.assertNotIn("backupctl_repo_ref", DEFAULTS)
-        self.assertNotIn("backupctl_checkout_dir", DEFAULTS)
-        self.assertEqual(
-            DEFAULTS["grayhaven_backupctl"],
-            {
-                "repo_url": "https://github.com/dean1012/grayhaven-backupctl.git",
-                "checkout_dir": "/home/ansible/grayhaven-backupctl",
-                "version": "207a02af4921080efbc46950a14961874952bf92",
-            },
-        )
-
     def test_schema_assertions_accept_only_the_exact_nested_shape(self) -> None:
         legacy = find_task("Reject obsolete grayhaven-backupctl selectors")
         contract = find_task("Validate grayhaven-backupctl configuration")

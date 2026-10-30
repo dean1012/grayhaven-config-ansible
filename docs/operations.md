@@ -844,18 +844,18 @@ the `ansible` user and run a full convergence pass.
 ## Backup & Restoration Operations
 
 Managed servers install
-[`grayhaven-backupctl`](https://github.com/dean1012/grayhaven-backupctl)
+[`grayhaven-backupctl`](https://github.com/grayhavensystemsllc/grayhaven-backupctl)
 as the operator interface for manual backup creation, snapshot review, path
 search, and local or remote restore work.
 
 Use the `grayhaven-backupctl` operations guide for:
 
-- [listing backups](https://github.com/dean1012/grayhaven-backupctl/blob/main/docs/operations.md#listing-backups);
-- [creating backups](https://github.com/dean1012/grayhaven-backupctl/blob/main/docs/operations.md#creating-backups);
-- [listing backup contents](https://github.com/dean1012/grayhaven-backupctl/blob/main/docs/operations.md#listing-backup-contents);
-- [finding backups containing paths](https://github.com/dean1012/grayhaven-backupctl/blob/main/docs/operations.md#finding-backups-containing-paths);
-- [restoring to a target directory](https://github.com/dean1012/grayhaven-backupctl/blob/main/docs/operations.md#restoring-to-a-target-directory);
-- [restoring in place](https://github.com/dean1012/grayhaven-backupctl/blob/main/docs/operations.md#restoring-in-place).
+- [listing backups](https://github.com/grayhavensystemsllc/grayhaven-backupctl/blob/main/docs/operations.md#listing-backups);
+- [creating backups](https://github.com/grayhavensystemsllc/grayhaven-backupctl/blob/main/docs/operations.md#creating-backups);
+- [listing backup contents](https://github.com/grayhavensystemsllc/grayhaven-backupctl/blob/main/docs/operations.md#listing-backup-contents);
+- [finding backups containing paths](https://github.com/grayhavensystemsllc/grayhaven-backupctl/blob/main/docs/operations.md#finding-backups-containing-paths);
+- [restoring to a target directory](https://github.com/grayhavensystemsllc/grayhaven-backupctl/blob/main/docs/operations.md#restoring-to-a-target-directory);
+- [restoring in place](https://github.com/grayhavensystemsllc/grayhaven-backupctl/blob/main/docs/operations.md#restoring-in-place).
 
 Restic installation and configuration, installation of the
 `grayhaven-backupctl` utility, its isolated Python runtime, and its bash
